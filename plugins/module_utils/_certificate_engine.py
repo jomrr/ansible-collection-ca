@@ -1,11 +1,14 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Shared certificate dispatcher implementation for the CA collection."""
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
@@ -105,31 +108,14 @@ def _profile_formats(value: Any, profile: str) -> list[str]:
     return formats
 
 
-def _resolve_certificate(
-    params: dict[str, Any], certificate: dict[str, Any] | None = None
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Resolve a declarative role certificate into X.509 module parameters."""
-    certificate = _as_dict(
-        params.get("certificate") if certificate is None else certificate,
-        "certificate",
-    )
-    name = safe_name(require_value(certificate, "name", "Certificate"), "Certificate")
-    csr_path = string_value(certificate.get("csr_path")).strip()
-    csr_content = string_value(certificate.get("csr_content")).strip()
-    csr_mode = bool(csr_path or csr_content)
-    if csr_path and csr_content:
-        raise ValueError(f"Certificate {name} uses both csr_path and csr_content")
-
-    cert_type = string_value(
-        require_value(certificate, "type", f"Certificate {name}")
-    ).strip()
-    if csr_mode:
-        common_name = string_value(certificate.get("common_name")).strip()
-    else:
-        common_name = string_value(
-            require_value(certificate, "common_name", f"Certificate {name}")
-        ).strip()
-
+def _certificate_profile(
+    params: dict[str, Any],
+    certificate: dict[str, Any],
+    name: str,
+    csr_mode: bool,
+    cert_type: str,
+) -> tuple[str, str, str, Any]:
+    """Validate and resolve the profile, issuer and lifetime."""
     if cert_type not in CERTIFICATE_PROFILE_DEFAULTS:
         raise ValueError(f"Certificate {name} uses unknown profile {cert_type}")
 
@@ -164,6 +150,50 @@ def _resolve_certificate(
     for field in _as_list(profile.get("required_fields")):
         require_value(certificate, string_value(field), f"Certificate {name}")
 
+    return cert_type, issuer, issuer_passphrase, days
+
+
+def _merged_setting(
+    params: dict[str, Any],
+    certificate: dict[str, Any],
+    field: str,
+    name: str,
+) -> dict[str, Any]:
+    """Overlay certificate settings on the common subject or renewal policy."""
+    result = dict(_as_dict(params.get(field), field))
+    result.update(_as_dict(certificate.get(field), f"Certificate {name} {field}"))
+    return result
+
+
+def _resolve_certificate(
+    params: dict[str, Any], certificate: dict[str, Any] | None = None
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve a declarative role certificate into X.509 module parameters."""
+    certificate = _as_dict(
+        params.get("certificate") if certificate is None else certificate,
+        "certificate",
+    )
+    name = safe_name(require_value(certificate, "name", "Certificate"), "Certificate")
+    csr_path = string_value(certificate.get("csr_path")).strip()
+    csr_content = string_value(certificate.get("csr_content")).strip()
+    csr_mode = bool(csr_path or csr_content)
+    if csr_path and csr_content:
+        raise ValueError(f"Certificate {name} uses both csr_path and csr_content")
+
+    cert_type = string_value(
+        require_value(certificate, "type", f"Certificate {name}")
+    ).strip()
+    if csr_mode:
+        common_name = string_value(certificate.get("common_name")).strip()
+    else:
+        common_name = string_value(
+            require_value(certificate, "common_name", f"Certificate {name}")
+        ).strip()
+
+    cert_type, issuer, issuer_passphrase, days = _certificate_profile(
+        params, certificate, name, csr_mode, cert_type
+    )
+
     formats = _profile_formats(certificate.get("formats"), cert_type)
     if csr_mode:
         unsupported = sorted(set(formats).intersection({"pfx", "p12", "fritzbox"}))
@@ -179,11 +209,6 @@ def _resolve_certificate(
             f"Certificate {name} uses PFX/PKCS#12 output and requires pfx_passphrase"
         )
 
-    subject = dict(_as_dict(params.get("subject"), "subject"))
-    subject.update(_as_dict(certificate.get("subject"), f"Certificate {name} subject"))
-    renewal = dict(_as_dict(params.get("renewal"), "renewal"))
-    renewal.update(_as_dict(certificate.get("renewal"), f"Certificate {name} renewal"))
-
     model = dict(certificate)
     model.update(
         {
@@ -193,8 +218,8 @@ def _resolve_certificate(
             "issuer": issuer,
             "days": days,
             "formats": formats,
-            "subject": subject,
-            "renewal": renewal,
+            "subject": _merged_setting(params, certificate, "subject", name),
+            "renewal": _merged_setting(params, certificate, "renewal", name),
             "csr_mode": csr_mode,
             "csr_san_from_request": csr_mode and "san" not in certificate,
         }
@@ -216,7 +241,7 @@ def _resolve_certificate(
         "issuer_key_passphrase": issuer_passphrase,
         "common_name": common_name,
         "days": days,
-        "renewal": renewal,
+        "renewal": model["renewal"],
         "owner": params["owner"],
         "group": params["group"],
         "force": params["force"],
@@ -292,20 +317,15 @@ def ensure_certificate_batch(params: dict[str, Any]) -> dict[str, Any]:
         )
         prepared.append((index, model, x509_params))
 
-    issuer_groups: dict[str, list[tuple[int, dict[str, Any], dict[str, Any]]]] = {}
-    for item in prepared:
-        issuer = str(item[1]["issuer"])
-        if issuer not in issuer_groups:
-            issuer_groups[issuer] = []
-        issuer_groups[issuer].append(item)
+    issuer_groups = Counter(str(model["issuer"]) for _index, model, _params in prepared)
 
     raw_results = ensure_x509_many(
-        [x509_params for _, _, x509_params in prepared],
+        [x509_params for _index, _model, x509_params in prepared],
         signed=True,
         manage_directory=True,
         manage_chain=True,
     )
-    results: list[dict[str, Any]] = [{} for _ in prepared]
+    results: list[dict[str, Any]] = [{} for _item in prepared]
     inventory_records: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]] = []
     changed = False
     for (index, model, x509_params), raw_result in zip(prepared, raw_results):
@@ -324,8 +344,6 @@ def ensure_certificate_batch(params: dict[str, Any]) -> dict[str, Any]:
         "changed": changed,
         "inventory_changed": inventory_changed,
         "count": len(results),
-        "issuer_groups": {
-            issuer: len(group) for issuer, group in issuer_groups.items()
-        },
+        "issuer_groups": dict(issuer_groups),
         "results": results,
     }

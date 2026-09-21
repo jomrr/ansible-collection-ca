@@ -1,12 +1,20 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 X.509 exports helpers."""
 
 from __future__ import annotations
 
+from typing import Any
+
+from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
+    MATERIAL_ERRORS,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
     read_file,
     set_attrs,
     write_file,
@@ -16,24 +24,28 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     _public_key_bytes,
     load_certificates,
 )
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.serialization import pkcs12
+
+try:
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import PrivateKey
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.serialization import pkcs12
+except ImportError:
+    pass
 
 
-def _ensure_der(params, cert):
+def _ensure_der(params: dict[str, Any], cert: x509.Certificate) -> bool:
     """Ensure the optional DER certificate export exists."""
     if not params["der_path"]:
         return False
     return write_file(
         params["der_path"],
         cert.public_bytes(serialization.Encoding.DER),
-        params["owner"],
-        params["group"],
-        params["public_mode"],
+        FileAttributes.from_params(params),
     )
 
 
-def _ensure_chain(params):
+def _ensure_chain(params: dict[str, Any]) -> bool:
     """Ensure the optional certificate chain copy exists."""
     if not params["chain_src_path"] or not params["chain_path"]:
         return False
@@ -41,13 +53,13 @@ def _ensure_chain(params):
     return write_file(
         params["chain_path"],
         content,
-        params["owner"],
-        params["group"],
-        params["public_mode"],
+        FileAttributes.from_params(params),
     )
 
 
-def _chain_content(params, signer_cert) -> bytes:
+def _chain_content(
+    params: dict[str, Any], signer_cert: x509.Certificate | None
+) -> bytes:
     """Return the issuing chain content for certificate export bundles."""
     for path in (params.get("chain_src_path"), params.get("chain_path")):
         if not path:
@@ -61,7 +73,9 @@ def _chain_content(params, signer_cert) -> bytes:
     raise ValueError("certificate chain is required for bundle export formats")
 
 
-def _chain_certificates(params, signer_cert):
+def _chain_certificates(
+    params: dict[str, Any], signer_cert: x509.Certificate | None
+) -> list[x509.Certificate]:
     """Return issuing chain certificates for PKCS#12 exports."""
     for path in (params.get("chain_src_path"), params.get("chain_path")):
         if not path:
@@ -73,18 +87,26 @@ def _chain_certificates(params, signer_cert):
     return [signer_cert] if signer_cert is not None else []
 
 
-def _pkcs12_existing_matches(path, passphrase, key, cert, extra_certs) -> bool:
+def _pkcs12_existing_matches(
+    path: str,
+    passphrase: str | None,
+    key: PrivateKey,
+    cert: x509.Certificate,
+    extra_certs: list[x509.Certificate],
+) -> bool:
     """Return whether an existing PKCS#12 bundle matches desired content."""
     try:
         existing_key, existing_cert, existing_extra = pkcs12.load_key_and_certificates(
             read_file(path),
             passphrase.encode() if passphrase else None,
         )
-    except Exception:
+    except MATERIAL_ERRORS:
         return False
     if existing_key is None or existing_cert is None:
         return False
-    if _public_key_bytes(existing_key) != _public_key_bytes(key):
+    if existing_key.public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    ) != _public_key_bytes(key):
         return False
     if _cert_fingerprint(existing_cert) != _cert_fingerprint(cert):
         return False
@@ -95,13 +117,16 @@ def _pkcs12_existing_matches(path, passphrase, key, cert, extra_certs) -> bool:
     return existing_fingerprints == desired_fingerprints
 
 
-def _pkcs12_passphrase(params) -> str:
+def _pkcs12_passphrase(params: dict[str, Any]) -> str:
     """Return the configured PKCS#12 passphrase."""
     return str(params.get("passphrase") or params.get("pfx_passphrase") or "")
 
 
 def _ensure_pkcs12_exports(
-    params, key, cert, extra_certs
+    params: dict[str, Any],
+    key: PrivateKey,
+    cert: x509.Certificate,
+    extra_certs: list[x509.Certificate],
 ) -> tuple[bool, dict[str, str]]:
     """Ensure requested PKCS#12 export formats exist."""
     paths = {
@@ -140,9 +165,7 @@ def _ensure_pkcs12_exports(
                 write_file(
                     path,
                     content,
-                    params["owner"],
-                    params["group"],
-                    params["key_mode"],
+                    FileAttributes.from_params(params, "key_mode"),
                     force=True,
                 )
                 or changed
@@ -160,7 +183,9 @@ def _pem_join(*parts: bytes) -> bytes:
     return b"".join(part.rstrip() + b"\n" for part in parts if part)
 
 
-def _ensure_fullchain_bundle(params, cert, chain_content: bytes) -> bool:
+def _ensure_fullchain_bundle(
+    params: dict[str, Any], cert: x509.Certificate, chain_content: bytes
+) -> bool:
     """Ensure the requested PEM fullchain bundle exists."""
     if "fullchain" not in params["formats"]:
         return False
@@ -168,14 +193,14 @@ def _ensure_fullchain_bundle(params, cert, chain_content: bytes) -> bool:
     return write_file(
         params["fullchain_path"],
         content,
-        params["owner"],
-        params["group"],
-        params["public_mode"],
+        FileAttributes.from_params(params),
         force=params["force"],
     )
 
 
-def _ensure_fritzbox_bundle(params, cert, chain_content: bytes) -> bool:
+def _ensure_fritzbox_bundle(
+    params: dict[str, Any], cert: x509.Certificate, chain_content: bytes
+) -> bool:
     """Ensure the requested FritzBox PEM import bundle exists."""
     if "fritzbox" not in params["formats"]:
         return False
@@ -187,8 +212,6 @@ def _ensure_fritzbox_bundle(params, cert, chain_content: bytes) -> bool:
     return write_file(
         params["fritzbox_bundle_path"],
         content,
-        params["owner"],
-        params["group"],
-        params["key_mode"],
+        FileAttributes.from_params(params, "key_mode"),
         force=params["force"],
     )

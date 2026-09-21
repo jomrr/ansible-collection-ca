@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 X.509 params helpers."""
@@ -20,12 +22,12 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
 )
 
 
-def _external_csr_configured(params: dict) -> bool:
+def _external_csr_configured(params: dict[str, Any]) -> bool:
     """Return whether certificate issuance should use an externally supplied CSR."""
     return bool(params.get("csr_source_path") or params.get("csr_content"))
 
 
-def _base_url(params: dict, name: str, key: str) -> str:
+def _base_url(params: dict[str, Any], name: str, key: str) -> str:
     """Derive an AIA or CDP URL from explicit or base URL parameters."""
     value = str(params.get(key) or "").rstrip("/")
     if not value:
@@ -37,13 +39,13 @@ def _base_url(params: dict, name: str, key: str) -> str:
 
 
 def _with_derived_paths(
-    params: dict,
+    params: dict[str, Any],
     *,
     authority: bool,
     signed: bool,
     manage_directory: bool,
     manage_chain: bool,
-) -> dict:
+) -> dict[str, Any]:
     """Derive managed file paths and publication URLs from base parameters."""
     result = dict(params)
     result["digest"] = digest_algorithm(result["digest"]).name
@@ -56,26 +58,7 @@ def _with_derived_paths(
     normalize_policy_params(result, signed=signed)
 
     if authority:
-        ca_file = f"{name}-ca"
-        result["lock_path"] = ca_lock_path(base_dir, "authority", name)
-        result["key_path"] = f"{base_dir}/private/{ca_file}.key"
-        result["csr_path"] = f"{base_dir}/csr/{ca_file}.csr"
-        result["cert_path"] = f"{base_dir}/ca/{ca_file}.pem"
-        result["der_path"] = f"{base_dir}/ca/{ca_file}.der" if "der" in formats else ""
-        result["txt_path"] = f"{base_dir}/ca/{ca_file}.txt" if "txt" in formats else ""
-        if signed:
-            parent = str(result["parent"])
-            parent_file = f"{parent}-ca"
-            result["signer_lock_path"] = ca_lock_path(base_dir, "authority", parent)
-            result["signer_cert_path"] = f"{base_dir}/ca/{parent_file}.pem"
-            result["signer_key_path"] = f"{base_dir}/private/{parent_file}.key"
-        authority_file = f"{result['parent'] if signed else name}-ca"
-        result["aia_url"] = _base_url(result, f"{authority_file}.der", "aia_base_url")
-        result["cdp_url"] = _base_url(result, f"{authority_file}.crl", "cdp_base_url")
-        result["directory_path"] = None
-        result["chain_src_path"] = ""
-        result["chain_path"] = ""
-        return result
+        return _authority_paths(result, signed=signed)
 
     output_dir = str(result.get("output_dir") or f"{base_dir}/certs/{name}").rstrip("/")
     issuer = str(result["issuer"])
@@ -113,10 +96,35 @@ def _with_derived_paths(
     return result
 
 
+def _authority_paths(result: dict[str, Any], *, signed: bool) -> dict[str, Any]:
+    """Derive paths and publication URLs for a CA authority."""
+    base_dir, name, formats = result["base_dir"], result["name"], result["formats"]
+    ca_file = f"{name}-ca"
+    result["lock_path"] = ca_lock_path(base_dir, "authority", name)
+    result["key_path"] = f"{base_dir}/private/{ca_file}.key"
+    result["csr_path"] = f"{base_dir}/csr/{ca_file}.csr"
+    result["cert_path"] = f"{base_dir}/ca/{ca_file}.pem"
+    result["der_path"] = f"{base_dir}/ca/{ca_file}.der" if "der" in formats else ""
+    result["txt_path"] = f"{base_dir}/ca/{ca_file}.txt" if "txt" in formats else ""
+    if signed:
+        parent = str(result["parent"])
+        parent_file = f"{parent}-ca"
+        result["signer_lock_path"] = ca_lock_path(base_dir, "authority", parent)
+        result["signer_cert_path"] = f"{base_dir}/ca/{parent_file}.pem"
+        result["signer_key_path"] = f"{base_dir}/private/{parent_file}.key"
+    authority_file = f"{result['parent'] if signed else name}-ca"
+    result["aia_url"] = _base_url(result, f"{authority_file}.der", "aia_base_url")
+    result["cdp_url"] = _base_url(result, f"{authority_file}.crl", "cdp_base_url")
+    result["directory_path"] = None
+    result["chain_src_path"] = ""
+    result["chain_path"] = ""
+    return result
+
+
 def ca_authority_argument_spec(
     *,
-    defaults: dict | None = None,
-):
+    defaults: dict[str, Any] | None = None,
+) -> dict[str, dict[str, Any]]:
     """Build the argument spec for CA authority modules."""
     spec: dict[str, dict[str, Any]] = {
         "base_dir": {"type": "path", "required": True},
@@ -155,7 +163,7 @@ def ca_authority_argument_spec(
         "include_identifiers": {"type": "bool", "default": True},
         "owner": {"type": "str"},
         "group": {"type": "str"},
-        "key_mode": {"type": "str", "default": "0600"},
+        "key_mode": {"type": "str", "default": "0600", "no_log": False},
         "public_mode": {"type": "str", "default": "0644"},
         "force": {"type": "bool", "default": False},
         "key_passphrase": {
@@ -178,13 +186,13 @@ def ca_authority_argument_spec(
 def normalize_formats(formats: Any) -> list[str]:
     """Return normalized certificate output format names."""
     if isinstance(formats, str):
-        raise ValueError("formats must be a list")
+        raise TypeError("formats must be a list")
     return [str(item).lower() for item in (formats or [])]
 
 
 def certificate_params(
-    params: dict, *, default_formats: list[str] | None = None
-) -> dict:
+    params: dict[str, Any], *, default_formats: list[str] | None = None
+) -> dict[str, Any]:
     """Merge certificate dictionaries with explicit module parameters."""
     result: dict[str, Any] = {
         "base_url": "",

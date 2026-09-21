@@ -1,12 +1,15 @@
-#!/usr/bin/python
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Manage CA collection certificate revocation lists."""
 
 from __future__ import annotations
 
 import datetime as _dt
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from ansible.module_utils.basic import (
     AnsibleModule,
@@ -15,8 +18,15 @@ from ansible_collections.jomrr.ca.plugins.module_utils._crl_state import (
     last_crl_number,
     store_crl_number,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
+    MATERIAL_ERRORS,
+    OPERATION_ERRORS,
+    require_cryptography,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
     ca_lock_path,
+    file_argument_spec,
     file_locks,
     read_file,
     sanitize_error,
@@ -25,6 +35,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
     resolve_revocation_entries,
     update_crl_inventory,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_summary import (
+    _crl_number,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import (
     parse_serial,
@@ -44,35 +57,36 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import DIGESTS
 
-CRYPTOGRAPHY_IMPORT_ERROR: Exception | None
 try:
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import (
+        PrivateKey,
+    )
     from cryptography import x509
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
     from cryptography.x509.oid import SignatureAlgorithmOID
-except Exception as exc:  # pragma: no cover
-    CRYPTOGRAPHY_IMPORT_ERROR = exc
-else:
-    CRYPTOGRAPHY_IMPORT_ERROR = None
+
+    REASON_FLAGS = {
+        "key_compromise": x509.ReasonFlags.key_compromise,
+        "ca_compromise": x509.ReasonFlags.ca_compromise,
+        "affiliation_changed": x509.ReasonFlags.affiliation_changed,
+        "superseded": x509.ReasonFlags.superseded,
+        "cessation_of_operation": x509.ReasonFlags.cessation_of_operation,
+        "certificate_hold": x509.ReasonFlags.certificate_hold,
+        "privilege_withdrawn": x509.ReasonFlags.privilege_withdrawn,
+        "aa_compromise": x509.ReasonFlags.aa_compromise,
+    }
+except ImportError:
+    pass
 
 
-REASON_FLAGS = {
-    "key_compromise": x509.ReasonFlags.key_compromise,
-    "ca_compromise": x509.ReasonFlags.ca_compromise,
-    "affiliation_changed": x509.ReasonFlags.affiliation_changed,
-    "superseded": x509.ReasonFlags.superseded,
-    "cessation_of_operation": x509.ReasonFlags.cessation_of_operation,
-    "certificate_hold": x509.ReasonFlags.certificate_hold,
-    "privilege_withdrawn": x509.ReasonFlags.privilege_withdrawn,
-    "aa_compromise": x509.ReasonFlags.aa_compromise,
-}
 SUPPORTED_FORMATS = {"pem", "der"}
 
 
-def _formats(value) -> list[str]:
+def _formats(value: Any) -> list[str]:
     """Return normalized CRL output formats."""
     if isinstance(value, str):
-        raise ValueError("formats must be a list")
+        raise TypeError("formats must be a list")
     formats = [str(item).lower() for item in (value or ["pem", "der"])]
     unsupported = sorted(set(formats).difference(SUPPORTED_FORMATS))
     if unsupported:
@@ -89,7 +103,7 @@ def _load_crl(path: str) -> x509.CertificateRevocationList:
         return x509.load_der_x509_crl(data)
 
 
-def _parse_revocation_date(value):
+def _parse_revocation_date(value: Any) -> _dt.datetime:
     """Parse a revocation timestamp or return the current UTC time."""
     if not value:
         return now_utc(strip_microseconds=True)
@@ -126,7 +140,7 @@ def _revoked_signature(
     return sorted(result)
 
 
-def _desired_revoked(entries: list[dict]) -> list[tuple[int, str, str, str]]:
+def _desired_revoked(entries: list[dict[str, Any]]) -> list[tuple[int, str, str, str]]:
     """Return comparable revoked certificate entries from module params."""
     result = []
     for entry in entries or []:
@@ -142,14 +156,6 @@ def _desired_revoked(entries: list[dict]) -> list[tuple[int, str, str, str]]:
         )
         result.append((serial, reason, invalidity_date, revocation_date))
     return sorted(result)
-
-
-def _crl_number(crl: x509.CertificateRevocationList) -> int | None:
-    """Return an existing CRL Number extension value."""
-    try:
-        return crl.extensions.get_extension_for_class(x509.CRLNumber).value.crl_number
-    except x509.ExtensionNotFound:
-        return None
 
 
 def _authority_key_identifier(crl: x509.CertificateRevocationList) -> bytes | None:
@@ -175,7 +181,7 @@ def _load_existing_crls(
     for crl_format, path in paths.items():
         try:
             existing[crl_format] = _load_crl(path)
-        except Exception:
+        except MATERIAL_ERRORS:
             existing[crl_format] = None
     return existing
 
@@ -220,14 +226,17 @@ def _signature_algorithm_oid(
         (dsa.DSAPublicKey, "DSA"),
     ):
         if isinstance(public_key, key_class):
-            return getattr(SignatureAlgorithmOID, f"{prefix}_WITH_{hash_name}")
+            return cast(
+                x509.ObjectIdentifier,
+                getattr(SignatureAlgorithmOID, f"{prefix}_WITH_{hash_name}"),
+            )
     raise ValueError("Unsupported CA public key for CRL signing")
 
 
 def _needs_rebuild(
     *,
     existing_crls: dict[str, x509.CertificateRevocationList | None],
-    params: dict,
+    params: dict[str, Any],
     desired_signature_algorithm: x509.ObjectIdentifier,
     desired_revoked: list[tuple[int, str, str, str]],
     desired_authority_key: bytes | None,
@@ -240,22 +249,30 @@ def _needs_rebuild(
     for crl in existing_crls.values():
         if crl is None:
             return True
-        if crl.issuer != issuer:
-            return True
-        if crl.signature_algorithm_oid != desired_signature_algorithm:
+        if (
+            crl.issuer != issuer
+            or crl.signature_algorithm_oid != desired_signature_algorithm
+        ):
             return True
         if object_datetime(crl, "next_update") <= current_time + _dt.timedelta(
             days=params["renew_before_days"]
         ):
             return True
-        if _authority_key_identifier(crl) != desired_authority_key:
-            return True
-        if _revoked_signature(crl) != desired_revoked:
+        if (
+            _authority_key_identifier(crl) != desired_authority_key
+            or _revoked_signature(crl) != desired_revoked
+        ):
             return True
     return False
 
 
-def _build_crl(params, *, crl_number: int, ca_cert, private_key):
+def _build_crl(
+    params: dict[str, Any],
+    *,
+    crl_number: int,
+    ca_cert: x509.Certificate,
+    private_key: PrivateKey,
+) -> x509.CertificateRevocationList:
     """Build and sign a CRL from module parameters."""
     now = now_utc(strip_microseconds=True)
     builder = (
@@ -265,7 +282,9 @@ def _build_crl(params, *, crl_number: int, ca_cert, private_key):
         .next_update(now + _dt.timedelta(days=int(params["next_update_days"])))
         .add_extension(x509.CRLNumber(crl_number), critical=False)
         .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(ca_cert.public_key()),
+            x509.AuthorityKeyIdentifier(
+                _desired_authority_key_identifier(ca_cert), None, None
+            ),
             critical=False,
         )
     )
@@ -292,7 +311,7 @@ def _build_crl(params, *, crl_number: int, ca_cert, private_key):
     )
 
 
-def _with_derived_paths(params: dict) -> dict:
+def _with_derived_paths(params: dict[str, Any]) -> dict[str, Any]:
     """Derive CRL and CA private key paths from base parameters."""
     result = dict(params)
     base_dir = str(result["base_dir"]).rstrip("/")
@@ -312,7 +331,7 @@ def _with_derived_paths(params: dict) -> dict:
     return result
 
 
-def _write_crls(params: dict, crl: x509.CertificateRevocationList) -> bool:
+def _write_crls(params: dict[str, Any], crl: x509.CertificateRevocationList) -> bool:
     """Write one CRL object to all requested output formats."""
     changed = False
     for crl_format, path in params["paths"].items():
@@ -325,9 +344,7 @@ def _write_crls(params: dict, crl: x509.CertificateRevocationList) -> bool:
             write_file(
                 path,
                 crl.public_bytes(encoding),
-                params["owner"],
-                params["group"],
-                params["mode"],
+                FileAttributes.from_params(params, "mode"),
                 force=params["force"],
             )
             or changed
@@ -335,9 +352,9 @@ def _write_crls(params: dict, crl: x509.CertificateRevocationList) -> bool:
     return changed
 
 
-def run_module():
+def run_module() -> None:
     """Run the Ansible module for certificate revocation lists."""
-    module = AnsibleModule(
+    module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec={
             "base_dir": {"type": "path", "required": True},
             "base_url": {"type": "str", "default": ""},
@@ -355,18 +372,12 @@ def run_module():
             "renew_before_days": {"type": "float", "default": 7},
             "revoked_certificates": {"type": "list", "elements": "dict", "default": []},
             "digest": {"type": "str", "default": "sha384", "choices": list(DIGESTS)},
-            "owner": {"type": "str"},
-            "group": {"type": "str"},
-            "mode": {"type": "str", "default": "0644"},
-            "force": {"type": "bool", "default": False},
+            **file_argument_spec(),
         },
         supports_check_mode=False,
     )
 
-    if CRYPTOGRAPHY_IMPORT_ERROR is not None:
-        module.fail_json(
-            msg=f"Failed to import cryptography: {CRYPTOGRAPHY_IMPORT_ERROR}"
-        )
+    require_cryptography(module)
 
     params = _with_derived_paths(module.params)
     inventory_changed = False
@@ -436,7 +447,7 @@ def run_module():
             inventory_changed = update_crl_inventory(params, crl)
             changed = _write_crls(params, crl) or changed
             changed = changed or inventory_changed
-    except Exception as exc:
+    except OPERATION_ERRORS as exc:
         module.fail_json(msg=sanitize_error(exc, module.params))
     module.exit_json(
         changed=changed,
@@ -447,7 +458,7 @@ def run_module():
     )
 
 
-def main():
+def main() -> None:
     """Execute the module entry point."""
     run_module()
 

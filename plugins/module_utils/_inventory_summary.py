@@ -1,14 +1,16 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Ca inventory summary helpers."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from ansible_collections.jomrr.ca.plugins.module_utils._file import read_file
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import (
     colon_hex,
     serial_hex,
@@ -22,18 +24,13 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     object_datetime,
     timestamp_z,
 )
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.asymmetric import ec, ed448, ed25519, rsa
 
-
-def _load_certificate(path: str) -> x509.Certificate:
-    """Load a PEM or DER X.509 certificate from disk."""
-    data = read_file(path)
-    try:
-        return x509.load_pem_x509_certificate(data)
-    except ValueError:
-        return x509.load_der_x509_certificate(data)
+try:
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import ec, ed448, ed25519, rsa
+except ImportError:
+    pass
 
 
 def _name_attributes(name: x509.Name) -> list[dict[str, str]]:
@@ -48,9 +45,9 @@ def _name_attributes(name: x509.Name) -> list[dict[str, str]]:
     ]
 
 
-def _oid_name(oid) -> str:
+def _oid_name(oid: x509.ObjectIdentifier) -> str:
     """Return a readable OID name with dotted-string fallback."""
-    name = getattr(oid, "_name", "") or ""
+    name = str(getattr(oid, "_name", "") or "")
     return name if name and name != "Unknown OID" else oid.dotted_string
 
 
@@ -184,12 +181,12 @@ def _certificate_summary(cert: x509.Certificate) -> dict[str, Any]:
     }
 
 
-def _crl_update(crl, name: str):
+def _crl_update(crl: x509.CertificateRevocationList, name: str) -> datetime:
     """Return a CRL timestamp across cryptography versions."""
     return object_datetime(crl, name)
 
 
-def _crl_number(crl) -> int | None:
+def _crl_number(crl: x509.CertificateRevocationList) -> int | None:
     """Return the CRL Number extension value when present."""
     try:
         return crl.extensions.get_extension_for_class(x509.CRLNumber).value.crl_number
@@ -197,7 +194,7 @@ def _crl_number(crl) -> int | None:
         return None
 
 
-def _crl_authority_key_identifier(crl) -> str:
+def _crl_authority_key_identifier(crl: x509.CertificateRevocationList) -> str:
     """Return the CRL Authority Key Identifier when present."""
     try:
         value = crl.extensions.get_extension_for_class(
@@ -208,7 +205,7 @@ def _crl_authority_key_identifier(crl) -> str:
     return colon_hex(value.key_identifier or b"")
 
 
-def _revoked_from_crl(crl) -> list[dict[str, Any]]:
+def _revoked_from_crl(crl: x509.CertificateRevocationList) -> list[dict[str, Any]]:
     """Return revoked certificate metadata from a CRL object."""
     revoked = []
     for item in crl:

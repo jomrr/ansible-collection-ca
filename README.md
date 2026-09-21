@@ -108,7 +108,8 @@ starts at [docs/index.md](docs/index.md). For certificate modules, pass
 
 ## Source
 
-Initially extracted from the MIT-licensed `jomrr.ca` standalone role.
+Extracted from the `jomrr.ca` standalone role and licensed under
+GPL-3.0-or-later.
 The collection contains modules, their internal utilities and the
 `authority_map` filter. It does not embed or modify the standalone role.
 
@@ -122,7 +123,7 @@ The collection contains modules, their internal utilities and the
 
 ## License
 
-License: MIT.
+License: GPL-3.0-or-later.
 See [LICENSE](LICENSE) for the full license text.
 
 Copyright (c) 2026 Jonas Mauer.

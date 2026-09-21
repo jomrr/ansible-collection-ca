@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Validation helpers shared by CA collection modules and filter plugins."""
@@ -42,12 +44,12 @@ def authority_map(
     if authorities is None:
         return {}
     if not isinstance(authorities, list):
-        raise ValueError(f"Expected a list, got {type(authorities).__name__}")
+        raise TypeError(f"Expected a list, got {type(authorities).__name__}")
 
     result = {}
     for authority in authorities:
         if not isinstance(authority, dict):
-            raise ValueError("Each ca_authorities item must be a dictionary")
+            raise TypeError("Each ca_authorities item must be a dictionary")
         name = safe_name(require_value(authority, "name", "Authority"), "Authority")
         if name in result:
             raise ValueError(f"Duplicate authority name {name}")

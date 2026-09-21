@@ -1,25 +1,26 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
 """FRITZ!Box module contracts with the device boundary simulated."""
 
 from __future__ import annotations
 
 import datetime
 import shutil
+import ssl
 import tempfile
+import threading
 import unittest
+from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any
 from unittest.mock import Mock, patch
+from wsgiref.simple_server import WSGIRequestHandler, make_server
 
 from ansible_collections.jomrr.ca.plugins.modules import fritzbox_deploy
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 
 class ModuleResult(BaseException):
@@ -98,7 +99,7 @@ class FritzBoxTests(unittest.TestCase):
             patch.object(fritzbox_deploy, "FritzBoxClient", return_value=self.device),
             self.assertRaises(ModuleResult) as result,
         ):
-            cast("Callable[[], None]", fritzbox_deploy.main)()
+            fritzbox_deploy.main()
         return result.exception.result
 
     def test_upload_and_repeat(self) -> None:
@@ -141,3 +142,72 @@ class FritzBoxTests(unittest.TestCase):
         """Absent validate_certs keeps support for default self-signed devices."""
         self.invoke()
         self.assertIs(self.module.params["validate_certs"], False)
+
+    def test_self_signed_https_transport(self) -> None:
+        """The real Ansible transport accepts a default self-signed device."""
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(self.path)
+        with make_server(
+            "127.0.0.1", 0, device_app, handler_class=QuietHandler
+        ) as server:
+            server.socket = context.wrap_socket(server.socket, server_side=True)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                client = fritzbox_deploy.FritzBoxClient(
+                    url=f"https://127.0.0.1:{server.server_port}",
+                    username="test-user",
+                    password="test-password",
+                    timeout=5,
+                    validate_certs=False,
+                )
+                self.assertEqual(client.login(), "0123456789abcdef")
+                client.import_certificate(self.path.read_bytes())
+                client.logout()
+                self.assertEqual(client.current_certificate(), self.desired)
+                verified = fritzbox_deploy.FritzBoxClient(
+                    url=client.url,
+                    username="test-user",
+                    password="test-password",
+                    timeout=5,
+                    validate_certs=True,
+                )
+                with self.assertRaisesRegex(RuntimeError, "certificate verify failed"):
+                    verified.login()
+            finally:
+                server.shutdown()
+                thread.join()
+
+
+class QuietHandler(WSGIRequestHandler):
+    """Keep local transport tests free of authentication queries in access logs."""
+
+    def log_message(self, *args: Any) -> None:
+        """Discard the disposable test server's access log."""
+
+
+def device_app(
+    environ: dict[str, Any],
+    start_response: Callable[[str, list[tuple[str, str]]], object],
+) -> Iterable[bytes]:
+    """Answer FRITZ!OS login requests and validate the multipart upload."""
+    if environ["REQUEST_METHOD"] == "GET":
+        value = (
+            b"<SID>0123456789abcdef</SID>"
+            if "response=" in environ["QUERY_STRING"]
+            else b"<Challenge>12345678</Challenge>"
+        )
+        start_response("200 OK", [("Content-Type", "text/xml")])
+        return [b"<SessionInfo>" + value + b"</SessionInfo>"]
+    body = environ["wsgi.input"].read(int(environ["CONTENT_LENGTH"]))
+    valid = (
+        environ["PATH_INFO"] == "/cgi-bin/firmwarecfg"
+        and "multipart/form-data; boundary=" in environ["CONTENT_TYPE"]
+        and b"0123456789abcdef" in body
+        and b"-----BEGIN CERTIFICATE-----" in body
+        and b"-----BEGIN PRIVATE KEY-----" in body
+    )
+    start_response(
+        "200 OK" if valid else "400 Bad Request", [("Content-Type", "text/plain")]
+    )
+    return [b"SSL certificate was successful" if valid else b"bad upload"]

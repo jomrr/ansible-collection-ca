@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Ca inventory records helpers."""
@@ -20,7 +22,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory_summary import
     _crl_authority_key_identifier,
     _crl_number,
     _crl_update,
-    _load_certificate,
     _oid_name,
     _revoked_from_crl,
 )
@@ -29,6 +30,14 @@ from ansible_collections.jomrr.ca.plugins.module_utils._renewal import (
     renewal_status,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._time import timestamp_z
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    load_certificate as _load_certificate,
+)
+
+try:
+    from cryptography import x509
+except ImportError:
+    pass
 
 
 def _authority_paths(
@@ -202,7 +211,7 @@ def record_certificate_inventory(
 
 def record_crl_inventory(
     params: dict[str, Any],
-    crl,
+    crl: x509.CertificateRevocationList,
 ) -> bool:
     """Record CRL and revocation state as internal inventory fragments."""
     base_dir = str(params["base_dir"]).rstrip("/")

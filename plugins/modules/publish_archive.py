@@ -1,17 +1,23 @@
-#!/usr/bin/python
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Create deterministic public AIA/CDP publish archives on the managed host."""
 
 from __future__ import annotations
 
 import io
 import tarfile
+from collections.abc import Callable
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, cast
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
+    OPERATION_ERRORS,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
     ca_lock_path,
     file_lock,
     read_file,
@@ -185,7 +191,7 @@ def _archive_content(
 
 def run_module() -> None:
     """Run the Ansible module for deterministic public publish archives."""
-    module = AnsibleModule(
+    module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec={
             "base_dir": {"type": "path", "required": True},
             "dest": {"type": "path", "required": True},
@@ -227,9 +233,7 @@ def run_module() -> None:
                 write_file(
                     params["dest"],
                     content,
-                    params["owner"],
-                    params["group"],
-                    params["mode"],
+                    FileAttributes.from_params(params, "mode"),
                     force=True,
                 )
             else:
@@ -242,7 +246,7 @@ def run_module() -> None:
                     )
                     or changed
                 )
-    except Exception as exc:
+    except OPERATION_ERRORS as exc:
         module.fail_json(msg=sanitize_error(exc, params))
 
     module.exit_json(

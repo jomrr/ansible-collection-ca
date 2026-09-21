@@ -5,7 +5,7 @@ authors:
   - Jonas Mauer
 description: Manage private certificate authorities, certificates and revocation lists.
 license:
-  - MIT
+  - GPL-3.0-or-later
 tags:
   - security
   - pki

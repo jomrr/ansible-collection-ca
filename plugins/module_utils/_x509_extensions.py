@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 X.509 extensions helpers."""
@@ -9,6 +11,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from collections.abc import Iterable
+from typing import Any, overload
 
 from ansible_collections.jomrr.ca.plugins.module_utils._profiles import (
     profile_key_usage,
@@ -23,42 +26,52 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
     policy_extension_token,
     policy_extensions,
 )
-from cryptography import x509
-from cryptography.x509.oid import (
-    AuthorityInformationAccessOID,
-    ExtendedKeyUsageOID,
-    NameOID,
-)
 
-NAME_OIDS = {
-    "C": NameOID.COUNTRY_NAME,
-    "countryName": NameOID.COUNTRY_NAME,
-    "ST": NameOID.STATE_OR_PROVINCE_NAME,
-    "stateOrProvinceName": NameOID.STATE_OR_PROVINCE_NAME,
-    "L": NameOID.LOCALITY_NAME,
-    "localityName": NameOID.LOCALITY_NAME,
-    "O": NameOID.ORGANIZATION_NAME,
-    "organizationName": NameOID.ORGANIZATION_NAME,
-    "OU": NameOID.ORGANIZATIONAL_UNIT_NAME,
-    "organizationalUnitName": NameOID.ORGANIZATIONAL_UNIT_NAME,
-    "CN": NameOID.COMMON_NAME,
-    "commonName": NameOID.COMMON_NAME,
-    "emailAddress": NameOID.EMAIL_ADDRESS,
-}
+try:
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import PublicKey
+    from cryptography import x509
+    from cryptography.x509.oid import (
+        AuthorityInformationAccessOID,
+        ExtendedKeyUsageOID,
+        ExtensionOID,
+        NameOID,
+    )
+
+    NAME_OIDS = {
+        "C": NameOID.COUNTRY_NAME,
+        "countryName": NameOID.COUNTRY_NAME,
+        "ST": NameOID.STATE_OR_PROVINCE_NAME,
+        "stateOrProvinceName": NameOID.STATE_OR_PROVINCE_NAME,
+        "L": NameOID.LOCALITY_NAME,
+        "localityName": NameOID.LOCALITY_NAME,
+        "O": NameOID.ORGANIZATION_NAME,
+        "organizationName": NameOID.ORGANIZATION_NAME,
+        "OU": NameOID.ORGANIZATIONAL_UNIT_NAME,
+        "organizationalUnitName": NameOID.ORGANIZATIONAL_UNIT_NAME,
+        "CN": NameOID.COMMON_NAME,
+        "commonName": NameOID.COMMON_NAME,
+        "emailAddress": NameOID.EMAIL_ADDRESS,
+    }
+    EXTENDED_KEY_USAGE_OIDS = {
+        "serverAuth": ExtendedKeyUsageOID.SERVER_AUTH,
+        "clientAuth": ExtendedKeyUsageOID.CLIENT_AUTH,
+        "codeSigning": ExtendedKeyUsageOID.CODE_SIGNING,
+        "emailProtection": ExtendedKeyUsageOID.EMAIL_PROTECTION,
+        "timeStamping": ExtendedKeyUsageOID.TIME_STAMPING,
+        "OCSPSigning": ExtendedKeyUsageOID.OCSP_SIGNING,
+        "smartcardLogon": x509.ObjectIdentifier("1.3.6.1.4.1.311.20.2.2"),
+    }
+    GENERAL_NAME_PREFIXES = {
+        x509.DNSName: "DNS",
+        x509.RFC822Name: "email",
+        x509.UniformResourceIdentifier: "URI",
+        x509.IPAddress: "IP",
+    }
+except ImportError:
+    GENERAL_NAME_PREFIXES = {}
 
 
-EXTENDED_KEY_USAGE_OIDS = {
-    "serverAuth": ExtendedKeyUsageOID.SERVER_AUTH,
-    "clientAuth": ExtendedKeyUsageOID.CLIENT_AUTH,
-    "codeSigning": ExtendedKeyUsageOID.CODE_SIGNING,
-    "emailProtection": ExtendedKeyUsageOID.EMAIL_PROTECTION,
-    "timeStamping": ExtendedKeyUsageOID.TIME_STAMPING,
-    "OCSPSigning": ExtendedKeyUsageOID.OCSP_SIGNING,
-    "smartcardLogon": x509.ObjectIdentifier("1.3.6.1.4.1.311.20.2.2"),
-}
-
-
-def _subject(subject_ordered) -> x509.Name:
+def _subject(subject_ordered: list[dict[str, Any]]) -> x509.Name:
     """Build an X.509 name from ordered subject attributes."""
     attributes = []
     for item in subject_ordered or []:
@@ -74,7 +87,7 @@ def _subject(subject_ordered) -> x509.Name:
     return x509.Name(attributes)
 
 
-def subject_from_params(params: dict) -> x509.Name:
+def subject_from_params(params: dict[str, Any]) -> x509.Name:
     """Build an X.509 subject from module parameters."""
     if params.get("subject_ordered"):
         return _subject(params["subject_ordered"])
@@ -103,7 +116,7 @@ def subject_from_params(params: dict) -> x509.Name:
     return _subject(subject)
 
 
-def _basic_constraints(values):
+def _basic_constraints(values: list[str] | None) -> x509.BasicConstraints:
     """Build a BasicConstraints extension value from OpenSSL-like tokens."""
     ca = False
     path_length = None
@@ -137,7 +150,7 @@ def _key_usage(values: Iterable[str] | None) -> x509.KeyUsage:
     )
 
 
-def _extended_key_usage(values):
+def _extended_key_usage(values: list[str] | None) -> x509.ExtendedKeyUsage:
     """Build an ExtendedKeyUsage extension value from names or OIDs."""
     oids = []
     for value in values or []:
@@ -160,7 +173,9 @@ def _other_name_value(value: str, pkinit_realm: str | None) -> bytes:
     raise ValueError(f"Unsupported otherName value {value}")
 
 
-def _subject_alt_name(values, pkinit_realm: str | None):
+def _subject_alt_name(
+    values: list[str] | None, pkinit_realm: str | None
+) -> x509.SubjectAlternativeName:
     """Build a SubjectAlternativeName extension from OpenSSL-like values."""
     names: list[x509.GeneralName] = []
     for value in values or []:
@@ -203,7 +218,9 @@ def _raw_extension_value(value: str) -> bytes:
     raise ValueError(f"Unsupported raw extension value {value}")
 
 
-def _csr_subject_alt_name(csr):
+def _csr_subject_alt_name(
+    csr: x509.CertificateSigningRequest,
+) -> tuple[x509.SubjectAlternativeName, bool] | None:
     """Return the CSR SAN extension value and critical flag when present."""
     try:
         extension = csr.extensions.get_extension_for_class(x509.SubjectAlternativeName)
@@ -212,16 +229,21 @@ def _csr_subject_alt_name(csr):
     return extension.value, extension.critical
 
 
-def _desired_extensions(params, public_key, signer_public_key, csr_san=None):
+def _desired_extensions(
+    params: dict[str, Any],
+    public_key: PublicKey,
+    signer_public_key: PublicKey,
+    csr_san: tuple[x509.SubjectAlternativeName, bool] | None = None,
+) -> list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]]:
     """Build the desired certificate or CSR extension list."""
     extensions = [
         (
-            x509.ExtensionOID.BASIC_CONSTRAINTS,
+            ExtensionOID.BASIC_CONSTRAINTS,
             True,
             _basic_constraints(params["basic_constraints"]),
         ),
         (
-            x509.ExtensionOID.KEY_USAGE,
+            ExtensionOID.KEY_USAGE,
             bool(params["key_usage_critical"]),
             _key_usage(profile_key_usage(params, public_key)),
         ),
@@ -229,7 +251,7 @@ def _desired_extensions(params, public_key, signer_public_key, csr_san=None):
     if params["extended_key_usage"]:
         extensions.append(
             (
-                x509.ExtensionOID.EXTENDED_KEY_USAGE,
+                ExtensionOID.EXTENDED_KEY_USAGE,
                 bool(params["extended_key_usage_critical"]),
                 _extended_key_usage(params["extended_key_usage"]),
             )
@@ -238,7 +260,7 @@ def _desired_extensions(params, public_key, signer_public_key, csr_san=None):
         realm = (params["pkinit"] or {}).get("realm") or None
         extensions.append(
             (
-                x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
+                ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
                 bool(params["san_critical"]),
                 _subject_alt_name(params["san"], realm),
             )
@@ -247,7 +269,7 @@ def _desired_extensions(params, public_key, signer_public_key, csr_san=None):
         san_value, san_critical = csr_san
         extensions.append(
             (
-                x509.ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
+                ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
                 bool(san_critical),
                 san_value,
             )
@@ -255,7 +277,7 @@ def _desired_extensions(params, public_key, signer_public_key, csr_san=None):
     if params["aia_url"]:
         extensions.append(
             (
-                x509.ExtensionOID.AUTHORITY_INFORMATION_ACCESS,
+                ExtensionOID.AUTHORITY_INFORMATION_ACCESS,
                 False,
                 x509.AuthorityInformationAccess(
                     [
@@ -270,7 +292,7 @@ def _desired_extensions(params, public_key, signer_public_key, csr_san=None):
     if params["cdp_url"]:
         extensions.append(
             (
-                x509.ExtensionOID.CRL_DISTRIBUTION_POINTS,
+                ExtensionOID.CRL_DISTRIBUTION_POINTS,
                 False,
                 x509.CRLDistributionPoints(
                     [
@@ -302,22 +324,43 @@ def _desired_extensions(params, public_key, signer_public_key, csr_san=None):
     if params["include_identifiers"]:
         extensions.append(
             (
-                x509.ExtensionOID.SUBJECT_KEY_IDENTIFIER,
+                ExtensionOID.SUBJECT_KEY_IDENTIFIER,
                 False,
                 x509.SubjectKeyIdentifier.from_public_key(public_key),
             )
         )
         extensions.append(
             (
-                x509.ExtensionOID.AUTHORITY_KEY_IDENTIFIER,
+                ExtensionOID.AUTHORITY_KEY_IDENTIFIER,
                 False,
-                x509.AuthorityKeyIdentifier.from_issuer_public_key(signer_public_key),
+                x509.AuthorityKeyIdentifier(
+                    x509.SubjectKeyIdentifier.from_public_key(signer_public_key).digest,
+                    None,
+                    None,
+                ),
             )
         )
     return extensions
 
 
-def _add_extensions(builder, extensions):
+@overload
+def _add_extensions(
+    builder: x509.CertificateBuilder,
+    extensions: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
+) -> x509.CertificateBuilder: ...
+
+
+@overload
+def _add_extensions(
+    builder: x509.CertificateSigningRequestBuilder,
+    extensions: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
+) -> x509.CertificateSigningRequestBuilder: ...
+
+
+def _add_extensions(
+    builder: x509.CertificateBuilder | x509.CertificateSigningRequestBuilder,
+    extensions: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
+) -> x509.CertificateBuilder | x509.CertificateSigningRequestBuilder:
     """Add extensions to a cryptography builder and reject duplicates."""
     seen = set()
     for oid, critical, value in extensions:
@@ -328,20 +371,14 @@ def _add_extensions(builder, extensions):
     return builder
 
 
-def _extension_maps(extensions):
+def _extension_maps(
+    extensions: x509.Extensions,
+) -> dict[str, x509.Extension[x509.ExtensionType]]:
     """Return extensions keyed by dotted OID string."""
     return {ext.oid.dotted_string: ext for ext in extensions}
 
 
-GENERAL_NAME_PREFIXES = {
-    x509.DNSName: "DNS",
-    x509.RFC822Name: "email",
-    x509.UniformResourceIdentifier: "URI",
-    x509.IPAddress: "IP",
-}
-
-
-def _name_token(name):
+def _name_token(name: x509.GeneralName) -> tuple[object, ...]:
     """Return a comparable token for a GeneralName."""
     for name_type, prefix in GENERAL_NAME_PREFIXES.items():
         if isinstance(name, name_type):
@@ -355,7 +392,7 @@ def _name_token(name):
     return (name.__class__.__name__, repr(name))
 
 
-def _distribution_point_token(point):
+def _distribution_point_token(point: x509.DistributionPoint) -> tuple[object, ...]:
     """Return a comparable token for a CRL distribution point."""
     full_name = tuple(_name_token(name) for name in point.full_name or [])
     crl_issuer = tuple(_name_token(name) for name in point.crl_issuer or [])
@@ -366,7 +403,9 @@ def _distribution_point_token(point):
     return (full_name, relative_name, reasons, crl_issuer)
 
 
-def _extension_token(extension):
+def _extension_token(
+    extension: x509.Extension[x509.ExtensionType],
+) -> tuple[object, ...]:
     """Return a comparable token for an X.509 extension."""
     value = extension.value
     if isinstance(
@@ -408,7 +447,10 @@ def _extension_token(extension):
     return policy_extension_token(value) or (value.__class__.__name__, repr(value))
 
 
-def _extensions_equal(existing, desired) -> bool:
+def _extensions_equal(
+    existing: x509.Extensions,
+    desired: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
+) -> bool:
     """Compare existing cryptography extensions to desired extension tuples."""
     existing_map = _extension_maps(existing)
     desired_map = {

@@ -1,12 +1,18 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Shared CA file context documentation."""
 
+from dataclasses import dataclass
+from typing import ClassVar
 
+
+@dataclass
 class ModuleDocFragment:
     """Ansible documentation fragment."""
 
-    DOCUMENTATION = r"""
+    DOCUMENTATION: ClassVar[str] = r"""
 options:
   base_dir:
     description: Base directory containing the CA keys, certificates and persistent

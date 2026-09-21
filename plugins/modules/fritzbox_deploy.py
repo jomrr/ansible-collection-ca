@@ -1,6 +1,7 @@
-#!/usr/bin/python
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Deploy a FritzBox PEM certificate bundle to FRITZ!OS."""
 
 from __future__ import annotations
@@ -12,11 +13,17 @@ import socket
 import ssl
 import urllib.error
 import urllib.parse
-import urllib.request
 import xml.etree.ElementTree as ET
+from collections.abc import Callable
 from http.client import HTTPResponse
+from typing import Any, cast
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.urls import open_url
+from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
+    OPERATION_ERRORS,
+    require_cryptography,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     ca_lock_path,
     file_lock,
@@ -24,15 +31,13 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     sanitize_error,
 )
 
-CRYPTOGRAPHY_IMPORT_ERROR: Exception | None
 try:
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import rsa
-except Exception as exc:  # pragma: no cover - handled at runtime by Ansible
-    CRYPTOGRAPHY_IMPORT_ERROR = exc
-else:
-    CRYPTOGRAPHY_IMPORT_ERROR = None
+except ImportError:
+    pass
+
 
 PRIVATE_KEY_RE = re.compile(
     rb"-----BEGIN (?:RSA |ENCRYPTED |)PRIVATE KEY-----.*?"
@@ -124,7 +129,10 @@ def _ssl_context(validate_certs: bool) -> ssl.SSLContext:
     """Return an SSL context matching the certificate validation setting."""
     if validate_certs:
         return ssl.create_default_context()
-    return ssl._create_unverified_context()
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+    return context
 
 
 class FritzBoxClient:
@@ -145,6 +153,7 @@ class FritzBoxClient:
         self.password = password
         self.timeout = timeout
         self.context = _ssl_context(validate_certs)
+        self.validate_certs = validate_certs
         self.sid = ""
 
     def _request(
@@ -158,31 +167,23 @@ class FritzBoxClient:
     ) -> str:
         """Execute one FRITZ!OS HTTP request and return decoded text."""
         url = _url(self.url, path, query)
-        request = urllib.request.Request(
-            url,
-            data=data,
-            headers=headers or {},
-            method=method,
-        )
         try:
-            if urllib.parse.urlsplit(url).scheme == "https":
-                response_context = urllib.request.urlopen(
-                    request,
-                    timeout=self.timeout,
-                    context=self.context,
-                )
-            else:
-                response_context = urllib.request.urlopen(
-                    request,
-                    timeout=self.timeout,
-                )
-            with response_context as response:
+            with cast(Callable[..., HTTPResponse], open_url)(
+                url,
+                data=data,
+                headers=headers or {},
+                method=method,
+                timeout=self.timeout,
+                validate_certs=self.validate_certs,
+                follow_redirects="urllib2",
+                use_netrc=False,
+            ) as response:
                 body = response.read()
                 return _decode_response(response, body)
         except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
+            error_body = exc.read().decode("utf-8", errors="replace")
             raise RuntimeError(
-                f"FRITZ!Box request failed with HTTP {exc.code}: {body[:400]}"
+                f"FRITZ!Box request failed with HTTP {exc.code}: {error_body[:400]}"
             ) from exc
         except urllib.error.URLError as exc:
             raise RuntimeError(f"FRITZ!Box request failed: {exc.reason}") from exc
@@ -252,9 +253,11 @@ class FritzBoxClient:
             raise ValueError("url does not contain a host name")
         try:
             raw_socket = socket.create_connection((host, port), self.timeout)
-            with raw_socket:
-                with self.context.wrap_socket(raw_socket, server_hostname=host) as sock:
-                    der_certificate = sock.getpeercert(binary_form=True)
+            with (
+                raw_socket,
+                self.context.wrap_socket(raw_socket, server_hostname=host) as sock,
+            ):
+                der_certificate = sock.getpeercert(binary_form=True)
         except OSError as exc:
             raise RuntimeError(
                 f"Failed to read current FRITZ!Box certificate: {exc}"
@@ -275,7 +278,7 @@ def _deploy_lock_path(base_dir: str, url: str) -> str:
     return ca_lock_path(base_dir, "fritzbox-deploy", _deploy_url(url))
 
 
-def _params(params: dict) -> dict:
+def _params(params: dict[str, Any]) -> dict[str, Any]:
     """Merge certificate and deploy dictionaries into explicit module params."""
     certificate = dict(params.get("certificate") or {})
     deploy = dict(certificate.get("fritzbox_deploy") or {})
@@ -355,7 +358,7 @@ def _validate_bundle(bundle: bytes) -> None:
     except TypeError as exc:
         raise ValueError("FritzBox bundle private key is not readable") from exc
     if not isinstance(private_key, rsa.RSAPrivateKey):
-        raise ValueError("FRITZ!OS certificate import requires an RSA private key")
+        raise TypeError("FRITZ!OS certificate import requires an RSA private key")
 
 
 def _same_certificate(first: x509.Certificate, second: x509.Certificate) -> bool:
@@ -388,9 +391,9 @@ def _import_succeeded(response: str) -> bool:
     return any(marker in response for marker in SUCCESS_MARKERS)
 
 
-def run_module():
+def run_module() -> None:
     """Run the Ansible module for FritzBox certificate deployment."""
-    module = AnsibleModule(
+    module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec={
             "base_dir": {"type": "path", "required": True},
             "certificate": {"type": "dict", "no_log": True},
@@ -408,10 +411,7 @@ def run_module():
         supports_check_mode=False,
     )
 
-    if CRYPTOGRAPHY_IMPORT_ERROR is not None:
-        module.fail_json(
-            msg=f"Failed to import cryptography: {CRYPTOGRAPHY_IMPORT_ERROR}"
-        )
+    require_cryptography(module)
 
     client: FritzBoxClient | None = None
     try:
@@ -437,7 +437,7 @@ def run_module():
                 module.exit_json(changed=False, path=params["bundle_path"])
             client.login()
             client.import_certificate(bundle)
-    except Exception as exc:
+    except OPERATION_ERRORS as exc:
         module.fail_json(msg=sanitize_error(exc, module.params))
     finally:
         if client is not None:
@@ -446,7 +446,7 @@ def run_module():
     module.exit_json(changed=True, path=params["bundle_path"])
 
 
-def main():
+def main() -> None:
     """Execute the module entry point."""
     run_module()
 

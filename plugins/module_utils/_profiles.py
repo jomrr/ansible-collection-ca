@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Certificate profile defaults and profile-specific normalization."""
@@ -9,7 +11,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from cryptography.hazmat.primitives.asymmetric import rsa
+try:
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import PublicKey
+    from cryptography.hazmat.primitives.asymmetric import rsa
+except ImportError:
+    pass
+
 
 __all__ = [
     "CERTIFICATE_DEFAULT_FORMATS",
@@ -106,7 +113,9 @@ CERTIFICATE_DEFAULT_FORMATS: dict[str, list[str]] = {
 FRITZBOX_DIGESTS = {"sha224", "sha256", "sha384"}
 
 
-def _merge_raw_extensions(defaults, overrides):
+def _merge_raw_extensions(
+    defaults: list[dict[str, Any]], overrides: list[dict[str, Any]] | None
+) -> list[dict[str, Any]]:
     """Merge default raw extensions with caller overrides by OID."""
     overrides = list(overrides or [])
     override_oids = {str(item.get("oid")) for item in overrides}
@@ -119,7 +128,7 @@ def _merge_raw_extensions(defaults, overrides):
     return merged
 
 
-def _ad_guid_hex(value) -> str:
+def _ad_guid_hex(value: Any) -> str:
     """Return AD objectGUID bytes as uppercase hex in directory byte order."""
     guid = str(value or "").lower().strip().strip("{}")
     guid_hex = re.sub(r"[-: ]", "", guid)
@@ -146,7 +155,7 @@ def _ad_guid_hex(value) -> str:
     )
 
 
-def _apply_mskdc_extensions(params: dict) -> dict:
+def _apply_mskdc_extensions(params: dict[str, Any]) -> dict[str, Any]:
     """Add PKINIT SAN and NTDS objectGUID extensions to module params."""
     result = dict(params)
     realm = str(result.pop("krb5_realm", "") or "").strip().upper()
@@ -177,7 +186,9 @@ def _apply_mskdc_extensions(params: dict) -> dict:
     return result
 
 
-def apply_profile_defaults(params: dict, defaults: dict) -> dict:
+def apply_profile_defaults(
+    params: dict[str, Any], defaults: dict[str, Any]
+) -> dict[str, Any]:
     """Apply certificate profile defaults without overriding explicit values."""
     result = dict(params)
     if defaults.get("extended_key_usage") and not result.get("extended_key_usage"):
@@ -202,7 +213,7 @@ def apply_profile_defaults(params: dict, defaults: dict) -> dict:
     return result
 
 
-def profile_key_usage(params: dict, public_key) -> list[str]:
+def profile_key_usage(params: dict[str, Any], public_key: PublicKey) -> list[str]:
     """Resolve default key usage against the actual certificate or CSR key."""
     if params["key_usage"] or not params.get("profile"):
         return list(params["key_usage"] or [])
@@ -214,7 +225,7 @@ def profile_key_usage(params: dict, public_key) -> list[str]:
     ]
 
 
-def apply_certificate_profile(params: dict, profile: str) -> dict:
+def apply_certificate_profile(params: dict[str, Any], profile: str) -> dict[str, Any]:
     """Apply built-in certificate profile defaults and validations."""
     if profile not in CERTIFICATE_PROFILE_DEFAULTS:
         raise ValueError(f"Unsupported certificate profile {profile}")

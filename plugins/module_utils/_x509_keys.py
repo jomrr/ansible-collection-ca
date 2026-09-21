@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 X.509 keys helpers."""
@@ -7,14 +9,26 @@ X.509 keys helpers."""
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
-from typing import Any
+from typing import Any, TypeGuard
 
+from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
+    MATERIAL_ERRORS,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import read_file
-from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import ec, ed448, ed25519, rsa
-from cryptography.x509.oid import NameOID
+
+try:
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import (
+        PrivateKey,
+        PublicKey,
+    )
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
+    from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
+    from cryptography.x509.oid import NameOID
+except ImportError:
+    pass
+
 
 PEM_CERT_RE = re.compile(
     rb"-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----\s*",
@@ -43,22 +57,27 @@ KEY_TYPES = (
     "EdDSA25519",
     "EdDSA448",
 )
-DIGESTS: dict[str, Callable[[], hashes.HashAlgorithm]] = {
-    "sha224": hashes.SHA224,
-    "sha256": hashes.SHA256,
-    "sha384": hashes.SHA384,
-    "sha512": hashes.SHA512,
-}
+DIGESTS = ("sha224", "sha256", "sha384", "sha512")
 
 
-def digest_algorithm(name: str) -> hashes.HashAlgorithm:
+def digest_algorithm(
+    name: str,
+) -> hashes.SHA224 | hashes.SHA256 | hashes.SHA384 | hashes.SHA512:
     """Return a cryptography hash object for a digest name."""
     normalized = name.replace("-", "").lower()
     if normalized == "sha1":
         raise ValueError("SHA-1 is not allowed for signatures")
     if normalized not in DIGESTS:
         raise ValueError(f"Unsupported digest {name}")
-    return DIGESTS[normalized]()
+    algorithms: dict[
+        str, type[hashes.SHA224 | hashes.SHA256 | hashes.SHA384 | hashes.SHA512]
+    ] = {
+        "sha224": hashes.SHA224,
+        "sha256": hashes.SHA256,
+        "sha384": hashes.SHA384,
+        "sha512": hashes.SHA512,
+    }
+    return algorithms[normalized]()
 
 
 def _key_type(value: Any) -> str:
@@ -87,7 +106,7 @@ def _key_type(value: Any) -> str:
     return aliases[normalized]
 
 
-def _ec_curve(size: Any):
+def _ec_curve(size: Any) -> ec.EllipticCurve:
     """Return the supported ECDSA curve for a requested key size."""
     curve_size = 256 if size in (None, "", 0, 4096) else int(size)
     if curve_size == 256:
@@ -97,7 +116,7 @@ def _ec_curve(size: Any):
     raise ValueError("ECDSA key_size must be 256 or 384")
 
 
-def _key_spec(params: dict) -> dict[str, Any]:
+def _key_spec(params: dict[str, Any]) -> dict[str, Any]:
     """Resolve module key parameters to a concrete key specification."""
     key_type = _key_type(params.get("key_type"))
     key_size = params.get("key_size")
@@ -113,7 +132,7 @@ def _key_spec(params: dict) -> dict[str, Any]:
     return {"type": key_type}
 
 
-def _key_matches(key, spec: dict[str, Any]) -> bool:
+def _key_matches(key: PrivateKeyTypes, spec: dict[str, Any]) -> TypeGuard[PrivateKey]:
     """Return whether an existing private key matches the requested spec."""
     if spec["type"] == "RSA":
         return isinstance(key, rsa.RSAPrivateKey) and key.key_size == spec["size"]
@@ -129,7 +148,7 @@ def _key_matches(key, spec: dict[str, Any]) -> bool:
     return False
 
 
-def _generate_private_key(spec: dict[str, Any]):
+def _generate_private_key(spec: dict[str, Any]) -> PrivateKey:
     """Generate a private key for a resolved key specification."""
     if spec["type"] == "RSA":
         return rsa.generate_private_key(public_exponent=65537, key_size=spec["size"])
@@ -142,7 +161,9 @@ def _generate_private_key(spec: dict[str, Any]):
     raise ValueError(f"Unsupported key type {spec['type']}")
 
 
-def signature_algorithm(private_key, digest: str):
+def signature_algorithm(
+    private_key: PrivateKey, digest: str
+) -> hashes.SHA224 | hashes.SHA256 | hashes.SHA384 | hashes.SHA512 | None:
     """Return the signing hash or None for EdDSA private keys."""
     algorithm = digest_algorithm(digest)
     if isinstance(private_key, (ed25519.Ed25519PrivateKey, ed448.Ed448PrivateKey)):
@@ -150,15 +171,33 @@ def signature_algorithm(private_key, digest: str):
     return algorithm
 
 
-def load_private_key(path: str, passphrase: str | None):
+def load_private_key(path: str, passphrase: str | None) -> PrivateKeyTypes:
     """Load a PEM private key from disk."""
-    return serialization.load_pem_private_key(
+    key = serialization.load_pem_private_key(
         read_file(path),
         password=passphrase.encode() if passphrase else None,
     )
+    return key
 
 
-def _private_key_pem(key, passphrase: str | None) -> bytes:
+def load_signing_key(path: str, passphrase: str | None) -> PrivateKey:
+    """Load a key accepted by certificate and CRL signature builders."""
+    key = load_private_key(path, passphrase)
+    if not isinstance(
+        key,
+        (
+            rsa.RSAPrivateKey,
+            ec.EllipticCurvePrivateKey,
+            ed25519.Ed25519PrivateKey,
+            ed448.Ed448PrivateKey,
+            dsa.DSAPrivateKey,
+        ),
+    ):
+        raise TypeError("Unsupported private key for certificate signing")
+    return key
+
+
+def _private_key_pem(key: PrivateKey, passphrase: str | None) -> bytes:
     """Serialize a private key as encrypted or unencrypted PKCS#8 PEM."""
     encryption = (
         serialization.BestAvailableEncryption(passphrase.encode())
@@ -172,20 +211,33 @@ def _private_key_pem(key, passphrase: str | None) -> bytes:
     )
 
 
-def _as_public_key(key):
+def _as_public_key(key: PrivateKey | PublicKey) -> PublicKey:
     """Return a public key object from a private or public key object."""
-    public_key_types = (
-        rsa.RSAPublicKey,
-        ec.EllipticCurvePublicKey,
-        ed25519.Ed25519PublicKey,
-        ed448.Ed448PublicKey,
-    )
-    if isinstance(key, public_key_types):
-        return key
-    return key.public_key()
+    if isinstance(
+        key,
+        (
+            rsa.RSAPrivateKey,
+            ec.EllipticCurvePrivateKey,
+            ed25519.Ed25519PrivateKey,
+            ed448.Ed448PrivateKey,
+            dsa.DSAPrivateKey,
+        ),
+    ):
+        return key.public_key()
+    if not isinstance(
+        key,
+        (
+            rsa.RSAPublicKey,
+            ec.EllipticCurvePublicKey,
+            ed25519.Ed25519PublicKey,
+            ed448.Ed448PublicKey,
+        ),
+    ):
+        raise TypeError("Unsupported public key for certificate generation")
+    return key
 
 
-def _public_key_bytes(key) -> bytes:
+def _public_key_bytes(key: PrivateKey | PublicKey) -> bytes:
     """Return DER SubjectPublicKeyInfo bytes for a private or public key."""
     return _as_public_key(key).public_bytes(
         serialization.Encoding.DER,
@@ -193,7 +245,7 @@ def _public_key_bytes(key) -> bytes:
     )
 
 
-def _cert_public_key_bytes(cert) -> bytes:
+def _cert_public_key_bytes(cert: x509.Certificate) -> bytes:
     """Return DER SubjectPublicKeyInfo bytes for a certificate."""
     return cert.public_key().public_bytes(
         serialization.Encoding.DER,
@@ -201,12 +253,12 @@ def _cert_public_key_bytes(cert) -> bytes:
     )
 
 
-def _cert_fingerprint(cert) -> bytes:
+def _cert_fingerprint(cert: x509.Certificate) -> bytes:
     """Return a SHA-256 certificate fingerprint."""
     return cert.fingerprint(hashes.SHA256())
 
 
-def _csr_public_key_bytes(csr) -> bytes:
+def _csr_public_key_bytes(csr: x509.CertificateSigningRequest) -> bytes:
     """Return DER SubjectPublicKeyInfo bytes for a CSR."""
     return csr.public_key().public_bytes(
         serialization.Encoding.DER,
@@ -214,12 +266,12 @@ def _csr_public_key_bytes(csr) -> bytes:
     )
 
 
-def _load_csr(path: str):
+def _load_csr(path: str) -> x509.CertificateSigningRequest:
     """Load a PEM certificate signing request from disk."""
     return x509.load_pem_x509_csr(read_file(path))
 
 
-def _load_csr_bytes(data: bytes):
+def _load_csr_bytes(data: bytes) -> x509.CertificateSigningRequest:
     """Load a PEM or DER certificate signing request from bytes."""
     try:
         return x509.load_pem_x509_csr(data)
@@ -227,13 +279,13 @@ def _load_csr_bytes(data: bytes):
         return x509.load_der_x509_csr(data)
 
 
-def _csr_common_name(csr) -> str:
+def _csr_common_name(csr: x509.CertificateSigningRequest) -> str:
     """Return the first CSR common name when present."""
     values = csr.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
-    return values[0].value if values else ""
+    return str(values[0].value) if values else ""
 
 
-def load_certificate(path: str):
+def load_certificate(path: str) -> x509.Certificate:
     """Load a PEM or DER certificate from disk."""
     data = read_file(path)
     try:
@@ -242,7 +294,7 @@ def load_certificate(path: str):
         return x509.load_der_x509_certificate(data)
 
 
-def load_certificates(path: str):
+def load_certificates(path: str) -> list[x509.Certificate]:
     """Load one or more certificates from a PEM or DER source."""
     data = read_file(path)
     pem_blocks = PEM_CERT_RE.findall(data)
@@ -251,9 +303,9 @@ def load_certificates(path: str):
     return [x509.load_der_x509_certificate(data)]
 
 
-def _load_existing_certificate(path: str):
+def _load_existing_certificate(path: str) -> x509.Certificate | None:
     """Return an existing certificate or None when it cannot be loaded."""
     try:
         return load_certificate(path)
-    except Exception:
+    except MATERIAL_ERRORS:
         return None

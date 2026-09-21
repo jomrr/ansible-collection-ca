@@ -1,35 +1,47 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Deterministic text exports for X.509 certificates."""
 
 from __future__ import annotations
 
-from ansible_collections.jomrr.ca.plugins.module_utils._file import write_file
+from typing import Any
+
+from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
+    write_file,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import colon_hex
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
     certificate_not_valid_before,
     datetime_text,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
-    policy_extension_text,
-)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
     GENERAL_NAME_PREFIXES,
 )
-from cryptography import x509
-from cryptography.hazmat.primitives.asymmetric import ec, ed448, ed25519, rsa
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
+    policy_extension_text,
+)
+
+try:
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import PublicKey
+    from cryptography import x509
+    from cryptography.hazmat.primitives.asymmetric import ec, ed448, ed25519, rsa
+except ImportError:
+    pass
 
 
-def _oid_name(oid) -> str:
+def _oid_name(oid: x509.ObjectIdentifier) -> str:
     """Return a readable OID name with a dotted-string fallback."""
-    name = getattr(oid, "_name", "") or ""
+    name = str(getattr(oid, "_name", "") or "")
     return name if name and name != "Unknown OID" else oid.dotted_string
 
 
-def _public_key_text(public_key) -> list[str]:
+def _public_key_text(public_key: PublicKey) -> list[str]:
     """Return readable subject public key information."""
     if isinstance(public_key, rsa.RSAPublicKey):
         return [
@@ -49,7 +61,7 @@ def _public_key_text(public_key) -> list[str]:
     return [f"            Public Key Algorithm: {public_key.__class__.__name__}"]
 
 
-def _key_usage_text(value) -> str:
+def _key_usage_text(value: x509.KeyUsage) -> str:
     """Return readable Key Usage values."""
     usages = []
     if value.digital_signature:
@@ -73,7 +85,7 @@ def _key_usage_text(value) -> str:
     return ", ".join(usages)
 
 
-def _general_name_text(name) -> str:
+def _general_name_text(name: x509.GeneralName) -> str:
     """Return readable GeneralName text."""
     for name_type, prefix in GENERAL_NAME_PREFIXES.items():
         if isinstance(name, name_type):
@@ -115,7 +127,7 @@ def _authority_identifier_text(value: x509.AuthorityKeyIdentifier) -> list[str]:
     return lines
 
 
-def _extension_value_text(value) -> list[str]:
+def _extension_value_text(value: x509.ExtensionType) -> list[str]:
     """Return readable text lines for a certificate extension value."""
     if isinstance(value, x509.BasicConstraints):
         parts = [f"CA:{str(value.ca).upper()}"]
@@ -130,7 +142,8 @@ def _extension_value_text(value) -> list[str]:
         lines = [", ".join(_general_name_text(name) for name in value)]
     elif isinstance(value, x509.AuthorityInformationAccess):
         lines = [
-            f"{_oid_name(item.access_method)} - {_general_name_text(item.access_location)}"
+            f"{_oid_name(item.access_method)} - "
+            f"{_general_name_text(item.access_location)}"
             for item in value
         ]
     elif isinstance(value, x509.CRLDistributionPoints):
@@ -146,7 +159,7 @@ def _extension_value_text(value) -> list[str]:
     return lines
 
 
-def certificate_text(cert) -> bytes:
+def certificate_text(cert: x509.Certificate) -> bytes:
     """Return a deterministic text representation of a certificate."""
     lines = [
         "Certificate:",
@@ -175,14 +188,12 @@ def certificate_text(cert) -> bytes:
     return ("\n".join(lines) + "\n").encode()
 
 
-def ensure_txt(params, cert):
+def ensure_txt(params: dict[str, Any], cert: x509.Certificate) -> bool:
     """Ensure the optional text certificate export exists."""
     if not params["txt_path"]:
         return False
     return write_file(
         params["txt_path"],
         certificate_text(cert),
-        params["owner"],
-        params["group"],
-        params["public_mode"],
+        FileAttributes.from_params(params),
     )

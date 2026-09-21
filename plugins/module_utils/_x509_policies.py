@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Typed certificate policies and local issuer policy authorization."""
@@ -9,7 +11,11 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlsplit
 
-from cryptography import x509
+try:
+    from cryptography import x509
+except ImportError:
+    pass
+
 
 ANY_POLICY = "2.5.29.32.0"
 POLICY_EXTENSION_OIDS = {"2.5.29.32", "2.5.29.33", "2.5.29.36", "2.5.29.54"}
@@ -40,7 +46,7 @@ def _policy_oid(value: str) -> str:
 def _policies(value: Any) -> list[dict[str, str]]:
     """Validate and sort policy identifiers and optional CPS URIs."""
     if not isinstance(value, list):
-        raise ValueError("certificate_policies must be a list")
+        raise TypeError("certificate_policies must be a list")
     result = []
     seen = set()
     for item in value:
@@ -48,7 +54,7 @@ def _policies(value: Any) -> list[dict[str, str]]:
             raise ValueError("Each certificate policy needs oid and optional cps_uri")
         oid = item.get("oid")
         if not isinstance(oid, str):
-            raise ValueError("Certificate policy oid must be a dotted string")
+            raise TypeError("Certificate policy oid must be a dotted string")
         identifier = _policy_oid(oid)
         if identifier in seen:
             raise ValueError(f"Duplicate certificate policy OID {identifier}")
@@ -85,7 +91,8 @@ def normalize_policy_params(params: dict[str, Any], *, signed: bool) -> None:
     constraints = params.get("policy_constraints", {})
     if not isinstance(constraints, dict) or set(constraints) - CONSTRAINT_FIELDS:
         raise ValueError(
-            "policy_constraints accepts only require_explicit_policy and inhibit_policy_mapping"
+            "policy_constraints accepts only require_explicit_policy "
+            "and inhibit_policy_mapping"
         )
     constraints = {
         field: _skip_certs(value, field)
@@ -127,7 +134,8 @@ def validate_issuer_policies(params: dict[str, Any], issuer: x509.Certificate) -
     requested = {policy["oid"] for policy in params["certificate_policies"]}
     if allowed and not requested:
         raise ValueError(
-            f"Certificate {params['name']} requires certificate_policies matching its issuer"
+            f"Certificate {params['name']} requires "
+            "certificate_policies matching its issuer"
         )
     if requested - allowed:
         raise ValueError(
@@ -166,7 +174,7 @@ def policy_extensions(
     return result
 
 
-def policy_extension_token(value: x509.ExtensionType) -> tuple | None:
+def policy_extension_token(value: x509.ExtensionType) -> tuple[object, ...] | None:
     """Return order-independent tokens for supported policy extensions."""
     if isinstance(value, x509.CertificatePolicies):
         return (

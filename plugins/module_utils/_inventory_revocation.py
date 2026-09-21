@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Ca inventory revocation helpers."""
@@ -139,7 +141,7 @@ def _resolve_revocation_entries_unlocked(
     resolved = []
     for entry in entries or []:
         if not isinstance(entry, dict):
-            raise ValueError("Revocation entries must be dictionaries")
+            raise TypeError("Revocation entries must be dictionaries")
 
         issuer = str(entry.get("issuer", entry.get("authority", authority)) or "")
         if issuer and issuer != authority:
@@ -280,7 +282,9 @@ def _revocation_event(authority: str, entry: dict[str, Any]) -> dict[str, Any]:
     return event
 
 
-def _revocation_map(revocations: list[dict[str, Any]]) -> dict[tuple[str, str], dict]:
+def _revocation_map(
+    revocations: list[dict[str, Any]],
+) -> dict[tuple[str, str], dict[str, Any]]:
     """Return revocation events keyed by issuer and serial hex."""
     result = {}
     for event in revocations:

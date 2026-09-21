@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 File helpers shared by CA collection modules."""
@@ -14,9 +16,11 @@ import pwd
 import re
 import secrets
 import stat
+from collections.abc import Iterable, Iterator
 from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 MASK = "********"
 NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
@@ -41,7 +45,7 @@ def ca_lock_path(base_dir: str, namespace: str, name: str) -> str:
 
 
 @contextmanager
-def file_lock(path: str):
+def file_lock(path: str) -> Iterator[None]:
     """Hold an exclusive advisory lock for one managed file operation."""
     lock_path = Path(path)
     lock_name = lock_path.name
@@ -65,7 +69,7 @@ def file_lock(path: str):
 
 
 @contextmanager
-def file_locks(paths: Iterable[str]):
+def file_locks(paths: Iterable[str]) -> Iterator[None]:
     """Hold multiple exclusive advisory locks in deterministic order."""
     lock_paths = sorted({str(path) for path in paths if path})
     with ExitStack() as stack:
@@ -186,8 +190,8 @@ def _set_attrs_fd(fd: int, owner: Any, group: Any, mode: Any) -> bool:
     stat_result = os.fstat(fd)
     desired_uid = uid(owner)
     desired_gid = gid(group)
-    owner_changed = desired_uid != -1 and stat_result.st_uid != desired_uid
-    group_changed = desired_gid != -1 and stat_result.st_gid != desired_gid
+    owner_changed = desired_uid not in (-1, stat_result.st_uid)
+    group_changed = desired_gid not in (-1, stat_result.st_gid)
     if owner_changed or group_changed:
         os.fchown(fd, desired_uid, desired_gid)
         changed = True
@@ -229,7 +233,7 @@ def _check_final_target(parent_fd: int, name: str, display_path: str) -> None:
 
 def _create_temp_file(parent_fd: int, target_name: str) -> tuple[int, str]:
     """Create a private temporary file below an opened directory."""
-    for _ in range(100):
+    for _item in range(100):
         tmp_name = f".{target_name}.{secrets.token_hex(8)}.ansible_tmp"
         try:
             tmp_fd = os.open(
@@ -246,19 +250,19 @@ def _create_temp_file(parent_fd: int, target_name: str) -> tuple[int, str]:
 
 def _secret_values(value: Any) -> set[str]:
     """Collect secret-looking values from nested module parameters."""
-    secrets: set[str] = set()
+    secret_values: set[str] = set()
     if isinstance(value, dict):
         for key, item in value.items():
             if SECRET_KEY_RE.search(str(key)) and item is not None:
                 text = str(item)
                 if len(text) >= 3:
-                    secrets.add(text)
+                    secret_values.add(text)
             else:
-                secrets.update(_secret_values(item))
+                secret_values.update(_secret_values(item))
     elif isinstance(value, list):
         for item in value:
-            secrets.update(_secret_values(item))
-    return secrets
+            secret_values.update(_secret_values(item))
+    return secret_values
 
 
 def sanitize_error(exc: BaseException, params: Any | None = None) -> str:
@@ -269,12 +273,30 @@ def sanitize_error(exc: BaseException, params: Any | None = None) -> str:
     return SECRET_ASSIGNMENT_RE.sub(r"\1=" + MASK, message)
 
 
+@dataclass(frozen=True)
+class FileAttributes:
+    """Ownership and permissions to apply to a managed file."""
+
+    owner: Any = None
+    group: Any = None
+    mode: Any = "0644"
+
+    @classmethod
+    def from_params(
+        cls, params: dict[str, Any], mode_key: str = "public_mode"
+    ) -> FileAttributes:
+        """Read a module's common file attributes."""
+        return cls(params["owner"], params["group"], params[mode_key])
+
+    def apply(self, path: str) -> bool:
+        """Enforce these attributes on an existing file."""
+        return set_attrs(path, self.owner, self.group, self.mode)
+
+
 def write_file(
     path: str,
     content: bytes,
-    owner: Any,
-    group: Any,
-    mode: Any,
+    attrs: FileAttributes,
     *,
     force: bool = False,
 ) -> bool:
@@ -303,11 +325,11 @@ def write_file(
                     handle.flush()
                     os.fsync(handle.fileno())
                 tmp_fd = _open_no_follow(tmp_name, os.O_RDWR, dir_fd=parent_fd)
-                desired_uid = uid(owner)
-                desired_gid = gid(group)
+                desired_uid = uid(attrs.owner)
+                desired_gid = gid(attrs.group)
                 if desired_uid != -1 or desired_gid != -1:
                     os.fchown(tmp_fd, desired_uid, desired_gid)
-                os.fchmod(tmp_fd, _mode(mode))
+                os.fchmod(tmp_fd, _mode(attrs.mode))
                 os.close(tmp_fd)
                 tmp_fd = -1
                 os.replace(
@@ -326,7 +348,19 @@ def write_file(
                         os.unlink(tmp_name, dir_fd=parent_fd)
                     except FileNotFoundError:
                         pass
-        attrs_changed = _set_attrs_at(parent_fd, target_name, owner, group, mode)
+        attrs_changed = _set_attrs_at(
+            parent_fd, target_name, attrs.owner, attrs.group, attrs.mode
+        )
         return changed or attrs_changed
     finally:
         os.close(parent_fd)
+
+
+def file_argument_spec() -> dict[str, dict[str, Any]]:
+    """Common ownership, public file mode and overwrite options."""
+    return {
+        "owner": {"type": "str"},
+        "group": {"type": "str"},
+        "mode": {"type": "str", "default": "0644"},
+        "force": {"type": "bool", "default": False},
+    }

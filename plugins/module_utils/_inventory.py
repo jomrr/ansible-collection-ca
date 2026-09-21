@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Ca inventory helpers."""
@@ -10,6 +12,7 @@ import json
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
     file_lock,
     write_file,
 )
@@ -33,7 +36,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     parse_datetime,
 )
 
-CRYPTOGRAPHY_IMPORT_ERROR = None
+try:
+    from cryptography import x509
+except ImportError:
+    pass
 
 __all__ = [
     "_compose_inventory_if_configured_unlocked",
@@ -95,7 +101,7 @@ def update_certificates_inventory(
 
 def update_crl_inventory(
     params: dict[str, Any],
-    crl,
+    crl: x509.CertificateRevocationList,
 ) -> bool:
     """Record CRL fragments and compose inventory in one transaction."""
     base_dir = str(params["base_dir"]).rstrip("/")
@@ -111,7 +117,7 @@ def update_crl_inventory(
 
 def _status(
     record: dict[str, Any],
-    revocations: dict[tuple[str, str], dict],
+    revocations: dict[tuple[str, str], dict[str, Any]],
 ) -> dict[str, Any]:
     """Return status for an issued certificate record."""
     issuer = str(record["issuer"])
@@ -134,7 +140,7 @@ def _status(
 def _with_status(
     record: dict[str, Any],
     current_pointers: dict[str, dict[str, Any]],
-    revocations: dict[tuple[str, str], dict],
+    revocations: dict[tuple[str, str], dict[str, Any]],
 ) -> dict[str, Any]:
     """Return an issued certificate with status and current flag."""
     result = dict(record)
@@ -233,9 +239,7 @@ def write_composed_inventory(
     base_dir: str,
     ca_name: str,
     base_url: str,
-    owner: Any,
-    group: Any,
-    mode: str = "0644",
+    attrs: FileAttributes | None = None,
     force: bool = False,
 ) -> bool:
     """Write the composed CA inventory file in an inventory transaction."""
@@ -244,9 +248,7 @@ def write_composed_inventory(
             base_dir=base_dir,
             ca_name=ca_name,
             base_url=base_url,
-            owner=owner,
-            group=group,
-            mode=mode,
+            attrs=attrs,
             force=force,
         )
 
@@ -256,9 +258,7 @@ def _write_composed_inventory_unlocked(
     base_dir: str,
     ca_name: str,
     base_url: str,
-    owner: Any,
-    group: Any,
-    mode: str = "0644",
+    attrs: FileAttributes | None = None,
     force: bool = False,
 ) -> bool:
     """Write the composed CA inventory file while the state lock is held."""
@@ -277,9 +277,7 @@ def _write_composed_inventory_unlocked(
     return write_file(
         _inventory_path(base_dir),
         content,
-        owner,
-        group,
-        mode,
+        attrs or FileAttributes(),
         force=force,
     )
 
@@ -293,8 +291,7 @@ def _compose_inventory_if_configured_unlocked(params: dict[str, Any]) -> bool:
         base_dir=str(params["base_dir"]),
         ca_name=ca_name,
         base_url=str(params.get("base_url") or ""),
-        owner=params.get("owner"),
-        group=params.get("group"),
+        attrs=FileAttributes(params.get("owner"), params.get("group")),
     )
 
 

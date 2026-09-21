@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 X.509 helpers."""
@@ -8,6 +10,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
+    CRYPTOGRAPHY_IMPORT_ERROR,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     ca_lock_path,
     file_locks,
@@ -39,8 +44,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     digest_algorithm,
     load_certificate,
     load_certificates,
-    load_private_key,
     signature_algorithm,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    load_signing_key as load_private_key,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
     _archive_existing_material,
@@ -57,12 +64,20 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     certificate_params,
     normalize_formats,
 )
-
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
     validate_issuer_policies,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
+    CertificateSpec,
+    SignerMaterial,
+)
 
-CRYPTOGRAPHY_IMPORT_ERROR = None
+try:
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import PrivateKey
+    from cryptography import x509
+except ImportError:
+    pass
+
 
 __all__ = [
     "CRYPTOGRAPHY_IMPORT_ERROR",
@@ -84,7 +99,9 @@ __all__ = [
 ]
 
 
-def _renewal_decision(params: dict, existing_cert) -> dict[str, Any]:
+def _renewal_decision(
+    params: dict[str, Any], existing_cert: x509.Certificate | None
+) -> dict[str, Any]:
     """Return renewal and rekey decisions for an existing certificate."""
     if existing_cert is None:
         return renewal_decision(
@@ -102,13 +119,13 @@ def _renewal_decision(params: dict, existing_cert) -> dict[str, Any]:
 
 
 def ensure_x509(
-    params: dict,
+    params: dict[str, Any],
     *,
     signed: bool,
     authority: bool = False,
     manage_directory: bool = False,
     manage_chain: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Ensure X.509 key, CSR, certificate, exports, and chain artifacts."""
     params = _with_derived_paths(
         params,
@@ -132,15 +149,15 @@ def ensure_x509(
 
 
 def ensure_x509_many(
-    params_list: list[dict],
+    params_list: list[dict[str, Any]],
     *,
     signed: bool,
     authority: bool = False,
     manage_directory: bool = False,
     manage_chain: bool = False,
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """Ensure multiple X.509 objects while caching shared signer material."""
-    derived = [
+    derived_params = [
         _with_derived_paths(
             params,
             authority=authority,
@@ -161,69 +178,126 @@ def ensure_x509_many(
             )
             for params in params_list
         ]
-
-    groups: dict[str, list[tuple[int, dict]]] = {}
-    order: list[str] = []
-    for index, params in enumerate(derived):
-        signer_lock_path = str(params["signer_lock_path"])
-        if signer_lock_path not in groups:
-            groups[signer_lock_path] = []
-            order.append(signer_lock_path)
-        groups[signer_lock_path].append((index, params))
-
-    results: list[dict] = [{} for _ in derived]
-    for signer_lock_path in order:
-        group = groups[signer_lock_path]
-        lock_paths = [signer_lock_path, *(params["lock_path"] for _, params in group)]
-        with file_locks(lock_paths):
-            first_params = group[0][1]
-            signer_cert = load_certificate(first_params["signer_cert_path"])
-            for _, params in group:
-                validate_issuer_policies(params, signer_cert)
-            signer_key = load_private_key(
-                first_params["signer_key_path"],
-                first_params["signer_key_passphrase"],
-            )
-            needs_chain = any(
-                set(params["formats"]).intersection(
-                    {"pfx", "p12", "fullchain", "fritzbox"}
-                )
-                for _, params in group
-            )
-            chain_content = (
-                _chain_content(first_params, signer_cert) if needs_chain else b""
-            )
-            extra_certs = (
-                _chain_certificates(first_params, signer_cert) if needs_chain else []
-            )
+    groups: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+    for index, derived in enumerate(derived_params):
+        groups.setdefault(str(derived["signer_lock_path"]), []).append((index, derived))
+    results: list[dict[str, Any]] = [{} for _item in params_list]
+    for signer_lock_path, group in groups.items():
+        with file_locks(
+            [signer_lock_path, *(params["lock_path"] for _index, params in group)]
+        ):
+            signer = _group_signer(group)
             for index, params in group:
                 results[index] = _ensure_x509_locked(
                     params,
                     signed=signed,
                     manage_directory=manage_directory,
                     manage_chain=manage_chain,
-                    signer_key=signer_key,
-                    signer_cert=signer_cert,
-                    chain_content=chain_content,
-                    extra_certs=extra_certs,
+                    signer=signer,
                 )
     return results
 
 
+def _group_signer(group: list[tuple[int, dict[str, Any]]]) -> SignerMaterial:
+    """Load and validate issuer material once for a locked batch."""
+    first = group[0][1]
+    signer = SignerMaterial(cert=load_certificate(first["signer_cert_path"]))
+    for _index, params in group:
+        if signer.cert is not None:
+            validate_issuer_policies(params, signer.cert)
+    signer.key = load_private_key(
+        first["signer_key_path"], first["signer_key_passphrase"]
+    )
+    if any(
+        set(params["formats"]).intersection({"pfx", "p12", "fullchain", "fritzbox"})
+        for _index, params in group
+    ):
+        signer.chain_content = _chain_content(first, signer.cert)
+        signer.extra_certs = _chain_certificates(first, signer.cert)
+    return signer
+
+
+def _directory_change(params: dict[str, Any], manage_directory: bool) -> bool:
+    """Enforce the certificate directory when requested."""
+    return bool(
+        manage_directory
+        and _ensure_directory(
+            params["directory_path"],
+            params["owner"],
+            params["group"],
+            params["directory_mode"],
+        )
+    )
+
+
+def _ensure_exports(
+    params: dict[str, Any],
+    cert: x509.Certificate,
+    signer: SignerMaterial,
+    key: PrivateKey | None,
+    manage_chain: bool,
+) -> dict[str, Any]:
+    """Write the requested public and private certificate exports."""
+    changes = {
+        "der_changed": _ensure_der(params, cert),
+        "txt_changed": ensure_txt(params, cert),
+        "chain_changed": _ensure_chain(params) if manage_chain else False,
+        "pkcs12_changed": False,
+        "fritzbox_bundle_changed": False,
+    }
+    chain_content = signer.chain_content
+    extra_certs = signer.extra_certs
+    if not params["authority"] and set(params["formats"]).intersection(
+        {"pfx", "p12", "fullchain", "fritzbox"}
+    ):
+        chain_content = chain_content or _chain_content(params, signer.cert)
+        if key is not None:
+            extra_certs = extra_certs or _chain_certificates(params, signer.cert)
+    paths: dict[str, str] = {}
+    if key is not None:
+        changes["pkcs12_changed"], paths = _ensure_pkcs12_exports(
+            params, key, cert, extra_certs
+        )
+    changes["fullchain_changed"] = _ensure_fullchain_bundle(params, cert, chain_content)
+    if key is not None:
+        changes["fritzbox_bundle_changed"] = _ensure_fritzbox_bundle(
+            params, cert, chain_content
+        )
+    return {**changes, "pkcs12_paths": paths}
+
+
+def _result(
+    params: dict[str, Any],
+    changes: dict[str, Any],
+    renewal: dict[str, Any],
+) -> dict[str, Any]:
+    """Combine artifact changes with stable result metadata."""
+    return {
+        **changes,
+        "changed": any(
+            value for name, value in changes.items() if name.endswith("_changed")
+        ),
+        "formats": params["formats"],
+        "renewal": renewal,
+        "csr_path": params["csr_path"],
+        "cert_path": params["cert_path"],
+        "txt_path": params["txt_path"],
+        "fullchain_path": params.get("fullchain_path", ""),
+        "fritzbox_bundle_path": params.get("fritzbox_bundle_path", ""),
+    }
+
+
 def _ensure_x509_from_csr_locked(
-    params: dict,
+    params: dict[str, Any],
     *,
     signed: bool,
     manage_directory: bool,
     manage_chain: bool,
-    signer_key=None,
-    signer_cert=None,
-    chain_content: bytes | None = None,
-) -> dict:
+    signer: SignerMaterial,
+) -> dict[str, Any]:
     """Ensure one signed certificate from an externally supplied CSR."""
     if not signed:
         raise ValueError("CSR signing requires an issuing CA")
-
     unsupported = sorted(
         set(params["formats"]).intersection({"pfx", "p12", "fritzbox"})
     )
@@ -232,216 +306,97 @@ def _ensure_x509_from_csr_locked(
             "CSR signing cannot create formats that require a private key: "
             + ", ".join(unsupported)
         )
-
-    directory_changed = False
-    chain_changed = False
-    if manage_directory:
-        directory_changed = _ensure_directory(
-            params["directory_path"],
-            params["owner"],
-            params["group"],
-            params["directory_mode"],
-        )
-
-    existing_cert = _load_existing_certificate(params["cert_path"])
-    renewal_decision = _renewal_decision(params, existing_cert)
-    if renewal_decision["rekey"]:
-        renewal_decision = dict(renewal_decision)
-        renewal_decision["rekey"] = False
-
-    csr, csr_changed = _ensure_external_csr(params)
-    subject = csr.subject
-
-    if signer_key is None:
-        signer_key = load_private_key(
-            params["signer_key_path"], params["signer_key_passphrase"]
-        )
-    if signer_cert is None:
-        signer_cert = load_certificate(params["signer_cert_path"])
-
-    cert_extensions = _desired_extensions(
-        params,
-        csr.public_key(),
-        signer_cert.public_key(),
-        _csr_subject_alt_name(csr),
-    )
-    cert, cert_changed = _ensure_certificate(
-        params,
-        csr.public_key(),
-        subject,
-        cert_extensions,
-        signer_key,
-        signer_cert,
-        renewal_decision,
-        existing_cert,
-    )
-    der_changed = _ensure_der(params, cert)
-    txt_changed = ensure_txt(params, cert)
-    if manage_chain:
-        chain_changed = _ensure_chain(params)
-
-    chain_content = chain_content if chain_content is not None else b""
-    if "fullchain" in params["formats"] and not chain_content:
-        chain_content = _chain_content(params, signer_cert)
-    fullchain_changed = _ensure_fullchain_bundle(params, cert, chain_content)
-
-    return {
-        "changed": directory_changed
-        or csr_changed
-        or cert_changed
-        or der_changed
-        or txt_changed
-        or chain_changed
-        or fullchain_changed,
-        "directory_changed": directory_changed,
+    changes = {
+        "directory_changed": _directory_change(params, manage_directory),
         "archive_changed": False,
         "key_changed": False,
-        "csr_changed": csr_changed,
-        "cert_changed": cert_changed,
-        "der_changed": der_changed,
-        "txt_changed": txt_changed,
-        "chain_changed": chain_changed,
-        "pkcs12_changed": False,
-        "fullchain_changed": fullchain_changed,
-        "fritzbox_bundle_changed": False,
-        "formats": params["formats"],
-        "renewal": renewal_decision,
+    }
+    existing_cert = _load_existing_certificate(params["cert_path"])
+    renewal = _renewal_decision(params, existing_cert)
+    renewal["rekey"] = False
+    csr, changes["csr_changed"] = _ensure_external_csr(params)
+    if signer.key is None:
+        signer.key = load_private_key(
+            params["signer_key_path"], params["signer_key_passphrase"]
+        )
+    if signer.cert is None:
+        signer.cert = load_certificate(params["signer_cert_path"])
+    spec = CertificateSpec(
+        csr.public_key(),
+        csr.subject,
+        _desired_extensions(
+            params,
+            csr.public_key(),
+            signer.cert.public_key(),
+            _csr_subject_alt_name(csr),
+        ),
+    )
+    cert, changes["cert_changed"] = _ensure_certificate(
+        params, spec, signer, renewal, existing_cert
+    )
+    changes.update(_ensure_exports(params, cert, signer, None, manage_chain))
+    return {
+        **_result(params, changes, renewal),
         "csr_mode": True,
         "common_name": _csr_common_name(csr),
-        "csr_path": params["csr_path"],
-        "cert_path": params["cert_path"],
-        "txt_path": params["txt_path"],
-        "pkcs12_paths": {},
-        "fullchain_path": params.get("fullchain_path", ""),
         "fritzbox_bundle_path": "",
     }
 
 
 def _ensure_x509_locked(
-    params: dict,
+    params: dict[str, Any],
     *,
     signed: bool,
     manage_directory: bool,
     manage_chain: bool,
-    signer_key=None,
-    signer_cert=None,
-    chain_content: bytes | None = None,
-    extra_certs: list[Any] | None = None,
-) -> dict:
+    signer: SignerMaterial | None = None,
+) -> dict[str, Any]:
     """Ensure one X.509 object while holding its object lock."""
+    signer = signer or SignerMaterial()
     if signed:
-        if signer_cert is None:
-            signer_cert = load_certificate(params["signer_cert_path"])
-        validate_issuer_policies(params, signer_cert)
+        if signer.cert is None:
+            signer.cert = load_certificate(params["signer_cert_path"])
+        validate_issuer_policies(params, signer.cert)
     if _external_csr_configured(params):
         return _ensure_x509_from_csr_locked(
             params,
             signed=signed,
             manage_directory=manage_directory,
             manage_chain=manage_chain,
-            signer_key=signer_key,
-            signer_cert=signer_cert,
-            chain_content=chain_content,
+            signer=signer,
         )
-
-    directory_changed = False
-    chain_changed = False
-    if manage_directory:
-        directory_changed = _ensure_directory(
-            params["directory_path"],
-            params["owner"],
-            params["group"],
-            params["directory_mode"],
-        )
+    changes = {
+        "directory_changed": _directory_change(params, manage_directory),
+        "archive_changed": False,
+    }
     existing_cert = _load_existing_certificate(params["cert_path"])
-    renewal_decision = _renewal_decision(params, existing_cert)
-    archive_changed = False
-    if renewal_decision["rekey"]:
-        archive_changed = _archive_existing_material(
-            params,
-            existing_cert,
-            include_private_key=True,
+    renewal = _renewal_decision(params, existing_cert)
+    if renewal["rekey"]:
+        changes["archive_changed"] = _archive_existing_material(
+            params, existing_cert, include_private_key=True
         )
-    key, key_changed = _ensure_key(
-        params,
-        rekey=renewal_decision["rekey"],
-        existing_cert=existing_cert,
+    key, changes["key_changed"] = _ensure_key(
+        params, rekey=renewal["rekey"], existing_cert=existing_cert
     )
     subject = subject_from_params(params)
-    signer_key = signer_key or key
-    if signed:
-        if signer_key is key:
-            signer_key = load_private_key(
-                params["signer_key_path"], params["signer_key_passphrase"]
-            )
-
-    signer_public_key = (
-        signer_cert.public_key() if signer_cert is not None else key.public_key()
-    )
-    csr_extensions = _desired_extensions(params, key.public_key(), signer_public_key)
-    _, csr_changed = _ensure_csr(params, key, subject, csr_extensions)
-    cert_extensions = _desired_extensions(params, key.public_key(), signer_public_key)
-    cert, cert_changed = _ensure_certificate(
+    if signer.key is None:
+        signer.key = (
+            load_private_key(params["signer_key_path"], params["signer_key_passphrase"])
+            if signed
+            else key
+        )
+    extensions = _desired_extensions(
         params,
-        key,
-        subject,
-        cert_extensions,
-        signer_key,
-        signer_cert,
-        renewal_decision,
+        key.public_key(),
+        signer.cert.public_key() if signer.cert is not None else key.public_key(),
+    )
+    _csr, changes["csr_changed"] = _ensure_csr(params, key, subject, extensions)
+    cert, changes["cert_changed"] = _ensure_certificate(
+        params,
+        CertificateSpec(key, subject, extensions),
+        signer,
+        renewal,
         existing_cert,
     )
-    der_changed = _ensure_der(params, cert)
-    txt_changed = ensure_txt(params, cert)
-    if manage_chain:
-        chain_changed = _ensure_chain(params)
-    chain_content = chain_content if chain_content is not None else b""
-    extra_certs = extra_certs if extra_certs is not None else []
-    if not params["authority"] and set(params["formats"]).intersection(
-        {"pfx", "p12", "fullchain", "fritzbox"}
-    ):
-        if not chain_content:
-            chain_content = _chain_content(params, signer_cert)
-        if not extra_certs:
-            extra_certs = _chain_certificates(params, signer_cert)
-    pkcs12_changed, pkcs12_paths = _ensure_pkcs12_exports(
-        params,
-        key,
-        cert,
-        extra_certs,
-    )
-    fullchain_changed = _ensure_fullchain_bundle(params, cert, chain_content)
-    fritzbox_bundle_changed = _ensure_fritzbox_bundle(params, cert, chain_content)
-
-    return {
-        "changed": directory_changed
-        or archive_changed
-        or key_changed
-        or csr_changed
-        or cert_changed
-        or der_changed
-        or txt_changed
-        or chain_changed
-        or pkcs12_changed
-        or fullchain_changed
-        or fritzbox_bundle_changed,
-        "directory_changed": directory_changed,
-        "archive_changed": archive_changed,
-        "key_changed": key_changed,
-        "csr_changed": csr_changed,
-        "cert_changed": cert_changed,
-        "der_changed": der_changed,
-        "txt_changed": txt_changed,
-        "chain_changed": chain_changed,
-        "pkcs12_changed": pkcs12_changed,
-        "fullchain_changed": fullchain_changed,
-        "fritzbox_bundle_changed": fritzbox_bundle_changed,
-        "formats": params["formats"],
-        "renewal": renewal_decision,
-        "csr_path": params["csr_path"],
-        "cert_path": params["cert_path"],
-        "txt_path": params["txt_path"],
-        "pkcs12_paths": pkcs12_paths,
-        "fullchain_path": params.get("fullchain_path", ""),
-        "fritzbox_bundle_path": params.get("fritzbox_bundle_path", ""),
-    }
+    changes.update(_ensure_exports(params, cert, signer, key, manage_chain))
+    return _result(params, changes, renewal)

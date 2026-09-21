@@ -1,15 +1,24 @@
-#!/usr/bin/python
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Manage an ordered PEM certificate chain on the managed host."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any, cast
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
+    OPERATION_ERRORS,
+    require_cryptography,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
     ca_lock_path,
+    file_argument_spec,
     file_locks,
     sanitize_error,
     write_file,
@@ -17,23 +26,20 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
 from ansible_collections.jomrr.ca.plugins.module_utils._text import certificate_text
 from ansible_collections.jomrr.ca.plugins.module_utils._x509 import load_certificates
 
-CRYPTOGRAPHY_IMPORT_ERROR: Exception | None
 try:
     from cryptography import x509
     from cryptography.hazmat.primitives import serialization
-except Exception as exc:  # pragma: no cover - handled at runtime by Ansible
-    CRYPTOGRAPHY_IMPORT_ERROR = exc
-else:
-    CRYPTOGRAPHY_IMPORT_ERROR = None
+except ImportError:
+    pass
 
 
 SUPPORTED_FORMATS = {"pem", "der", "txt"}
 
 
-def _formats(value) -> list[str]:
+def _formats(value: Any) -> list[str]:
     """Return normalized CA chain output formats."""
     if isinstance(value, str):
-        raise ValueError("formats must be a list")
+        raise TypeError("formats must be a list")
     formats = [str(item).lower() for item in (value or ["pem", "der", "txt"])]
     unsupported = sorted(set(formats).difference(SUPPORTED_FORMATS))
     if unsupported:
@@ -182,9 +188,9 @@ def _chain_content(certificates: list[x509.Certificate], chain_format: str) -> b
     raise ValueError(f"Unsupported CA chain format: {chain_format}")
 
 
-def run_module():
+def run_module() -> None:
     """Run the Ansible module for CA chain files."""
-    module = AnsibleModule(
+    module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec={
             "base_dir": {"type": "path", "required": True},
             "name": {"type": "str", "required": True},
@@ -193,18 +199,12 @@ def run_module():
                 "elements": "str",
                 "default": ["pem", "der", "txt"],
             },
-            "owner": {"type": "str"},
-            "group": {"type": "str"},
-            "mode": {"type": "str", "default": "0644"},
-            "force": {"type": "bool", "default": False},
+            **file_argument_spec(),
         },
         supports_check_mode=False,
     )
 
-    if CRYPTOGRAPHY_IMPORT_ERROR is not None:
-        module.fail_json(
-            msg=f"Failed to import cryptography: {CRYPTOGRAPHY_IMPORT_ERROR}"
-        )
+    require_cryptography(module)
 
     params = module.params
     try:
@@ -230,15 +230,13 @@ def run_module():
                         write_file(
                             path,
                             content,
-                            params["owner"],
-                            params["group"],
-                            params["mode"],
+                            FileAttributes.from_params(params, "mode"),
                             force=params["force"],
                         )
                         or changed
                     )
                 state = "present"
-    except Exception as exc:
+    except OPERATION_ERRORS as exc:
         module.fail_json(msg=sanitize_error(exc, module.params))
 
     module.exit_json(
@@ -249,7 +247,7 @@ def run_module():
     )
 
 
-def main():
+def main() -> None:
     """Execute the module entry point."""
     run_module()
 

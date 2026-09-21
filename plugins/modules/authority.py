@@ -1,16 +1,23 @@
-#!/usr/bin/python
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Manage a CA authority certificate."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import Any, cast
+
 from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
+    OPERATION_ERRORS,
+    require_cryptography,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
     update_authority_inventory,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
-    CRYPTOGRAPHY_IMPORT_ERROR,
     ca_authority_argument_spec,
     ensure_x509,
     sanitize_error,
@@ -28,7 +35,9 @@ ISSUING_CA_DEFAULTS = {
 }
 
 
-def _apply_authority_defaults(params: dict, defaults: dict) -> dict:
+def _apply_authority_defaults(
+    params: dict[str, Any], defaults: dict[str, Any]
+) -> dict[str, Any]:
     """Apply authority defaults without overriding explicit module values."""
     result = dict(params)
     for key, value in defaults.items():
@@ -37,7 +46,7 @@ def _apply_authority_defaults(params: dict, defaults: dict) -> dict:
     return result
 
 
-def _authority_params(params: dict) -> tuple[dict, bool]:
+def _authority_params(params: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     """Return normalized authority parameters and whether it is parent-signed."""
     result = dict(params)
     name = str(result["name"]).strip()
@@ -62,17 +71,14 @@ def _authority_params(params: dict) -> tuple[dict, bool]:
     return result, signed
 
 
-def run_module():
+def run_module() -> None:
     """Run the Ansible module for CA authorities."""
-    module = AnsibleModule(
+    module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec=ca_authority_argument_spec(),
         supports_check_mode=False,
     )
 
-    if CRYPTOGRAPHY_IMPORT_ERROR is not None:
-        module.fail_json(
-            msg=f"Failed to import cryptography: {CRYPTOGRAPHY_IMPORT_ERROR}"
-        )
+    require_cryptography(module)
 
     try:
         params, signed = _authority_params(module.params)
@@ -80,13 +86,13 @@ def run_module():
         inventory_changed = update_authority_inventory(params, result)
         result["inventory_changed"] = inventory_changed
         result["changed"] = result["changed"] or inventory_changed
-    except Exception as exc:
+    except OPERATION_ERRORS as exc:
         module.fail_json(msg=sanitize_error(exc, module.params))
 
     module.exit_json(**result)
 
 
-def main():
+def main() -> None:
     """Execute the module entry point."""
     run_module()
 

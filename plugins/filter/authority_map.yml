@@ -1,6 +1,7 @@
 ---
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 DOCUMENTATION:
   name: authority_map
   short_description: Index and validate certificate authorities by name

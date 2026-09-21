@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Shared UTC timestamp helpers for CA collection modules."""
@@ -16,13 +18,13 @@ ASN1_UTC_RE = re.compile(r"^\d{14}Z$")
 def utc(value: _dt.datetime) -> _dt.datetime:
     """Return a timezone-aware UTC datetime."""
     if value.tzinfo is None:
-        return value.replace(tzinfo=_dt.timezone.utc)
-    return value.astimezone(_dt.timezone.utc)
+        return value.replace(tzinfo=_dt.UTC)
+    return value.astimezone(_dt.UTC)
 
 
 def now_utc(*, strip_microseconds: bool = False) -> _dt.datetime:
     """Return the current UTC time."""
-    value = _dt.datetime.now(_dt.timezone.utc)
+    value = _dt.datetime.now(_dt.UTC)
     if strip_microseconds:
         return value.replace(microsecond=0)
     return value
@@ -36,10 +38,8 @@ def parse_datetime(value: Any) -> _dt.datetime | None:
         return utc(value)
     text = str(value).strip()
     if ASN1_UTC_RE.match(text):
-        return _dt.datetime.strptime(text, "%Y%m%d%H%M%SZ").replace(
-            tzinfo=_dt.timezone.utc
-        )
-    return utc(_dt.datetime.fromisoformat(text.replace("Z", "+00:00")))
+        return _dt.datetime.strptime(text, "%Y%m%d%H%M%SZ").replace(tzinfo=_dt.UTC)
+    return utc(_dt.datetime.fromisoformat(text))
 
 
 def timestamp_z(value: _dt.datetime) -> str:
@@ -60,18 +60,18 @@ def datetime_text(value: _dt.datetime) -> str:
 def certificate_not_valid_before(cert: Any) -> _dt.datetime:
     """Return a certificate not-before timestamp normalized to UTC."""
     value = getattr(cert, "not_valid_before_utc", None)
-    return value if value is not None else utc(cert.not_valid_before)
+    return utc(value if value is not None else cert.not_valid_before)
 
 
 def certificate_not_valid_after(cert: Any) -> _dt.datetime:
     """Return a certificate not-after timestamp normalized to UTC."""
     value = getattr(cert, "not_valid_after_utc", None)
-    return value if value is not None else utc(cert.not_valid_after)
+    return utc(value if value is not None else cert.not_valid_after)
 
 
 def object_datetime(obj: Any, name: str) -> _dt.datetime:
     """Return a named cryptography timestamp across versioned UTC attributes."""
     value = getattr(obj, f"{name}_utc", None)
     if value is not None:
-        return value
+        return utc(value)
     return utc(getattr(obj, name))

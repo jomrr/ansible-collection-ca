@@ -1,7 +1,8 @@
 # Source provenance
 
 Ported from `jomrr/ansible-role-ca`, commit
-`0e59800e7528dbe2ad8eeaaf962a849f25d0bd92` (MIT, Jonas Mauer).
+`0e59800e7528dbe2ad8eeaaf962a849f25d0bd92` (Jonas Mauer).
+The collection and its ported sources are licensed under GPL-3.0-or-later.
 The source role remains unchanged. The retained reference pages describe the
 original file layout and models; collection module documentation is authoritative.
 

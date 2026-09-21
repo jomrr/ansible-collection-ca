@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 X.509 material helpers."""
@@ -8,8 +10,13 @@ from __future__ import annotations
 
 import datetime as _dt
 from pathlib import Path
+from typing import Any
 
+from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
+    MATERIAL_ERRORS,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
     read_file,
     set_attrs,
     write_file,
@@ -39,11 +46,22 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     load_private_key,
     signature_algorithm,
 )
-from cryptography import x509
-from cryptography.hazmat.primitives import serialization
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
+    CertificateSpec,
+    SignerMaterial,
+)
+
+try:
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import (
+        PrivateKey,
+    )
+    from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
+except ImportError:
+    pass
 
 
-def _ensure_directory(path: str | None, owner, group, mode) -> bool:
+def _ensure_directory(path: str | None, owner: Any, group: Any, mode: Any) -> bool:
     """Create a directory and enforce requested attributes."""
     if not path:
         return False
@@ -51,7 +69,7 @@ def _ensure_directory(path: str | None, owner, group, mode) -> bool:
     return set_attrs(path, owner, group, mode)
 
 
-def _archive_dir(params: dict, cert) -> str:
+def _archive_dir(params: dict[str, Any], cert: x509.Certificate) -> str:
     """Return the archive directory for one existing certificate generation."""
     namespace = "authorities" if params.get("authority") else "certificates"
     serial = serial_hex(cert.serial_number)
@@ -61,12 +79,16 @@ def _archive_dir(params: dict, cert) -> str:
     )
 
 
-def _archive_path(params: dict, cert, source_path: str) -> str:
+def _archive_path(
+    params: dict[str, Any], cert: x509.Certificate, source_path: str
+) -> str:
     """Return the archive path for an existing managed source path."""
     return f"{_archive_dir(params, cert)}/{Path(source_path).name}"
 
 
-def _archive_file(params: dict, cert, source_path: str, mode: str) -> bool:
+def _archive_file(
+    params: dict[str, Any], cert: x509.Certificate | None, source_path: str, mode: str
+) -> bool:
     """Copy a current managed file into its generation archive if present."""
     if cert is None or not source_path:
         return False
@@ -77,14 +99,12 @@ def _archive_file(params: dict, cert, source_path: str, mode: str) -> bool:
     return write_file(
         _archive_path(params, cert, source_path),
         content,
-        params["owner"],
-        params["group"],
-        mode,
+        FileAttributes(params["owner"], params["group"], mode),
     )
 
 
 def _archive_existing_material(
-    params: dict, cert, *, include_private_key: bool
+    params: dict[str, Any], cert: x509.Certificate | None, *, include_private_key: bool
 ) -> bool:
     """Archive the current generation before replacing it."""
     if cert is None:
@@ -107,7 +127,9 @@ def _archive_existing_material(
     return changed
 
 
-def _ensure_key(params, *, rekey: bool, existing_cert):
+def _ensure_key(
+    params: dict[str, Any], *, rekey: bool, existing_cert: x509.Certificate | None
+) -> tuple[PrivateKey, bool]:
     """Ensure the private key exists with the requested key properties."""
     spec = _key_spec(params)
     key = None
@@ -129,9 +151,7 @@ def _ensure_key(params, *, rekey: bool, existing_cert):
             write_file(
                 params["key_path"],
                 content,
-                params["owner"],
-                params["group"],
-                params["key_mode"],
+                FileAttributes.from_params(params, "key_mode"),
             )
             or changed
         )
@@ -145,10 +165,17 @@ def _ensure_key(params, *, rekey: bool, existing_cert):
             )
             or changed
         )
+    if not _key_matches(key, spec):
+        raise ValueError("Private key does not match the requested specification")
     return key, changed
 
 
-def _ensure_csr(params, key, subject, csr_extensions):
+def _ensure_csr(
+    params: dict[str, Any],
+    key: PrivateKey,
+    subject: x509.Name,
+    csr_extensions: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
+) -> tuple[x509.CertificateSigningRequest, bool]:
     """Ensure the CSR matches the requested subject, key, and extensions."""
     builder = x509.CertificateSigningRequestBuilder().subject_name(subject)
     builder = _add_extensions(builder, csr_extensions)
@@ -163,7 +190,7 @@ def _ensure_csr(params, key, subject, csr_extensions):
                 or _csr_public_key_bytes(existing) != _public_key_bytes(key)
                 or not _extensions_equal(existing.extensions, csr_extensions)
             )
-        except Exception:
+        except MATERIAL_ERRORS:
             changed = True
     content = (
         csr.public_bytes(serialization.Encoding.PEM)
@@ -174,16 +201,14 @@ def _ensure_csr(params, key, subject, csr_extensions):
         write_file(
             params["csr_path"],
             content,
-            params["owner"],
-            params["group"],
-            params["public_mode"],
+            FileAttributes.from_params(params),
         )
         or changed
     )
     return csr, changed
 
 
-def _external_csr_bytes(params: dict) -> bytes:
+def _external_csr_bytes(params: dict[str, Any]) -> bytes:
     """Return CSR bytes from inline content or a source path."""
     csr_content = params.get("csr_content")
     if csr_content:
@@ -194,7 +219,9 @@ def _external_csr_bytes(params: dict) -> bytes:
     raise ValueError("csr_path or csr_content is required for CSR signing")
 
 
-def _ensure_external_csr(params: dict):
+def _ensure_external_csr(
+    params: dict[str, Any],
+) -> tuple[x509.CertificateSigningRequest, bool]:
     """Validate and copy an externally supplied CSR into the managed CSR path."""
     csr = _load_csr_bytes(_external_csr_bytes(params))
     if not csr.is_signature_valid:
@@ -211,43 +238,40 @@ def _ensure_external_csr(params: dict):
     changed = write_file(
         params["csr_path"],
         content,
-        params["owner"],
-        params["group"],
-        params["public_mode"],
+        FileAttributes.from_params(params),
         force=params["force"],
     )
     return csr, changed
 
 
 def _ensure_certificate(
-    params,
-    key,
-    subject,
-    cert_extensions,
-    signer_key,
-    signer_cert,
-    renewal_decision,
-    existing_cert,
-):
+    params: dict[str, Any],
+    spec: CertificateSpec,
+    signer: SignerMaterial,
+    renewal: dict[str, Any],
+    existing_cert: x509.Certificate | None,
+) -> tuple[x509.Certificate, bool]:
     """Ensure the certificate matches the requested issuer and profile."""
-    issuer = signer_cert.subject if signer_cert is not None else subject
+    if signer.key is None:
+        raise ValueError("Certificate signing requires a private key")
+    issuer = signer.cert.subject if signer.cert is not None else spec.subject
     now = now_utc(strip_microseconds=True)
     builder = (
         x509.CertificateBuilder()
-        .subject_name(subject)
+        .subject_name(spec.subject)
         .issuer_name(issuer)
-        .public_key(_as_public_key(key))
+        .public_key(_as_public_key(spec.key))
         .serial_number(x509.random_serial_number())
         .not_valid_before(now - _dt.timedelta(minutes=1))
         .not_valid_after(now + _dt.timedelta(days=int(params["days"])))
     )
-    builder = _add_extensions(builder, cert_extensions)
+    builder = _add_extensions(builder, spec.extensions)
     cert = builder.sign(
-        private_key=signer_key,
-        algorithm=signature_algorithm(signer_key, params["digest"]),
+        private_key=signer.key,
+        algorithm=signature_algorithm(signer.key, params["digest"]),
     )
 
-    changed = params["force"] or renewal_decision["renew"]
+    changed = params["force"] or renewal["renew"]
     if not changed:
         try:
             existing = (
@@ -260,13 +284,13 @@ def _ensure_certificate(
                 changed = True
             else:
                 changed = (
-                    existing.subject != subject
+                    existing.subject != spec.subject
                     or existing.signature_algorithm_oid != cert.signature_algorithm_oid
                     or existing.issuer != issuer
-                    or _cert_public_key_bytes(existing) != _public_key_bytes(key)
-                    or not _extensions_equal(existing.extensions, cert_extensions)
+                    or _cert_public_key_bytes(existing) != _public_key_bytes(spec.key)
+                    or not _extensions_equal(existing.extensions, spec.extensions)
                 )
-        except Exception:
+        except MATERIAL_ERRORS:
             changed = True
 
     if changed:
@@ -284,9 +308,7 @@ def _ensure_certificate(
         write_file(
             params["cert_path"],
             content,
-            params["owner"],
-            params["group"],
-            params["public_mode"],
+            FileAttributes.from_params(params),
         )
         or changed
     )

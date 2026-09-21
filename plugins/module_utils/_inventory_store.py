@@ -1,5 +1,7 @@
 # Copyright (c) 2026 Jonas Mauer
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: GPL-3.0-or-later
+# GNU General Public License v3.0+
+# (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
 """Internal collection utility; not a public API.
 
 Ca inventory store helpers."""
@@ -11,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
     ca_lock_path,
     read_file,
     safe_path_component,
@@ -48,12 +51,15 @@ def _write_json(
 ) -> bool:
     """Write deterministic JSON state."""
     content = json.dumps(data, indent=2, sort_keys=True).encode() + b"\n"
-    return write_file(path, content, owner, group, mode)
+    return write_file(path, content, FileAttributes(owner, group, mode))
 
 
 def _read_json(path: str) -> dict[str, Any]:
     """Read one JSON state fragment."""
-    return json.loads(read_file(path).decode())
+    record = json.loads(read_file(path).decode())
+    if not isinstance(record, dict):
+        raise TypeError(f"Inventory record must be a dictionary: {path}")
+    return record
 
 
 def _read_collection(base_dir: str, collection: str) -> list[dict[str, Any]]:
