@@ -12,47 +12,14 @@ short_description: Manage CA collection certificate revocation lists
 version_added: 0.1.0
 description:
 - Manage CA collection certificate revocation lists.
-author:
-- Jonas Mauer (@jomrr)
-extends_documentation_fragment:
-- jomrr.ca.context
-attributes:
-  check_mode:
-    support: none
-    description: Skipped in check mode without changing the managed host.
-  diff_mode:
-    support: none
-    description: No diff output is returned.
-requirements:
-- Python 3.12 on the managed Linux host
-- cryptography >= 43 on the managed host
-notes:
-- The base directory and persistent inventory must be preserved between runs.
-- Private utilities are internal implementation details and are not a public API.
+extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
+  jomrr.ca.context.digest, jomrr.ca.context.formats, jomrr.ca.context.file_mode, jomrr.ca.context.cryptography]
 options:
-  base_url:
-    description: Stored in composed inventory when C(ca_name) is set.
-    version_added: 0.1.0
-    type: str
-    default: ''
-  ca_name:
-    description: Enables composed inventory output when non-empty.
-    version_added: 0.1.0
-    type: str
-    default: ''
   name:
     description: Authority short name used to locate its certificate and private key.
     version_added: 0.1.0
     type: str
     required: true
-  formats:
-    description: CRL output formats written from one generated CRL object.
-    version_added: 0.1.0
-    type: list
-    default:
-    - pem
-    - der
-    elements: str
   key_passphrase:
     description: Passphrase for the CA private key.
     version_added: 0.1.0
@@ -84,29 +51,15 @@ options:
     type: list
     default: []
     elements: dict
+  base_url:
+    description: Stored in composed inventory when C(ca_name) is set.
   digest:
     description: Signature digest for RSA and ECDSA CA keys.
-    version_added: 0.1.0
-    type: str
-    default: sha384
-    choices:
-    - sha224
-    - sha256
-    - sha384
-    - sha512
+  formats:
+    description: CRL output formats written from one generated CRL object.
+    default: [pem, der]
   mode:
     description: CRL file mode.
-    version_added: 0.1.0
-    type: str
-    default: '0644'
-  owner:
-    description: Owner of generated files; user name or numeric UID.
-    type: str
-    version_added: 0.1.0
-  group:
-    description: Group of generated files; group name or numeric GID.
-    type: str
-    version_added: 0.1.0
 """
 
 EXAMPLES = r"""
@@ -116,10 +69,7 @@ EXAMPLES = r"""
     ca_name: example
     name: component
     common_name: Example Component CA
-    subject:
-      country: DE
-      organization: Example
-      organizational_unit: Example PKI
+    subject: {country: DE, organization: Example, organizational_unit: Example PKI}
     next_update_days: 7
     renew_before_days: 1
     key_passphrase: "{{ ca_component_passphrase }}"

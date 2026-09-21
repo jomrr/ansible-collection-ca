@@ -13,22 +13,7 @@ short_description: Create deterministic public AIA/CDP publish archives on the m
 version_added: 0.1.0
 description:
 - Create deterministic public AIA/CDP publish archives on the managed host.
-author:
-- Jonas Mauer (@jomrr)
-extends_documentation_fragment:
-- jomrr.ca.context
-attributes:
-  check_mode:
-    support: none
-    description: Skipped in check mode without changing the managed host.
-  diff_mode:
-    support: none
-    description: No diff output is returned.
-requirements:
-- Python 3.12 on the managed Linux host
-notes:
-- The base directory and persistent inventory must be preserved between runs.
-- Private utilities are internal implementation details and are not a public API.
+extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.file_mode]
 options:
   dest:
     description: Archive path on the managed host.
@@ -55,17 +40,7 @@ options:
     default: '0644'
   mode:
     description: Filesystem mode for the generated archive file.
-    version_added: 0.1.0
-    type: str
     default: '0600'
-  owner:
-    description: Owner of generated files; user name or numeric UID.
-    type: str
-    version_added: 0.1.0
-  group:
-    description: Group of generated files; group name or numeric GID.
-    type: str
-    version_added: 0.1.0
 """
 
 EXAMPLES = r"""

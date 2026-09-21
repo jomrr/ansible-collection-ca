@@ -12,55 +12,9 @@ short_description: Dispatch managed CA collection certificates in one batch
 version_added: 0.1.0
 description:
 - Dispatch managed CA collection certificates in one batch.
-author:
-- Jonas Mauer (@jomrr)
-extends_documentation_fragment:
-- jomrr.ca.context
-attributes:
-  check_mode:
-    support: none
-    description: Skipped in check mode without changing the managed host.
-  diff_mode:
-    support: none
-    description: No diff output is returned.
-requirements:
-- Python 3.12 on the managed Linux host
-- cryptography >= 43 on the managed host
-notes:
-- The base directory and persistent inventory must be preserved between runs.
-- Private utilities are internal implementation details and are not a public API.
-- Supply the authorities and certificate_types mappings explicitly; no standalone role
-  defaults are loaded.
-- Pass owner and group explicitly; the source implementation needs these values when deriving
-  certificate paths.
+extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
+  jomrr.ca.context.cryptography, jomrr.ca.context.dispatch_notes, jomrr.ca.certificate]
 options:
-  base_url:
-    description: Base publication URL for derived AIA/CDP URLs.
-    version_added: 0.1.0
-    type: str
-    default: ''
-  ca_name:
-    description: Enables composed inventory output when non-empty.
-    version_added: 0.1.0
-    type: str
-    default: ''
-  certificate_types:
-    description: Role type map. The selected type must define C(issuer) and may define
-      C(required_fields).
-    version_added: 0.1.0
-    type: dict
-    required: true
-  authorities:
-    description: Authority list used to resolve issuer passphrase and C(default_days).
-    version_added: 0.1.0
-    type: list
-    required: true
-    elements: dict
-  kerberos_realm:
-    description: Default realm for MSKDC certificates.
-    version_added: 0.1.0
-    type: str
-    default: ''
   subject:
     description: Role-level subject defaults.
     version_added: 0.1.0
@@ -78,14 +32,8 @@ options:
     type: list
     required: true
     elements: dict
-  owner:
-    description: Owner of generated files; user name or numeric UID.
-    type: str
-    version_added: 0.1.0
-  group:
-    description: Group of generated files; group name or numeric GID.
-    type: str
-    version_added: 0.1.0
+  base_url:
+    description: Base publication URL for derived AIA/CDP URLs.
 """
 
 EXAMPLES = r"""

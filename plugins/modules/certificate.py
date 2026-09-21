@@ -13,56 +13,9 @@ short_description: Dispatch one managed CA collection certificate to the built-i
 version_added: 0.1.0
 description:
 - Dispatch one managed CA collection certificate to the built-in X.509 profiles.
-author:
-- Jonas Mauer (@jomrr)
-extends_documentation_fragment:
-- jomrr.ca.context
-attributes:
-  check_mode:
-    support: none
-    description: Skipped in check mode without changing the managed host.
-  diff_mode:
-    support: none
-    description: No diff output is returned.
-requirements:
-- Python 3.12 on the managed Linux host
-- cryptography >= 43 on the managed host
-notes:
-- The base directory and persistent inventory must be preserved between runs.
-- Private utilities are internal implementation details and are not a public API.
-- Supply the authorities and certificate_types mappings explicitly; no standalone role
-  defaults are loaded.
-- Pass owner and group explicitly; the source implementation needs these values when deriving
-  certificate paths.
+extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
+  jomrr.ca.context.cryptography, jomrr.ca.context.dispatch_notes, jomrr.ca.certificate]
 options:
-  base_url:
-    description: Base publication URL. If set, AIA defaults to C(<base_url>/aia/<issuer>-ca.der)
-      and CDP to C(<base_url>/crl/<issuer>-ca.crl).
-    version_added: 0.1.0
-    type: str
-    default: ''
-  ca_name:
-    description: Enables composed inventory output when non-empty.
-    version_added: 0.1.0
-    type: str
-    default: ''
-  certificate_types:
-    description: Role type map. The selected type must define C(issuer) and may define
-      C(required_fields).
-    version_added: 0.1.0
-    type: dict
-    required: true
-  authorities:
-    description: Authority list used to resolve issuer passphrase and C(default_days).
-    version_added: 0.1.0
-    type: list
-    required: true
-    elements: dict
-  kerberos_realm:
-    description: Default realm for MSKDC certificates.
-    version_added: 0.1.0
-    type: str
-    default: ''
   subject:
     description: Certificate-local subject values merged over module C(subject).
     version_added: 0.1.0
@@ -78,14 +31,9 @@ options:
     version_added: 0.1.0
     type: dict
     required: true
-  owner:
-    description: Owner of generated files; user name or numeric UID.
-    type: str
-    version_added: 0.1.0
-  group:
-    description: Group of generated files; group name or numeric GID.
-    type: str
-    version_added: 0.1.0
+  base_url:
+    description: Base publication URL. If set, AIA defaults to C(<base_url>/aia/<issuer>-ca.der)
+      and CDP to C(<base_url>/crl/<issuer>-ca.crl).
 """
 
 EXAMPLES = r"""
@@ -179,30 +127,6 @@ directory_changed:
   description: Whether the output directory changed.
   type: bool
   returned: success
-archive_changed:
-  description: Whether replaced generation material was archived.
-  type: bool
-  returned: success
-key_changed:
-  description: Whether the private key changed.
-  type: bool
-  returned: success
-csr_changed:
-  description: Whether the CSR changed.
-  type: bool
-  returned: success
-cert_changed:
-  description: Whether the PEM certificate changed.
-  type: bool
-  returned: success
-der_changed:
-  description: Whether the DER export changed.
-  type: bool
-  returned: success
-txt_changed:
-  description: Whether the text export changed.
-  type: bool
-  returned: success
 chain_changed:
   description: Whether the issuer chain copy changed.
   type: bool
@@ -219,31 +143,6 @@ fritzbox_bundle_changed:
   description: Whether the FritzBox import bundle changed.
   type: bool
   returned: success
-inventory_changed:
-  description: Whether CA inventory state changed.
-  type: bool
-  returned: success
-formats:
-  description: Normalized formats.
-  type: list
-  returned: success
-  elements: str
-renewal:
-  description: Renewal decision for this run.
-  type: dict
-  returned: success
-csr_path:
-  description: CSR path.
-  type: str
-  returned: success
-cert_path:
-  description: PEM certificate path.
-  type: str
-  returned: success
-txt_path:
-  description: Text export path, or empty string.
-  type: str
-  returned: success
 pkcs12_paths:
   description: Written PKCS#12 paths keyed by format.
   type: dict
@@ -256,6 +155,9 @@ fritzbox_bundle_path:
   description: FritzBox import bundle path, or empty string.
   type: str
   returned: success
+formats:
+  description: Normalized formats.
+extends_documentation_fragment: [jomrr.ca.certificate]
 """
 
 # Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.

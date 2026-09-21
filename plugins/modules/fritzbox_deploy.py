@@ -12,25 +12,7 @@ short_description: Deploy a FritzBox PEM certificate bundle to FRITZ!OS
 version_added: 0.1.0
 description:
 - Deploy a FritzBox PEM certificate bundle to FRITZ!OS.
-author:
-- Jonas Mauer (@jomrr)
-extends_documentation_fragment:
-- jomrr.ca.context
-attributes:
-  check_mode:
-    support: none
-    description: Skipped in check mode without changing the managed host.
-  diff_mode:
-    support: none
-    description: No diff output is returned.
-requirements:
-- Python 3.12 on the managed Linux host
-- cryptography >= 43 on the managed host
-notes:
-- The base directory and persistent inventory must be preserved between runs.
-- Private utilities are internal implementation details and are not a public API.
-- TLS verification defaults to false for self-signed FRITZ!Box device certificates. Enable
-  validate_certs when the device certificate is trusted.
+extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.cryptography, jomrr.ca.context.fritzbox_notes]
 options:
   certificate:
     description: Optional source for C(output_dir) and nested C(fritzbox_deploy).

@@ -42,7 +42,8 @@ ansible-galaxy collection install jomrr.ca
 
 | Name | idempotent | check_mode | Description |
 | ---- | ---------- | ---------- | ----------- |
-| [`jomrr.ca.context`](plugins/doc_fragments/context.py) | n/a | n/a | Shared CA file context documentation. |
+| [`jomrr.ca.certificate`](plugins/doc_fragments/certificate.py) | n/a | n/a | Shared certificate dispatch arguments and X.509 return values. |
+| [`jomrr.ca.context`](plugins/doc_fragments/context.py) | n/a | n/a | Shared CA execution and file context documentation. |
 
 ### Filter Plugins
 

@@ -12,35 +12,9 @@ short_description: Manage a CA authority certificate
 version_added: 0.1.0
 description:
 - Manage a CA authority certificate.
-author:
-- Jonas Mauer (@jomrr)
-extends_documentation_fragment:
-- jomrr.ca.context
-attributes:
-  check_mode:
-    support: none
-    description: Skipped in check mode without changing the managed host.
-  diff_mode:
-    support: none
-    description: No diff output is returned.
-requirements:
-- Python 3.12 on the managed Linux host
-- cryptography >= 43 on the managed host
-notes:
-- The base directory and persistent inventory must be preserved between runs.
-- Private utilities are internal implementation details and are not a public API.
+extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
+  jomrr.ca.context.digest, jomrr.ca.context.formats, jomrr.ca.context.cryptography]
 options:
-  base_url:
-    description: Base publication URL. If set, AIA defaults to C(<base_url>/aia/<parent>-ca.der)
-      and CDP to C(<base_url>/crl/<parent>-ca.crl); a root references itself.
-    version_added: 0.1.0
-    type: str
-    default: ''
-  ca_name:
-    description: Enables composed inventory output when non-empty.
-    version_added: 0.1.0
-    type: str
-    default: ''
   name:
     description: Authority short name.
     version_added: 0.1.0
@@ -51,15 +25,6 @@ options:
     version_added: 0.1.0
     type: str
     default: ''
-  formats:
-    description: Output formats for the CA certificate.
-    version_added: 0.1.0
-    type: list
-    default:
-    - pem
-    - der
-    - txt
-    elements: str
   key_type:
     description: Private key algorithm.
     version_added: 0.1.0
@@ -181,16 +146,6 @@ options:
     version_added: 0.1.0
     type: dict
     default: {}
-  digest:
-    description: Signature digest for RSA and ECDSA keys.
-    version_added: 0.1.0
-    type: str
-    default: sha384
-    choices:
-    - sha224
-    - sha256
-    - sha384
-    - sha512
   include_identifiers:
     description: Adds SKI and AKI extensions.
     version_added: 0.1.0
@@ -230,14 +185,6 @@ options:
     description: Inhibit any policy.
     version_added: 0.1.0
     type: raw
-  owner:
-    description: Owner of generated files; user name or numeric UID.
-    type: str
-    version_added: 0.1.0
-  group:
-    description: Group of generated files; group name or numeric GID.
-    type: str
-    version_added: 0.1.0
 """
 
 EXAMPLES = r"""
@@ -249,10 +196,7 @@ EXAMPLES = r"""
     name: root
     parent: root
     common_name: Example Root CA
-    subject:
-      country: DE
-      organization: Example
-      organizational_unit: Example PKI
+    subject: {country: DE, organization: Example, organizational_unit: Example PKI}
     days: 3650
     key_passphrase: "{{ ca_root_passphrase }}"
 
@@ -264,10 +208,7 @@ EXAMPLES = r"""
     name: component
     parent: root
     common_name: Example Component CA
-    subject:
-      country: DE
-      organization: Example
-      organizational_unit: Example PKI
+    subject: {country: DE, organization: Example, organizational_unit: Example PKI}
     days: 1825
     key_passphrase: "{{ ca_component_passphrase }}"
     parent_key_passphrase: "{{ ca_root_passphrase }}"
@@ -281,59 +222,11 @@ directory_changed:
   description: Always C(false) for authorities.
   type: bool
   returned: success
-key_changed:
-  description: Whether the private key changed.
-  type: bool
-  returned: success
-csr_changed:
-  description: Whether the CSR changed.
-  type: bool
-  returned: success
-cert_changed:
-  description: Whether the PEM certificate changed.
-  type: bool
-  returned: success
-der_changed:
-  description: Whether the DER export changed.
-  type: bool
-  returned: success
-txt_changed:
-  description: Whether the text export changed.
-  type: bool
-  returned: success
 chain_changed:
   description: Always C(false) for authorities.
   type: bool
   returned: success
-archive_changed:
-  description: Whether replaced generation material was archived.
-  type: bool
-  returned: success
-inventory_changed:
-  description: Whether CA inventory state changed.
-  type: bool
-  returned: success
-formats:
-  description: Normalized certificate formats.
-  type: list
-  returned: success
-  elements: str
-renewal:
-  description: Renewal decision for this run.
-  type: dict
-  returned: success
-csr_path:
-  description: CSR path.
-  type: str
-  returned: success
-cert_path:
-  description: PEM certificate path.
-  type: str
-  returned: success
-txt_path:
-  description: Text export path, or empty string.
-  type: str
-  returned: success
+extends_documentation_fragment: [jomrr.ca.certificate]
 """
 
 # Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.
