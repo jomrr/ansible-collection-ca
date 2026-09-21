@@ -9,3 +9,14 @@ releases:
     fragments:
       - initial.yml
     release_date: '2026-09-21'
+  1.0.1:
+    changes:
+      bugfixes:
+        - Embed module and filter documentation in Python files to prevent duplicate
+          Galaxy entries.
+        - Exclude documentation source and build directories from the Galaxy package.
+        - Share module documentation through Python fragments and run Pylint serially
+          so local and CI duplicate checks use the same files.
+    fragments:
+      - galaxy-documentation.yml
+    release_date: '2026-09-21'
