@@ -1,0 +1,81 @@
+---
+namespace: jomrr
+name: ca
+authors:
+  - Jonas Mauer
+description: Manage private certificate authorities, certificates and revocation lists.
+license:
+  - MIT
+tags:
+  - security
+  - pki
+  - certificates
+  - tls
+dependencies: {}
+documentation: https://github.com/jomrr/ansible-collection-ca
+homepage: https://github.com/jomrr/ansible-collection-ca
+issues: https://github.com/jomrr/ansible-collection-ca/issues
+version: 0.0.0
+readme: README.md
+repository: https://github.com/jomrr/ansible-collection-ca
+build_ignore:
+  - .github
+  - .forgejo
+  - .ansible
+  - .venv
+  - .cache
+  - .uv-cache
+  - .mypy_cache
+  - .pytest_cache
+  - .ruff_cache
+  - .tox
+  - molecule
+  - extensions/molecule
+  - tests
+  - pyproject.toml
+  - uv.lock
+  - Makefile
+  - .pre-commit-config.yaml
+  - .gitignore
+  - .ansible-lint
+  - tools
+  - collections.yml
+  - requirements.yml
+  - dist
+  - docs/build
+  - docs/rst
+  - roles/*/.github
+  - roles/*/.forgejo
+  - roles/*/.ansible
+  - roles/*/.venv
+  - roles/*/.cache
+  - roles/*/.uv-cache
+  - roles/*/.mypy_cache
+  - roles/*/.pytest_cache
+  - roles/*/.ruff_cache
+  - roles/*/.tox
+  - roles/*/molecule
+  - roles/*/extensions/molecule
+  - roles/*/tests
+  - roles/*/pyproject.toml
+  - roles/*/uv.lock
+  - roles/*/Makefile
+  - roles/*/.pre-commit-config.yaml
+  - roles/*/.gitignore
+  - roles/*/.ansible-lint
+  - roles/*/tools
+  - roles/*/collections.yml
+  - roles/*/requirements.yml
+  - roles/*/dist
+  - roles/*/docs/build
+  - roles/*/docs/rst
+  - .gitmodules
+  - '**/.git'
+  - '**/.git/**'
+  - '**/.gitmodules'
+  - '**/__pycache__'
+  - '**/*.pyc'
+  - '**/*.pyo'
+  - '*.tar.gz'
+  - changelogs/fragments
+  - changelogs/.plugin-cache.yaml

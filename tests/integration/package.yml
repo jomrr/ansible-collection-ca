@@ -1,0 +1,13 @@
+---
+- name: Exercise installed CA collection
+  hosts: all
+  gather_facts: false
+  vars:
+    ca_verify_script: "{{ playbook_dir }}/targets/authority/files/verify.py"
+  tasks:
+    - name: Exercise deployment validation
+      ansible.builtin.import_tasks: targets/fritzbox_deploy/tasks/main.yml
+    - name: Exercise authority and certificate lifecycle
+      ansible.builtin.import_tasks: targets/authority/tasks/main.yml
+    - name: Exercise controller filter
+      ansible.builtin.import_tasks: targets/filter_authority_map/tasks/main.yml

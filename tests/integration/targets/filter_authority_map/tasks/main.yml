@@ -1,0 +1,7 @@
+---
+- name: Resolve the collection filter through Ansible
+  ansible.builtin.assert:
+    that:
+      - '({''root'': {''name'': ''root'', ''parent'': ''root''}}) == ([{''name'': ''root'', ''parent'':
+        ''root''}] | jomrr.ca.authority_map)'
+      - ([] | jomrr.ca.authority_map) == {}

@@ -1,0 +1,5 @@
+---
+# Add the Ansible series actually covered by this collection's test matrix.
+# All production lint rules remain enabled.
+supported_ansible_also:
+  - "2.20."

@@ -1,0 +1,59 @@
+---
+name: Collection tests
+"on":
+  workflow_call:
+    inputs:
+      full:
+        description: Run integration and installed-package gates after the fast checks
+        type: boolean
+        required: false
+        default: false
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ansible: "2.20.*"
+            python: "3.12"
+            group: "ansible-2-20"
+    env:
+      ANSIBLE_GROUP: ${{ matrix.group }}
+      ANSIBLE_TEST_PREFER_PODMAN: ''
+      ANSIBLE_COLLECTIONS_PATH: ${{ github.workspace }}
+
+    defaults:
+      run:
+        working-directory: ansible_collections/jomrr/ca
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          submodules: recursive
+          path: ansible_collections/jomrr/ca
+      - name: Verify container engines
+        run: |
+          docker version
+          docker info
+      - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b
+        with:
+          python-version: ${{ matrix.python }}
+          enable-cache: true
+          cache-dependency-glob: ansible_collections/jomrr/ca/pyproject.toml
+      - name: Install tools from pyproject.toml
+        run: make sync PYTHON_VERSION=${{ matrix.python }}
+      - name: Collection and embedded role hooks
+        run: make hooks
+      - name: Sanity
+        run: .venv/bin/ansible-test sanity --docker --python ${{ matrix.python }}
+      - name: Units
+        if: hashFiles('ansible_collections/jomrr/ca/tests/unit/**') != ''
+        run: .venv/bin/ansible-test units --docker --python ${{ matrix.python }}
+      - name: Module and plugin integration
+        if: inputs.full && hashFiles('ansible_collections/jomrr/ca/tests/integration/targets/**') != ''
+        run: .venv/bin/ansible-test integration --docker --python ${{ matrix.python }}
+      - name: Test the installed package outside the source checkout
+        if: inputs.full
+        run: make package-test

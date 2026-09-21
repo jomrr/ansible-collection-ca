@@ -1,0 +1,37 @@
+---
+- name: Allocate isolated FRITZ!Box fixture
+  ansible.builtin.tempfile:
+    state: directory
+  register: ca_fritzbox_test
+
+- name: Exercise deployment validation without a device
+  block:
+    - name: Write an invalid certificate bundle
+      ansible.builtin.copy:
+        dest: "{{ ca_fritzbox_test.path }}/invalid.pem"
+        content: "This is deliberately not a certificate.\n"
+        mode: "0600"
+
+    - name: Reject the invalid bundle before connecting
+      jomrr.ca.fritzbox_deploy:
+        base_dir: "{{ ca_fritzbox_test.path }}/pki"
+        name: fritzbox
+        bundle_path: "{{ ca_fritzbox_test.path }}/invalid.pem"
+        url: https://127.0.0.1:1
+        username: synthetic-user
+        password: synthetic-test-password
+      register: ca_fritzbox_result
+      failed_when: false
+
+    - name: Verify validation failure and secret handling
+      ansible.builtin.assert:
+        that:
+          - "'does not contain a certificate' in ca_fritzbox_result.msg"
+          - "'synthetic-test-password' not in ca_fritzbox_result.msg"
+          - ca_fritzbox_result is not changed
+
+  always:
+    - name: Remove isolated FRITZ!Box fixture
+      ansible.builtin.file:
+        path: "{{ ca_fritzbox_test.path }}"
+        state: absent

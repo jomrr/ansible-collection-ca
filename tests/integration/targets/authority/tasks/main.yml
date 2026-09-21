@@ -1,0 +1,182 @@
+---
+- name: Read test user ID
+  ansible.builtin.command:
+    argv:
+      - id
+      - -u
+  register: ca_test_uid
+  changed_when: false
+- name: Read test group ID
+  ansible.builtin.command:
+    argv:
+      - id
+      - -g
+  register: ca_test_gid
+  changed_when: false
+- name: Allocate temporary CA fixture
+  ansible.builtin.tempfile:
+    state: directory
+  register: ca_test_root
+- name: Exercise collection certificate lifecycle
+  block:
+    - name: Check all modules before convergence
+      ansible.builtin.include_tasks: check.yml
+    - name: Inspect check mode filesystem
+      ansible.builtin.stat:
+        path: '{{ ca_test_root.path }}/pki'
+      register: ca_before
+    - name: Check mode did not create the CA directory
+      ansible.builtin.assert:
+        that:
+          - not ca_before.stat.exists
+    - name: Create CA artifacts
+      ansible.builtin.include_tasks: converge.yml
+      vars:
+        ca_expect_changed: true
+    - name: Repeat identical inputs
+      ansible.builtin.include_tasks: converge.yml
+      vars:
+        ca_expect_changed: false
+    - name: Check all modules after convergence
+      ansible.builtin.include_tasks: check.yml
+    - name: Update certificate SAN
+      jomrr.ca.certificate: &id001
+        base_dir: '{{ ca_test_root.path }}/pki'
+        ca_name: test
+        owner: '{{ ca_test_uid.stdout }}'
+        group: '{{ ca_test_gid.stdout }}'
+        authorities: &id002
+          - name: root
+            parent: root
+            key_passphrase: test-root-passphrase
+            default_days: 365
+          - name: issuer
+            parent: root
+            key_passphrase: test-issuer-passphrase
+            default_days: 90
+        certificate_types: &id003
+          tls_server:
+            issuer: issuer
+          tls_client:
+            issuer: issuer
+          eap_tls_client:
+            issuer: issuer
+          identity:
+            issuer: issuer
+          identity_full:
+            issuer: issuer
+          mskdc:
+            issuer: issuer
+          fritzbox:
+            issuer: issuer
+        certificate:
+          name: web
+          type: tls_server
+          common_name: web.example.test
+          key_type: P-256
+          formats: &id004
+            - pem
+            - der
+            - txt
+            - fullchain
+          san:
+            - DNS:changed.example.test
+      register: ca_updated
+    - name: Verify certificate update
+      ansible.builtin.assert:
+        that:
+          - ca_updated is changed
+          - ca_updated.cert_changed
+          - not ca_updated.key_changed
+    - name: Repeat updated certificate
+      jomrr.ca.certificate: *id001
+      register: ca_repeated
+    - name: Verify update idempotence
+      ansible.builtin.assert:
+        that:
+          - ca_repeated is not changed
+    - name: Reject conflicting CSR inputs
+      jomrr.ca.certificate:
+        base_dir: '{{ ca_test_root.path }}/pki'
+        ca_name: test
+        owner: '{{ ca_test_uid.stdout }}'
+        group: '{{ ca_test_gid.stdout }}'
+        authorities: *id002
+        certificate_types: *id003
+        certificate:
+          name: web
+          type: tls_server
+          common_name: web.example.test
+          key_type: P-256
+          formats: *id004
+          csr_path: /missing.csr
+          csr_content: invalid
+      register: ca_invalid
+      failed_when: false
+    - name: Verify invalid request failed
+      ansible.builtin.assert:
+        that:
+          - '''both csr_path and csr_content'' in ca_invalid.msg'
+          - '''test-issuer-passphrase'' not in ca_invalid.msg'
+    - name: Revoke issued certificate
+      jomrr.ca.crl: &id005
+        base_dir: '{{ ca_test_root.path }}/pki'
+        ca_name: test
+        owner: '{{ ca_test_uid.stdout }}'
+        group: '{{ ca_test_gid.stdout }}'
+        name: issuer
+        common_name: Test Issuer
+        key_passphrase: test-issuer-passphrase
+        next_update_days: 30
+        revoked_certificates:
+          - name: web
+            reason: key_compromise
+      register: ca_revoked
+    - name: Verify new CRL generation
+      ansible.builtin.assert:
+        that:
+          - ca_revoked is changed
+          - ca_revoked.crl_number == 2
+    - name: Repeat revocation
+      jomrr.ca.crl: *id005
+      register: ca_revoked_again
+    - name: Verify persistent revocation state
+      ansible.builtin.assert:
+        that:
+          - ca_revoked_again is not changed
+          - ca_revoked_again.crl_number == 2
+    - name: Reject unsafe archive path
+      jomrr.ca.publish_archive:
+        base_dir: '{{ ca_test_root.path }}/pki'
+        dest: '{{ ca_test_root.path }}/public.tar'
+        artifacts:
+          - src: /no-read-expected
+            area: aia
+            file: ../escape
+      register: ca_bad_archive
+      failed_when: false
+    - name: Verify archive traversal rejection
+      ansible.builtin.assert:
+        that:
+          - '''Unsafe publish artifact filename'' in ca_bad_archive.msg'
+    - name: Verify generated certificate signature
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - verify
+          - -CAfile
+          - '{{ ca_test_root.path }}/pki/ca/root-ca.pem'
+          - -untrusted
+          - '{{ ca_test_root.path }}/pki/ca/issuer-ca.pem'
+          - '{{ ca_test_root.path }}/pki/certs/web/web.pem'
+      changed_when: false
+    - name: Verify artifact state independently
+      ansible.builtin.script:
+        cmd: "{{ ca_verify_script | default('verify.py') }} {{ ca_test_root.path }}"
+        executable: '{{ ansible_python_interpreter }}'
+      changed_when: false
+  always:
+    - name: Remove temporary CA fixture
+      ansible.builtin.file:
+        path: '{{ ca_test_root.path }}'
+        state: absent

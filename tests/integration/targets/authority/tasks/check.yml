@@ -1,0 +1,217 @@
+---
+- name: Check authority
+  jomrr.ca.authority:
+    base_dir: '{{ ca_test_root.path }}/pki'
+    ca_name: test
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    name: root
+    common_name: Test Root
+    days: 3650
+    key_type: P-256
+    key_passphrase: test-root-passphrase
+  check_mode: true
+  register: ca_check
+- name: Verify check mode skips authority
+  ansible.builtin.assert:
+    that:
+      - ca_check is skipped
+      - ca_check is not changed
+- name: Check authority
+  jomrr.ca.authority:
+    base_dir: '{{ ca_test_root.path }}/pki'
+    ca_name: test
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    name: issuer
+    parent: root
+    common_name: Test Issuer
+    days: 365
+    key_type: P-256
+    key_passphrase: test-issuer-passphrase
+    parent_key_passphrase: test-root-passphrase
+  check_mode: true
+  register: ca_check
+- name: Verify check mode skips authority
+  ansible.builtin.assert:
+    that:
+      - ca_check is skipped
+      - ca_check is not changed
+- name: Check chain
+  jomrr.ca.chain:
+    base_dir: '{{ ca_test_root.path }}/pki'
+    name: issuer
+  check_mode: true
+  register: ca_check
+- name: Verify check mode skips chain
+  ansible.builtin.assert:
+    that:
+      - ca_check is skipped
+      - ca_check is not changed
+- name: Check certificate
+  jomrr.ca.certificate:
+    base_dir: '{{ ca_test_root.path }}/pki'
+    ca_name: test
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    authorities: &id001
+      - name: root
+        parent: root
+        key_passphrase: test-root-passphrase
+        default_days: 365
+      - name: issuer
+        parent: root
+        key_passphrase: test-issuer-passphrase
+        default_days: 90
+    certificate_types: &id002
+      tls_server:
+        issuer: issuer
+      tls_client:
+        issuer: issuer
+      eap_tls_client:
+        issuer: issuer
+      identity:
+        issuer: issuer
+      identity_full:
+        issuer: issuer
+      mskdc:
+        issuer: issuer
+      fritzbox:
+        issuer: issuer
+    certificate:
+      name: web
+      type: tls_server
+      common_name: web.example.test
+      key_type: P-256
+      formats:
+        - pem
+        - der
+        - txt
+        - fullchain
+  check_mode: true
+  register: ca_check
+- name: Verify check mode skips certificate
+  ansible.builtin.assert:
+    that:
+      - ca_check is skipped
+      - ca_check is not changed
+- name: Check certificate_batch
+  jomrr.ca.certificate_batch:
+    base_dir: '{{ ca_test_root.path }}/pki'
+    ca_name: test
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    authorities: *id001
+    certificate_types: *id002
+    certificates:
+      - name: tls_server
+        type: tls_server
+        common_name: tls_server.example.test
+        key_type: P-256
+        key_size: 2048
+        pfx_passphrase: test-export-passphrase
+        krb5_realm: EXAMPLE.TEST
+        ad_object_guid: 8f2a02d1-862a-47cf-9a9b-6bda9c3bd2c5
+      - name: tls_client
+        type: tls_client
+        common_name: tls_client.example.test
+        key_type: P-256
+        key_size: 2048
+        pfx_passphrase: test-export-passphrase
+        krb5_realm: EXAMPLE.TEST
+        ad_object_guid: 8f2a02d1-862a-47cf-9a9b-6bda9c3bd2c5
+      - name: eap_tls_client
+        type: eap_tls_client
+        common_name: eap_tls_client.example.test
+        key_type: P-256
+        key_size: 2048
+        pfx_passphrase: test-export-passphrase
+        krb5_realm: EXAMPLE.TEST
+        ad_object_guid: 8f2a02d1-862a-47cf-9a9b-6bda9c3bd2c5
+      - name: identity
+        type: identity
+        common_name: identity.example.test
+        key_type: P-256
+        key_size: 2048
+        pfx_passphrase: test-export-passphrase
+        krb5_realm: EXAMPLE.TEST
+        ad_object_guid: 8f2a02d1-862a-47cf-9a9b-6bda9c3bd2c5
+      - name: identity_full
+        type: identity_full
+        common_name: identity_full.example.test
+        key_type: P-256
+        key_size: 2048
+        pfx_passphrase: test-export-passphrase
+        krb5_realm: EXAMPLE.TEST
+        ad_object_guid: 8f2a02d1-862a-47cf-9a9b-6bda9c3bd2c5
+      - name: mskdc
+        type: mskdc
+        common_name: mskdc.example.test
+        key_type: P-256
+        key_size: 2048
+        pfx_passphrase: test-export-passphrase
+        krb5_realm: EXAMPLE.TEST
+        ad_object_guid: 8f2a02d1-862a-47cf-9a9b-6bda9c3bd2c5
+      - name: fritzbox
+        type: fritzbox
+        common_name: fritzbox.example.test
+        key_type: RSA
+        key_size: 2048
+        pfx_passphrase: test-export-passphrase
+        krb5_realm: EXAMPLE.TEST
+        ad_object_guid: 8f2a02d1-862a-47cf-9a9b-6bda9c3bd2c5
+  check_mode: true
+  register: ca_check
+- name: Verify check mode skips certificate_batch
+  ansible.builtin.assert:
+    that:
+      - ca_check is skipped
+      - ca_check is not changed
+- name: Check crl
+  jomrr.ca.crl:
+    base_dir: '{{ ca_test_root.path }}/pki'
+    ca_name: test
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    name: issuer
+    common_name: Test Issuer
+    key_passphrase: test-issuer-passphrase
+    next_update_days: 30
+  check_mode: true
+  register: ca_check
+- name: Verify check mode skips crl
+  ansible.builtin.assert:
+    that:
+      - ca_check is skipped
+      - ca_check is not changed
+- name: Check publish_archive
+  jomrr.ca.publish_archive:
+    base_dir: '{{ ca_test_root.path }}/pki'
+    dest: '{{ ca_test_root.path }}/public.tar'
+    artifacts:
+      - src: '{{ ca_test_root.path }}/pki/ca/issuer-ca.der'
+        area: aia
+        file: issuer.der
+      - src: '{{ ca_test_root.path }}/pki/crl/issuer-ca.crl'
+        area: cdp
+        file: issuer.crl
+  check_mode: true
+  register: ca_check
+- name: Verify check mode skips publish_archive
+  ansible.builtin.assert:
+    that:
+      - ca_check is skipped
+      - ca_check is not changed
+- name: Check fritzbox_deploy
+  jomrr.ca.fritzbox_deploy:
+    base_dir: '{{ ca_test_root.path }}/pki'
+    name: fritzbox
+    username: test
+    password: test-password
+  check_mode: true
+  register: ca_check
+- name: Verify check mode skips fritzbox_deploy
+  ansible.builtin.assert:
+    that:
+      - ca_check is skipped
+      - ca_check is not changed

@@ -1,0 +1,47 @@
+# Generated tooling configuration; galaxy.yml owns the collection version.
+[project]
+name = "jomrr-ca-tools"
+# Virtual tool environment; only galaxy.yml is stamped for collection releases.
+version = "0"
+requires-python = ">=3.12"
+
+[tool.uv]
+package = false
+default-groups = ["default"]
+
+[dependency-groups]
+default = [{ include-group = "dev" }, { include-group = "ansible-2-20" }]
+ansible-2-20 = ["ansible-core==2.20.*"]
+dev = [
+  "ansible-lint==26.*", "pre-commit==4.*",
+  "molecule==26.*", "molecule-plugins[podman]==25.*",
+  "mypy", "types-PyYAML", "ruff", "pylint", "antsibull-changelog", "python-semantic-release==10.*",
+]
+docs = ["antsibull-docs>=2,<3", "sphinx", "sphinx-ansible-theme", "ansible-pygments"]
+
+[tool.mypy]
+strict = true
+follow_untyped_imports = true
+explicit_package_bases = true
+mypy_path = "$MYPY_CONFIG_FILE_DIR/../../.."
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.pylint.format]
+max-line-length = 88
+
+[tool.pylint.main]
+source-roots = ["../../.."]
+
+[tool.semantic_release]
+version_variables = ["galaxy.yml:version"]
+commit_message = "build(release): {version}"
+tag_format = "v{version}"
+build_command_env = ["ANSIBLE_HOME", "ANSIBLE_LOCAL_TEMP", "ANSIBLE_COLLECTIONS_PATH", "ANSIBLE_ROLES_PATH"]
+build_command = "antsibull-changelog release && git add -- CHANGELOG.rst changelogs && ansible-galaxy collection build --output-path dist/"
+
+[tool.semantic_release.branches.main]
+match = "main"
+prerelease = false

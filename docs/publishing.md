@@ -1,0 +1,110 @@
+# AIA/CDP Publishing
+
+This page retains the standalone role's publishing orchestration as a reference.
+The collection supplies `jomrr.ca.publish_archive`; the role's SSH target model
+and task orchestration are not included. Collection playbooks must transfer and
+unpack the generated archive explicitly.
+
+
+The role can publish public CA artifacts to SSH/Ansible targets with
+`ca_publish_targets`. Each target is one destination host with one webroot.
+The role creates fixed `aia` and `crl` subdirectories below that webroot.
+
+## Published Artifacts
+
+AIA directories receive:
+
+- every CA certificate as `<name>-ca.pem`, `<name>-ca.der`, and `<name>-ca.txt`
+- every issuing CA chain as `<name>-ca-chain.pem`, `<name>-ca-chain.der`, and
+  `<name>-ca-chain.txt`
+
+CDP directories receive:
+
+- every CRL as `<name>-ca.crl.pem`
+- every CRL as `<name>-ca.crl`
+
+Self-signed root CAs do not have chain files because the root chain would be
+identical to the root CA certificate.
+
+## Target Model
+
+```yaml
+ca_publish_targets:
+  - name: pki-web-01
+    ansible_host: 192.0.2.10
+    ansible_user: root
+    path: /var/www/pki
+    owner: root
+    group: root
+    become: true
+    directory_mode: "0755"
+    mode: "0644"
+  - name: pki-web-02
+    ansible_host: 198.51.100.10
+    ansible_user: root
+    path: /var/www/pki
+    owner: root
+    group: root
+    become: true
+```
+
+Use multiple target entries when several hosts serve the same AIA/CDP URLs, for
+example in Split-DNS setups.
+
+## Parameters
+
+- **`name`**: Ansible host receiving the files.
+  Required: yes Default:
+
+- **`ansible_host`**: SSH address registered with `add_host`.
+  Required: no Default:
+
+- **`ansible_user`**: SSH user registered with `add_host`.
+  Required: no Default:
+
+- **`ansible_port`**: SSH port registered with `add_host`.
+  Required: no Default:
+
+- **`ansible_ssh_private_key_file`**: SSH private key path registered with
+  `add_host`.
+  Required: no Default:
+
+- **`path`**: Remote webroot. CA certificates and chains are unpacked below
+  `path/aia`; CRLs are unpacked below `path/crl`.
+  Required: yes Default:
+
+- **`owner`**: Owner for published files and directories.
+  Required: no; Default: `ca_owner`
+
+- **`group`**: Group for published files and directories.
+  Required: no; Default: `ca_group`
+
+- **`mode`**: Published file mode.
+  Required: no; Default: `ca_publish_mode`
+
+- **`directory_mode`**: Published directory mode.
+  Required: no; Default: `ca_publish_directory_mode`
+
+- **`become`**: Whether to use privilege escalation on the target.
+  Required: no; Default: `false`
+
+- **`become_user`**: Privilege escalation user.
+  Required: no; Default: `root`
+
+## Behavior
+
+- The normal role run builds one deterministic publish archive per distinct
+  target file mode on the CA host, fetches each once to the controller, and
+  unpacks the matching archive on each target. Targets with the same file mode
+  share an archive. Directory modes are managed separately.
+- The archive contains public CA and CRL files below fixed `aia/` and `crl/`
+  paths.
+- Target webroot, `aia`, and `crl` directories are created before unpacking.
+- `ansible.builtin.unarchive` compares the actual target files with the archive.
+  Missing or altered files are restored from the archive.
+
+## Not Managed
+
+The role does not install HTTP server packages, render virtual-host
+configuration, or validate URLs. Configure the HTTP server separately so
+`path/aia` and `path/crl` are served by the URLs embedded in certificates.
