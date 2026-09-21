@@ -10,7 +10,7 @@ package = false
 default-groups = ["default"]
 
 [dependency-groups]
-default = [{ include-group = "dev" }, { include-group = "ansible-2-20" }]
+default = [{ include-group = "dev" }, { include-group = "ansible-2-20" }, { include-group = "docs" }]
 ansible-2-20 = ["ansible-core==2.20.*"]
 dev = [
   "ansible-lint==26.*", "pre-commit==4.*",

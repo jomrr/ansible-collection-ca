@@ -12,6 +12,7 @@ VERSION := $(shell awk '$$1 == "version:" { gsub(/["\047]/, "", $$2); print $$2 
 ARTIFACT := dist/jomrr-ca-$(VERSION).tar.gz
 SOURCE_FILES := $(wildcard $(shell git ls-files --recurse-submodules))
 TOOLS := $(BIN)/ansible-test $(BIN)/ansible-galaxy $(BIN)/pre-commit $(BIN)/molecule
+TOOLS += $(BIN)/antsibull-docs $(BIN)/sphinx-build
 PACKAGE_TEST_DIR ?= $(abspath ../../../.collection-tests/jomrr.ca)
 INSTALLED_MANIFEST := $(PACKAGE_TEST_DIR)/installed/ansible_collections/jomrr/ca/MANIFEST.json
 PACKAGE_ENV = ANSIBLE_COLLECTIONS_PATH='$(PACKAGE_TEST_DIR)/installed' ANSIBLE_ROLES_PATH='$(PACKAGE_TEST_DIR)/test-roles'
@@ -23,7 +24,7 @@ $(BIN)/python:
 	$(UV) venv --python $(PYTHON_VERSION) $(VENV)
 
 $(TOOLS) &: | $(BIN)/python
-	$(UV) pip install --python $(BIN)/python --group dev --group $(ANSIBLE_GROUP)
+	$(UV) pip install --python $(BIN)/python --group dev --group $(ANSIBLE_GROUP) --group docs
 .PHONY: help
 help: ## Show targets
 	@awk 'BEGIN {FS = ":.*##"} /^[a-z-]+:.*##/ {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -31,7 +32,7 @@ help: ## Show targets
 .PHONY: sync
 sync: ## Apply the selected Python and Ansible group to the tool environment
 	$(UV) venv --allow-existing --python $(PYTHON_VERSION) $(VENV)
-	$(UV) pip install --python $(BIN)/python --group dev --group $(ANSIBLE_GROUP)
+	$(UV) pip install --python $(BIN)/python --group dev --group $(ANSIBLE_GROUP) --group docs
 .PHONY: podman
 podman: ## Verify the container engine
 	podman version
@@ -96,6 +97,17 @@ ifneq ($(wildcard tests/integration/package.yml),)
 	cp -R tests/integration/. '$(PACKAGE_TEST_DIR)/integration/'
 	cd '$(PACKAGE_TEST_DIR)' && env $(PACKAGE_ENV) $(abspath $(BIN))/ansible-playbook -i localhost, -c local -e 'ansible_python_interpreter=$(abspath $(BIN))/python' integration/package.yml
 endif
+
+.PHONY: docs
+docs: docs/build/html/index.html ## Build the local docsite
+
+docs/rst/index.rst: galaxy.yml docs/antsibull-docs.cfg $(SOURCE_FILES) | $(BIN)/antsibull-docs
+	mkdir -p docs/rst
+	chmod og-w docs/rst
+	$(BIN)/antsibull-docs --config-file docs/antsibull-docs.cfg collection --fail-on-error --cleanup everything --use-current --squash-hierarchy --dest-dir docs/rst jomrr.ca
+
+docs/build/html/index.html: docs/rst/index.rst docs/conf.py | $(BIN)/sphinx-build
+	$(BIN)/sphinx-build -M html docs/rst docs/build -c docs -W
 
 .PHONY: clean
 clean: ## Remove local build output

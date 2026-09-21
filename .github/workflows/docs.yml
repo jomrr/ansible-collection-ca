@@ -1,0 +1,69 @@
+---
+# Publish the commit validated by a successful Main push. Manual runs on the
+# release branch bypass that gate. Failed builds leave the existing site online.
+# Enable Settings > Pages > Source: GitHub Actions before the first deployment.
+# GitHub requires this workflow on the repository's default branch.
+name: docs
+"on":
+  workflow_run:
+    workflows: [main]
+    types: [completed]
+    branches: ["main"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  build:
+    permissions:
+      contents: read
+      pages: read
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-26.04
+    env:
+      ANSIBLE_COLLECTIONS_PATH: ${{ github.workspace }}
+    defaults:
+      run:
+        working-directory: ansible_collections/jomrr/ca
+    steps:
+      - name: Check out the validated commit
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          persist-credentials: false
+          path: ansible_collections/jomrr/ca
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: '3.12'
+          enable-cache: true
+          cache-dependency-glob: ansible_collections/jomrr/ca/pyproject.toml
+      - name: Configure Pages
+        uses: actions/configure-pages@v6
+      - name: Install documentation tools from pyproject.toml
+        run: make sync
+      - name: Build antsibull and Sphinx documentation
+        run: make docs
+      - name: Upload HTML
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: ansible_collections/jomrr/ca/docs/build/html
+  deploy:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    runs-on: ubuntu-26.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
