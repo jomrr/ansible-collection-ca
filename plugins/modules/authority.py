@@ -6,6 +6,338 @@
 
 from __future__ import annotations
 
+DOCUMENTATION = r"""
+module: authority
+short_description: Manage a CA authority certificate
+version_added: 0.1.0
+description:
+- Manage a CA authority certificate.
+author:
+- Jonas Mauer (@jomrr)
+extends_documentation_fragment:
+- jomrr.ca.context
+attributes:
+  check_mode:
+    support: none
+    description: Skipped in check mode without changing the managed host.
+  diff_mode:
+    support: none
+    description: No diff output is returned.
+requirements:
+- Python 3.12 on the managed Linux host
+- cryptography >= 43 on the managed host
+notes:
+- The base directory and persistent inventory must be preserved between runs.
+- Private utilities are internal implementation details and are not a public API.
+options:
+  base_url:
+    description: Base publication URL. If set, AIA defaults to C(<base_url>/aia/<parent>-ca.der)
+      and CDP to C(<base_url>/crl/<parent>-ca.crl); a root references itself.
+    version_added: 0.1.0
+    type: str
+    default: ''
+  ca_name:
+    description: Enables composed inventory output when non-empty.
+    version_added: 0.1.0
+    type: str
+    default: ''
+  name:
+    description: Authority short name.
+    version_added: 0.1.0
+    type: str
+    required: true
+  parent:
+    description: Parent CA name. Same as C(name) means self-signed root.
+    version_added: 0.1.0
+    type: str
+    default: ''
+  formats:
+    description: Output formats for the CA certificate.
+    version_added: 0.1.0
+    type: list
+    default:
+    - pem
+    - der
+    - txt
+    elements: str
+  key_type:
+    description: Private key algorithm.
+    version_added: 0.1.0
+    type: str
+    default: RSA
+    choices:
+    - RSA
+    - ECDSA
+    - P-256
+    - P-384
+    - Ed25519
+    - Ed448
+    - EC
+    - P256
+    - P384
+    - ECDSA_P256
+    - ECDSA_P384
+    - EC_P256
+    - EC_P384
+    - prime256v1
+    - secp256r1
+    - secp384r1
+    - ED25519
+    - ED448
+    - EdDSA25519
+    - EdDSA448
+  key_size:
+    description: Key size or ECDSA curve selector. Ignored for Ed25519 and Ed448.
+    version_added: 0.1.0
+    type: int
+    default: 4096
+  subject_ordered:
+    description: Full ordered subject override. Takes precedence over C(subject), C(common_name),
+      and C(email).
+    version_added: 0.1.0
+    type: list
+    default: []
+    elements: dict
+  common_name:
+    description: Common Name. Required unless C(subject_ordered) is set.
+    version_added: 0.1.0
+    type: str
+  email:
+    description: Optional subject C(emailAddress).
+    version_added: 0.1.0
+    type: str
+  subject:
+    description: Subject defaults used with C(common_name).
+    version_added: 0.1.0
+    type: dict
+    default: {}
+  basic_constraints:
+    description: Basic Constraints tokens.
+    version_added: 0.1.0
+    type: list
+    elements: str
+  key_usage:
+    description: Key Usage tokens.
+    version_added: 0.1.0
+    type: list
+    elements: str
+  key_usage_critical:
+    description: Marks Key Usage critical.
+    version_added: 0.1.0
+    type: bool
+    default: true
+  extended_key_usage:
+    description: Extended Key Usage values. Usually empty for CAs.
+    version_added: 0.1.0
+    type: list
+    default: []
+    elements: str
+  extended_key_usage_critical:
+    description: Marks Extended Key Usage critical.
+    version_added: 0.1.0
+    type: bool
+    default: false
+  san:
+    description: Subject Alternative Name entries.
+    version_added: 0.1.0
+    type: list
+    default: []
+    elements: str
+  san_critical:
+    description: Marks SAN critical.
+    version_added: 0.1.0
+    type: bool
+    default: false
+  aia_base_url:
+    description: Explicit AIA URL prefix. The module appends C(<parent>-ca.der) (the root
+      name for a root).
+    version_added: 0.1.0
+    type: str
+    default: ''
+  cdp_base_url:
+    description: Explicit CDP URL prefix. The module appends C(<parent>-ca.crl) (the root
+      name for a root).
+    version_added: 0.1.0
+    type: str
+    default: ''
+  raw_extensions:
+    description: Additional unrecognized extensions.
+    version_added: 0.1.0
+    type: list
+    default: []
+    elements: dict
+  pkinit:
+    description: Internal PKINIT context for SAN otherName encoding.
+    version_added: 0.1.0
+    type: dict
+    default: {}
+  days:
+    description: Certificate validity in days.
+    version_added: 0.1.0
+    type: int
+    required: true
+  renewal:
+    description: Renewal and rekey policy.
+    version_added: 0.1.0
+    type: dict
+    default: {}
+  digest:
+    description: Signature digest for RSA and ECDSA keys.
+    version_added: 0.1.0
+    type: str
+    default: sha384
+    choices:
+    - sha224
+    - sha256
+    - sha384
+    - sha512
+  include_identifiers:
+    description: Adds SKI and AKI extensions.
+    version_added: 0.1.0
+    type: bool
+    default: true
+  key_mode:
+    description: Private key file mode.
+    version_added: 0.1.0
+    type: str
+    default: '0600'
+  public_mode:
+    description: CSR, certificate, DER, text, and inventory file mode.
+    version_added: 0.1.0
+    type: str
+    default: '0644'
+  key_passphrase:
+    description: Passphrase for the generated authority private key.
+    version_added: 0.1.0
+    type: str
+    required: true
+  parent_key_passphrase:
+    description: Parent CA private key passphrase for issuing CAs.
+    version_added: 0.1.0
+    type: str
+  certificate_policies:
+    description: Certificate policies.
+    version_added: 0.1.0
+    type: list
+    default: []
+    elements: dict
+  policy_constraints:
+    description: Policy constraints.
+    version_added: 0.1.0
+    type: dict
+    default: {}
+  inhibit_any_policy:
+    description: Inhibit any policy.
+    version_added: 0.1.0
+    type: raw
+  owner:
+    description: Owner of generated files; user name or numeric UID.
+    type: str
+    version_added: 0.1.0
+  group:
+    description: Group of generated files; group name or numeric GID.
+    type: str
+    version_added: 0.1.0
+"""
+
+EXAMPLES = r"""
+- name: Create root CA
+  jomrr.ca.authority:
+    base_dir: /etc/pki/example
+    ca_name: example
+    base_url: http://pki.example.test
+    name: root
+    parent: root
+    common_name: Example Root CA
+    subject:
+      country: DE
+      organization: Example
+      organizational_unit: Example PKI
+    days: 3650
+    key_passphrase: "{{ ca_root_passphrase }}"
+
+- name: Create component CA
+  jomrr.ca.authority:
+    base_dir: /etc/pki/example
+    ca_name: example
+    base_url: http://pki.example.test
+    name: component
+    parent: root
+    common_name: Example Component CA
+    subject:
+      country: DE
+      organization: Example
+      organizational_unit: Example PKI
+    days: 1825
+    key_passphrase: "{{ ca_component_passphrase }}"
+    parent_key_passphrase: "{{ ca_root_passphrase }}"
+    renewal:
+      renew_before_days: 30
+      rekey: true
+"""
+
+RETURN = r"""
+directory_changed:
+  description: Always C(false) for authorities.
+  type: bool
+  returned: success
+key_changed:
+  description: Whether the private key changed.
+  type: bool
+  returned: success
+csr_changed:
+  description: Whether the CSR changed.
+  type: bool
+  returned: success
+cert_changed:
+  description: Whether the PEM certificate changed.
+  type: bool
+  returned: success
+der_changed:
+  description: Whether the DER export changed.
+  type: bool
+  returned: success
+txt_changed:
+  description: Whether the text export changed.
+  type: bool
+  returned: success
+chain_changed:
+  description: Always C(false) for authorities.
+  type: bool
+  returned: success
+archive_changed:
+  description: Whether replaced generation material was archived.
+  type: bool
+  returned: success
+inventory_changed:
+  description: Whether CA inventory state changed.
+  type: bool
+  returned: success
+formats:
+  description: Normalized certificate formats.
+  type: list
+  returned: success
+  elements: str
+renewal:
+  description: Renewal decision for this run.
+  type: dict
+  returned: success
+csr_path:
+  description: CSR path.
+  type: str
+  returned: success
+cert_path:
+  description: PEM certificate path.
+  type: str
+  returned: success
+txt_path:
+  description: Text export path, or empty string.
+  type: str
+  returned: success
+"""
+
+# Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.
+# pylint: disable=wrong-import-position
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -22,6 +354,8 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
     ensure_x509,
     sanitize_error,
 )
+
+# pylint: enable=wrong-import-position
 
 ROOT_CA_DEFAULTS = {
     "basic_constraints": ["CA:TRUE", "pathlen:1"],

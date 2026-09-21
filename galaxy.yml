@@ -42,8 +42,7 @@ build_ignore:
   - collections.yml
   - requirements.yml
   - dist
-  - docs/build
-  - docs/rst
+  - docs
   - roles/*/.github
   - roles/*/.forgejo
   - roles/*/.ansible
@@ -67,8 +66,7 @@ build_ignore:
   - roles/*/collections.yml
   - roles/*/requirements.yml
   - roles/*/dist
-  - roles/*/docs/build
-  - roles/*/docs/rst
+  - roles/*/docs
   - .gitmodules
   - '**/.git'
   - '**/.git/**'

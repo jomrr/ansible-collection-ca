@@ -14,6 +14,34 @@ from ansible.errors import (
 from ansible.plugins import AnsiblePlugin
 from ansible_collections.jomrr.ca.plugins.module_utils._validation import authority_map
 
+DOCUMENTATION = r"""
+name: authority_map
+short_description: Index and validate certificate authorities by name
+version_added: 0.1.0
+description:
+- Validate unique authority names and parent references, then index authorities by name.
+- Does not mutate the input list or its dictionaries.
+author:
+- Jonas Mauer (@jomrr)
+options:
+  _input:
+    description: Authority dictionaries containing name and parent; null produces an empty
+      mapping.
+    type: list
+    elements: dict
+    required: true
+"""
+
+EXAMPLES = r"""
+authority_by_name: "{{ authorities | jomrr.ca.authority_map }}"
+"""
+
+RETURN = r"""
+_value:
+  description: Authority dictionaries keyed by their unique name.
+  type: dict
+"""
+
 
 def map_authorities(authorities: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Return authorities keyed by name and validate the public list shape."""

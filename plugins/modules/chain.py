@@ -6,6 +6,90 @@
 
 from __future__ import annotations
 
+DOCUMENTATION = r"""
+module: chain
+short_description: Manage an ordered PEM certificate chain on the managed host
+version_added: 0.1.0
+description:
+- Manage an ordered PEM certificate chain on the managed host.
+author:
+- Jonas Mauer (@jomrr)
+extends_documentation_fragment:
+- jomrr.ca.context
+attributes:
+  check_mode:
+    support: none
+    description: Skipped in check mode without changing the managed host.
+  diff_mode:
+    support: none
+    description: No diff output is returned.
+requirements:
+- Python 3.12 on the managed Linux host
+- cryptography >= 43 on the managed host
+notes:
+- The base directory and persistent inventory must be preserved between runs.
+- Private utilities are internal implementation details and are not a public API.
+options:
+  name:
+    description: Authority short name. The module expects C(<base_dir>/ca/<name>-ca.pem).
+    version_added: 0.1.0
+    type: str
+    required: true
+  formats:
+    description: Chain output formats.
+    version_added: 0.1.0
+    type: list
+    default:
+    - pem
+    - der
+    - txt
+    elements: str
+  mode:
+    description: Chain file mode.
+    version_added: 0.1.0
+    type: str
+    default: '0644'
+  owner:
+    description: Owner of generated files; user name or numeric UID.
+    type: str
+    version_added: 0.1.0
+  group:
+    description: Group of generated files; group name or numeric GID.
+    type: str
+    version_added: 0.1.0
+"""
+
+EXAMPLES = r"""
+- name: Create component CA chain
+  jomrr.ca.chain:
+    base_dir: /etc/pki/example
+    name: component
+    owner: root
+    group: root
+
+- name: Normalize root CA chain state
+  jomrr.ca.chain:
+    base_dir: /etc/pki/example
+    name: root
+"""
+
+RETURN = r"""
+path:
+  description: Derived stable PEM chain path.
+  type: str
+  returned: success
+paths:
+  description: Derived stable chain paths keyed by format.
+  type: dict
+  returned: success
+state:
+  description: C(present) for issuing CA chains, C(absent) for root CA chains.
+  type: str
+  returned: success
+"""
+
+# Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.
+# pylint: disable=wrong-import-position
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
@@ -31,6 +115,8 @@ try:
     from cryptography.hazmat.primitives import serialization
 except ImportError:
     pass
+
+# pylint: enable=wrong-import-position
 
 
 SUPPORTED_FORMATS = {"pem", "der", "txt"}

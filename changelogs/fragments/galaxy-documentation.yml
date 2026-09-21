@@ -1,0 +1,4 @@
+---
+bugfixes:
+  - Embed module and filter documentation in Python files to prevent duplicate Galaxy entries.
+  - Exclude documentation source and build directories from the Galaxy package.

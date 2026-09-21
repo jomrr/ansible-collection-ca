@@ -16,6 +16,9 @@ from typing import Any
 from unittest.mock import Mock, patch
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 
+from ansible_collections.jomrr.ca.plugins.module_utils._fritzbox_client import (
+    FritzBoxClient,
+)
 from ansible_collections.jomrr.ca.plugins.modules import fritzbox_deploy
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -154,7 +157,7 @@ class FritzBoxTests(unittest.TestCase):
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
-                client = fritzbox_deploy.FritzBoxClient(
+                client = FritzBoxClient(
                     url=f"https://127.0.0.1:{server.server_port}",
                     username="test-user",
                     password="test-password",
@@ -165,7 +168,7 @@ class FritzBoxTests(unittest.TestCase):
                 client.import_certificate(self.path.read_bytes())
                 client.logout()
                 self.assertEqual(client.current_certificate(), self.desired)
-                verified = fritzbox_deploy.FritzBoxClient(
+                verified = FritzBoxClient(
                     url=client.url,
                     username="test-user",
                     password="test-password",

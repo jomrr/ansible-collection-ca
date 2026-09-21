@@ -6,6 +6,125 @@
 
 from __future__ import annotations
 
+DOCUMENTATION = r"""
+module: certificate_batch
+short_description: Dispatch managed CA collection certificates in one batch
+version_added: 0.1.0
+description:
+- Dispatch managed CA collection certificates in one batch.
+author:
+- Jonas Mauer (@jomrr)
+extends_documentation_fragment:
+- jomrr.ca.context
+attributes:
+  check_mode:
+    support: none
+    description: Skipped in check mode without changing the managed host.
+  diff_mode:
+    support: none
+    description: No diff output is returned.
+requirements:
+- Python 3.12 on the managed Linux host
+- cryptography >= 43 on the managed host
+notes:
+- The base directory and persistent inventory must be preserved between runs.
+- Private utilities are internal implementation details and are not a public API.
+- Supply the authorities and certificate_types mappings explicitly; no standalone role
+  defaults are loaded.
+- Pass owner and group explicitly; the source implementation needs these values when deriving
+  certificate paths.
+options:
+  base_url:
+    description: Base publication URL for derived AIA/CDP URLs.
+    version_added: 0.1.0
+    type: str
+    default: ''
+  ca_name:
+    description: Enables composed inventory output when non-empty.
+    version_added: 0.1.0
+    type: str
+    default: ''
+  certificate_types:
+    description: Role type map. The selected type must define C(issuer) and may define
+      C(required_fields).
+    version_added: 0.1.0
+    type: dict
+    required: true
+  authorities:
+    description: Authority list used to resolve issuer passphrase and C(default_days).
+    version_added: 0.1.0
+    type: list
+    required: true
+    elements: dict
+  kerberos_realm:
+    description: Default realm for MSKDC certificates.
+    version_added: 0.1.0
+    type: str
+    default: ''
+  subject:
+    description: Role-level subject defaults.
+    version_added: 0.1.0
+    type: dict
+    default: {}
+  renewal:
+    description: Module-level renewal policy defaults. Certificate-local C(renewal) overrides
+      these values.
+    version_added: 0.1.0
+    type: dict
+    default: {}
+  certificates:
+    description: Certificate models. See ca_certificate.
+    version_added: 0.1.0
+    type: list
+    required: true
+    elements: dict
+  owner:
+    description: Owner of generated files; user name or numeric UID.
+    type: str
+    version_added: 0.1.0
+  group:
+    description: Group of generated files; group name or numeric GID.
+    type: str
+    version_added: 0.1.0
+"""
+
+EXAMPLES = r"""
+- name: Issue managed certificates
+  jomrr.ca.certificate_batch:
+    base_dir: /etc/pki/example
+    ca_name: example
+    base_url: http://pki.example.test
+    certificates: "{{ ca_certificates }}"
+    certificate_types: "{{ ca_certificate_types }}"
+    authorities: "{{ ca_authorities }}"
+    subject: "{{ ca_subject }}"
+    renewal: "{{ ca_renewal }}"
+    owner: root
+    group: root
+"""
+
+RETURN = r"""
+inventory_changed:
+  description: Whether the composed inventory or any certificate inventory fragment changed.
+  type: bool
+  returned: success
+count:
+  description: Number of certificate models processed.
+  type: int
+  returned: success
+issuer_groups:
+  description: Number of processed certificates by issuer.
+  type: dict
+  returned: success
+results:
+  description: Per-certificate result dictionaries in the same order as C(certificates).
+  type: list
+  returned: success
+  elements: dict
+"""
+
+# Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.
+# pylint: disable=wrong-import-position
 from collections.abc import Callable
 from typing import cast
 
@@ -17,6 +136,8 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine impor
 from ansible_collections.jomrr.ca.plugins.module_utils._module import (
     execute_certificate,
 )
+
+# pylint: enable=wrong-import-position
 
 
 def run_module() -> None:
