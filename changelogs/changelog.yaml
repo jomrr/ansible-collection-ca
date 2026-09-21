@@ -1,0 +1,11 @@
+---
+ancestor: null
+releases:
+  1.0.0:
+    changes:
+      minor_changes:
+        - Initial extraction of the CA role modules and authority map filter with
+          collection-qualified imports.
+    fragments:
+      - initial.yml
+    release_date: '2026-09-21'

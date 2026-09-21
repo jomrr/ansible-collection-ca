@@ -1,3 +1,0 @@
----
-minor_changes:
-  - Initial extraction of the CA role modules and authority map filter with collection-qualified imports.
