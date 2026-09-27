@@ -16,7 +16,7 @@ chains, revocation lists, public artifact archives and FRITZ!Box deployment.
 
 ## Requirements
 
-- ansible-core >=2.20.0,<2.21.0
+- ansible-core >=2.20.0
 
 ## Installation
 
