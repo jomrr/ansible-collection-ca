@@ -26,11 +26,12 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     env:
       ANSIBLE_COLLECTIONS_PATH: ${{ github.workspace }}
     defaults:
       run:
+        shell: bash
         working-directory: ansible_collections/jomrr/ca
     steps:
       - name: Check out the validated commit
@@ -42,15 +43,24 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
       - uses: astral-sh/setup-uv@v8.1.0
         with:
-          python-version: '3.12'
+          python-version: "3.12"
           enable-cache: true
+          cache-suffix: docs
           cache-dependency-glob: ansible_collections/jomrr/ca/pyproject.toml
       - name: Configure Pages
         uses: actions/configure-pages@v6
       - name: Install documentation tools from pyproject.toml
-        run: make sync
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python --group docs --group ansible-stable-2-20 --refresh-package ansible-core
+      - name: Add collection tools to PATH
+        run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - name: Build antsibull and Sphinx documentation
-        run: make docs
+        run: |
+          mkdir -p docs/rst
+          chmod og-w docs/rst
+          antsibull-docs --config-file docs/antsibull-docs.cfg collection --fail-on-error --cleanup everything --use-current --squash-hierarchy --dest-dir docs/rst jomrr.ca
+          sphinx-build -M html docs/rst docs/build -c docs -W
       - name: Upload HTML
         uses: actions/upload-pages-artifact@v5
         with:
@@ -60,7 +70,7 @@ jobs:
     permissions:
       pages: write
       id-token: write
-    runs-on: ubuntu-26.04
+    runs-on: ubuntu-latest
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

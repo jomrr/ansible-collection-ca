@@ -5,23 +5,23 @@ repos:
       - id: ansible-lint
         name: ansible-lint (production, offline)
         language: system
-        entry: env ANSIBLE_HOME=.ansible .venv/bin/ansible-lint --offline --profile production .
+        entry: ansible-lint --offline --profile production .
         pass_filenames: false
         types: [yaml]
       - id: ruff
         name: ruff
         language: system
-        entry: .venv/bin/ruff check
+        entry: ruff check
         types: [python]
       - id: mypy
         name: mypy
         language: system
-        entry: .venv/bin/mypy --package ansible_collections.jomrr.ca
+        entry: mypy --package ansible_collections.jomrr.ca
         pass_filenames: false
         types: [python]
       - id: pylint
         name: pylint
         language: system
-        entry: .venv/bin/pylint
+        entry: pylint
         types: [python]
         require_serial: true

@@ -9,9 +9,12 @@ requires-python = ">=3.12"
 package = false
 default-groups = ["default"]
 
+conflicts = [[{ group = "ansible-stable-2-20" }, { group = "ansible-stable-2-21" }, { group = "ansible-devel" }]]
 [dependency-groups]
-default = [{ include-group = "dev" }, { include-group = "ansible-2-20" }, { include-group = "docs" }]
-ansible-2-20 = ["ansible-core==2.20.*"]
+default = [{ include-group = "dev" }, { include-group = "ansible-stable-2-20" }, { include-group = "docs" }]
+ansible-stable-2-20 = ["ansible-core @ https://github.com/ansible/ansible/archive/stable-2.20.tar.gz"]
+ansible-stable-2-21 = ["ansible-core @ https://github.com/ansible/ansible/archive/stable-2.21.tar.gz"]
+ansible-devel = ["ansible-core @ https://github.com/ansible/ansible/archive/devel.tar.gz"]
 dev = [
   "ansible-lint==26.*", "pre-commit==4.*",
   "molecule==26.*", "molecule-plugins[podman]==25.*",
@@ -45,3 +48,10 @@ build_command = "antsibull-changelog release && git add -- CHANGELOG.rst changel
 [tool.semantic_release.branches.main]
 match = "main"
 prerelease = false
+
+[tool.semantic_release.remote]
+name = "origin"
+
+[tool.semantic_release.publish]
+dist_glob_patterns = ["dist/jomrr-ca-*.tar.gz"]
+upload_to_vcs_release = true

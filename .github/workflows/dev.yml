@@ -3,8 +3,24 @@ name: dev
 "on":
   push:
     branches: ["dev"]
+    paths-ignore:
+      - ".gitignore"
+      - "LICENSE"
+      - "README.md"
+      - "CHANGELOG.rst"
+      - "Makefile"
+      - "pyproject.toml"
+      - "architecture/**"
   pull_request:
     branches: ["dev"]
+    paths-ignore:
+      - ".gitignore"
+      - "LICENSE"
+      - "README.md"
+      - "CHANGELOG.rst"
+      - "Makefile"
+      - "pyproject.toml"
+      - "architecture/**"
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,5 +30,3 @@ concurrency:
 jobs:
   test:
     uses: ./.github/workflows/test.yml
-    with:
-      full: false

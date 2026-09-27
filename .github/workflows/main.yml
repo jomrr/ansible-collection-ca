@@ -3,8 +3,24 @@ name: main
 "on":
   push:
     branches: ["main"]
+    paths-ignore:
+      - ".gitignore"
+      - "LICENSE"
+      - "README.md"
+      - "CHANGELOG.rst"
+      - "Makefile"
+      - "pyproject.toml"
+      - "architecture/**"
   pull_request:
     branches: ["main"]
+    paths-ignore:
+      - ".gitignore"
+      - "LICENSE"
+      - "README.md"
+      - "CHANGELOG.rst"
+      - "Makefile"
+      - "pyproject.toml"
+      - "architecture/**"
   workflow_dispatch:
 permissions:
   contents: read
@@ -14,5 +30,65 @@ concurrency:
 jobs:
   test:
     uses: ./.github/workflows/test.yml
-    with:
-      full: true
+  changes:
+    name: Classify the complete push
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      integration: ${{ steps.diff.outputs.integration }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Find integration changes
+        id: diff
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ] || ! git rev-parse --verify --quiet "${BEFORE}^{commit}" >/dev/null; then
+            echo 'integration=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet "$BEFORE" "$AFTER" -- \
+              plugins roles .gitmodules meta/runtime.yml extensions/molecule \
+              tests/integration pyproject.toml Makefile .github/workflows .forgejo/workflows; then
+            echo 'integration=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'integration=true' >> "$GITHUB_OUTPUT"
+          fi
+  integration:
+    name: Module and plugin integration
+    needs: [test, changes]
+    if: needs.changes.outputs.integration == 'true'
+    runs-on: ubuntu-latest
+    env:
+      ANSIBLE_COLLECTIONS_PATH: ${{ github.workspace }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: ansible_collections/jomrr/ca
+    steps:
+      - name: Check out the collection
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+          persist-credentials: false
+          path: ansible_collections/jomrr/ca
+      - uses: astral-sh/setup-uv@v8.1.0
+        with:
+          python-version: "3.12"
+          enable-cache: true
+          cache-suffix: ${{ github.job }}-${{ matrix.group || matrix.scenario || 'default' }}
+          cache-dependency-glob: ansible_collections/jomrr/ca/pyproject.toml
+      - name: Install tools from pyproject.toml
+        run: |
+          uv venv --python 3.12 .venv
+          uv pip install --python .venv/bin/python --group dev --group ansible-stable-2-20 --refresh-package ansible-core
+      - name: Add collection tools to PATH
+        run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
+      - name: Run authored integration targets
+        if: hashFiles('ansible_collections/jomrr/ca/tests/integration/targets/**') != ''
+        run: ansible-test integration --docker --python 3.12 -v
