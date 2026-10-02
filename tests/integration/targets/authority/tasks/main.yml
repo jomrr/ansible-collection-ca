@@ -198,6 +198,9 @@
     - name: Verify revocation and publication across CA key rollover
       ansible.builtin.include_tasks: rollover.yml
 
+    - name: Verify managed CA revocation selectors
+      ansible.builtin.include_tasks: revocation_selectors.yml
+
   always:
     - name: Remove temporary CA fixture
       ansible.builtin.file:

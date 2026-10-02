@@ -83,7 +83,19 @@ options:
     type: float
     default: 7
   revoked_certificates:
-    description: Declarative revoked certificate entries.
+    description:
+    - Declarative revoked leaf or managed CA certificate entries.
+    - Select by C(name) (aliases C(certificate), C(certificate_name)),
+      C(fingerprint), C(sha1), C(sha256), C(serial), or C(serial_number).
+    - Revoke subordinate CAs in their parent's CRL. Names select current
+      certificates issued by O(name); fingerprints also select historical CA
+      and leaf certificates after renewal or rekey.
+    - If a leaf and CA share a name under the same issuer, use a fingerprint or
+      serial. Name selectors remain bound to the first revoked certificate;
+      replacements must be explicitly selected by fingerprint or serial.
+    - Fingerprints accept hexadecimal SHA-1 or SHA-256, with optional colon
+      separators and C(sha1:) or C(sha256:) prefixes for C(fingerprint).
+      Entries may also set C(reason), C(revocation_date), and C(invalidity_date).
     version_added: 0.1.0
     type: list
     default: []
@@ -124,6 +136,17 @@ EXAMPLES = r"""
       - name: web01
         reason: key_compromise
         invalidity_date: "2026-06-14T00:00:00Z"
+
+- name: Revoke a managed issuing CA in its parent's CRL
+  jomrr.ca.crl:
+    base_dir: /etc/pki/example
+    name: root
+    common_name: Example Root CA
+    key_passphrase: "{{ ca_root_passphrase }}"
+    next_update_days: 30
+    revoked_certificates:
+      - name: ffw
+        reason: ca_compromise
 
 - name: Create component CA CRLs with fingerprint revocation
   jomrr.ca.crl:

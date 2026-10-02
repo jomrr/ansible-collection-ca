@@ -18,9 +18,6 @@ from unittest.mock import patch
 from ansible_collections.jomrr.ca.plugins.module_utils._authority_generations import (
     generation_id,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine import (
-    ensure_certificate_artifacts,
-)
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_engine import ensure_crls
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
@@ -70,18 +67,7 @@ class TestCaRollover(TestCase):
 
     def leaf(self, name: str, days: int = 90) -> x509.Certificate:
         """Issue a real leaf with issuer URLs derived by the normal dispatcher."""
-        params = self.ca.request()
-        params["base_url"] = "http://pki.example.test"
-        params["certificate"] = {
-            "name": name,
-            "days": days,
-            "common_name": name,
-            "type": "tls_server",
-            "formats": ["pem"],
-            "key_type": "P-256",
-        }
-        result = ensure_certificate_artifacts(params)
-        return load_certificate(result["cert_path"])
+        return self.ca.leaf(name, days=days, base_url="http://pki.example.test")
 
     def publish(self) -> dict[str, bytes]:
         """Read the actual authority-derived tar without extracting private data."""

@@ -9,13 +9,20 @@ from pathlib import Path
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine import (
+    ensure_certificate_artifacts,
     single_certificate_argument_spec,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
+    update_authority_inventory,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
     ca_authority_argument_spec,
     ensure_x509,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import _ordered_chain
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    load_certificate,
+)
 from ansible_collections.jomrr.ca.plugins.modules.authority import _authority_params
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
@@ -64,7 +71,9 @@ class CertificateFixture:
         )
         values.update(overrides)
         params, signed = _authority_params(values)
-        return ensure_x509(params, signed=signed, authority=True)
+        result = ensure_x509(params, signed=signed, authority=True)
+        update_authority_inventory(values, result)
+        return result
 
     def request(self, issuer: str = "issuer") -> dict[str, Any]:
         """Build an external CA request with explicit certificate-signing usage."""
@@ -104,3 +113,25 @@ class CertificateFixture:
             },
         )
         return params
+
+    def leaf(
+        self,
+        name: str,
+        *,
+        issuer: str = "issuer",
+        days: int = 90,
+        base_url: str = "",
+    ) -> x509.Certificate:
+        """Issue and inventory a leaf with a fresh key through the real engine."""
+        params = self.request(issuer)
+        params["base_url"] = base_url
+        params["certificate"] = {
+            "name": name,
+            "days": days,
+            "common_name": name,
+            "type": "tls_server",
+            "formats": ["pem"],
+            "key_type": "P-256",
+        }
+        result = ensure_certificate_artifacts(params)
+        return load_certificate(result["cert_path"])

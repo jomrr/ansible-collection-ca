@@ -1,0 +1,123 @@
+---
+- name: Create the parent CRL before revoking its issuing CA
+  jomrr.ca.crl: &parent_crl
+    base_dir: '{{ ca_test_root.path }}/pki'
+    name: root
+    common_name: Test Root
+    key_passphrase: test-root-passphrase
+    next_update_days: 30
+
+- name: Verify the issuing CA before revocation
+  ansible.builtin.command: &verify_issuer
+    argv:
+      - openssl
+      - verify
+      - -crl_check
+      - -CAfile
+      - '{{ ca_test_root.path }}/pki/ca/root-ca.pem'
+      - -CRLfile
+      - '{{ ca_test_root.path }}/pki/crl/root-ca.crl.pem'
+      - '{{ ca_test_root.path }}/pki/ca/issuer-ca.pem'
+  changed_when: false
+
+- name: Revoke the managed issuing CA by name
+  jomrr.ca.crl: &revoke_issuer_name
+    <<: *parent_crl
+    revoked_certificates:
+      - name: issuer
+        reason: ca_compromise
+  register: ca_revocation_named
+
+- name: Repeat the CA name revocation
+  jomrr.ca.crl: *revoke_issuer_name
+  register: ca_revocation_named_repeat
+
+- name: Verify CA name revocation is idempotent
+  ansible.builtin.assert:
+    that:
+      - ca_revocation_named is changed
+      - ca_revocation_named_repeat is not changed
+      - ca_revocation_named_repeat.crl_number == ca_revocation_named.crl_number
+
+- name: Verify OpenSSL rejects the revoked issuing CA
+  ansible.builtin.command: *verify_issuer
+  register: ca_revocation_verify
+  failed_when: ca_revocation_verify.rc != 2 or 'certificate revoked' not in ca_revocation_verify.stderr
+  changed_when: false
+
+- name: Replace the compromised CA certificate and key
+  jomrr.ca.authority:
+    base_dir: '{{ ca_test_root.path }}/pki'
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    name: issuer
+    parent: root
+    common_name: Test Issuer
+    email: pki@example.test
+    days: 365
+    key_type: P-256
+    key_passphrase: test-issuer-passphrase
+    parent_key_passphrase: test-root-passphrase
+    force: true
+
+- name: Repeat the original name selector after CA replacement
+  jomrr.ca.crl: *revoke_issuer_name
+  register: ca_revocation_after_rekey
+
+- name: Verify the name selector stays bound to the original CA certificate
+  ansible.builtin.assert:
+    that:
+      - not ca_revocation_after_rekey.inventory_changed
+      - ca_revocation_after_rekey.crl_number == ca_revocation_named.crl_number
+
+- name: Verify the replacement CA has not been revoked implicitly
+  ansible.builtin.command: *verify_issuer
+  changed_when: false
+
+- name: Read the replacement CA fingerprint
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - x509
+      - -in
+      - '{{ ca_test_root.path }}/pki/ca/issuer-ca.pem'
+      - -noout
+      - -fingerprint
+      - -sha256
+  register: ca_revocation_fingerprint
+  changed_when: false
+
+- name: Explicitly revoke the replacement CA by SHA-256 fingerprint
+  jomrr.ca.crl: &revoke_issuer_fingerprint
+    <<: *parent_crl
+    revoked_certificates:
+      - sha256: '{{ ca_revocation_fingerprint.stdout.split("=", 1)[1] }}'
+        reason: superseded
+  register: ca_revocation_by_fingerprint
+
+- name: Repeat the CA fingerprint revocation
+  jomrr.ca.crl: *revoke_issuer_fingerprint
+  register: ca_revocation_fingerprint_repeat
+
+- name: Verify CA fingerprint revocation is idempotent
+  ansible.builtin.assert:
+    that:
+      - ca_revocation_by_fingerprint is changed
+      - ca_revocation_fingerprint_repeat is not changed
+      - ca_revocation_by_fingerprint.crl_number == ca_revocation_named.crl_number + 1
+
+- name: Verify OpenSSL rejects the explicitly revoked replacement CA
+  ansible.builtin.command: *verify_issuer
+  register: ca_revocation_replacement_verify
+  failed_when: ca_revocation_replacement_verify.rc != 2 or 'certificate revoked' not in ca_revocation_replacement_verify.stderr
+  changed_when: false
+
+- name: Remove declarations while retaining both CA revocations
+  jomrr.ca.crl: *parent_crl
+  register: ca_revocation_retained
+
+- name: Verify historical CA revocations persist without declarations
+  ansible.builtin.assert:
+    that:
+      - ca_revocation_retained is not changed
+      - ca_revocation_retained.crl_number == ca_revocation_by_fingerprint.crl_number

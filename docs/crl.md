@@ -55,11 +55,16 @@ Serial parsing and timestamp normalization are delegated to the internal
 - Adds CRL Number and Authority Key Identifier extensions.
 - Supports CRL Reason and Invalidity Date revoked-certificate extensions.
 - Resolves revocations by certificate name or fingerprint through CA inventory
-  state.
+  state, including managed CA certificates. Revoke a subordinate CA in its
+  parent's CRL: module `name: root`, entry `name: issuer`.
+- Name selection considers current leaf and CA certificates issued by the CRL
+  authority. If both share a name under that issuer, use a fingerprint or serial.
+  Fingerprints also select historical certificates after renewal or rekey.
 - Revocation events are recorded by issuer and serial before exporting the CRL.
   They remain in later CRLs even when their declarations are removed.
-- A name selector binds to its first revoked generation. A reissued certificate
-  is not automatically revoked; select its serial or fingerprint to revoke it.
+- For leaves and CAs alike, a name selector binds to its first revoked generation.
+  A reissued certificate is not automatically revoked; select its serial or
+  fingerprint to revoke it.
 - An omitted revocation date retains the first recorded revocation time.
 - Recorded `key_compromise` and `ca_compromise` events prevent issuance with the
   same public key of a known local certificate, even under another name or serial.
@@ -153,7 +158,7 @@ module as `revoked_certificates`.
 
 Each `revoked_certificates` item accepts one certificate selector:
 
-- **`name`**: Current certificate name resolved through CA inventory.
+- **`name`**: Current leaf or CA certificate name resolved through CA inventory.
   Type: str; Required: conditional; Default: none; Allowed values: managed
   certificate name
 
@@ -165,7 +170,8 @@ Each `revoked_certificates` item accepts one certificate selector:
   Type: str; Required: conditional; Default: none; Allowed values: managed
   certificate name
 
-- **`fingerprint`**: Certificate fingerprint resolved through CA inventory.
+- **`fingerprint`**: Current or historical leaf or CA certificate fingerprint
+  resolved through CA inventory.
   Type: str; Required: conditional; Default: none; Allowed values: SHA-1 or
   SHA-256 hex, optionally prefixed with `sha1:` or `sha256:`
 
@@ -285,3 +291,24 @@ Revoke by SHA-256 fingerprint:
 
 CRL numbering follows [RFC 5280 section 5.2.3](https://www.rfc-editor.org/rfc/rfc5280.html#section-5.2.3):
 the sequence remains monotonic for the logical issuer and scope across key changes.
+
+Revoke a managed issuing CA in the Root CA's CRL:
+
+```yaml
+- name: Revoke issuing CA ffw
+  jomrr.ca.crl:
+    base_dir: /etc/pki/example
+    name: root
+    common_name: Example Root CA
+    key_passphrase: "{{ ca_root_passphrase }}"
+    next_update_days: 30
+    revoked_certificates:
+      - name: ffw
+        reason: ca_compromise
+```
+
+To select a specific CA certificate after renewal or rekey, replace `name: ffw`
+with `sha256: "<fingerprint of that CA certificate>"`. The fingerprint identifies
+the certificate, not its public key. The parent must match the CRL's `name`.
+Previously recorded name selectors continue to identify the initially revoked
+certificate; they do not revoke its replacement automatically.

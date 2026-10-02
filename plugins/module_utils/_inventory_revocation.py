@@ -47,16 +47,46 @@ def _certificate_fingerprint_match(
     return any(normalize_hex(value) == fingerprint for value in fingerprints.values())
 
 
-def _current_certificate_record(
+def _certificate_issuer(record: dict[str, Any]) -> str:
+    """Return the signing authority for a leaf or managed CA inventory record."""
+    return str(record.get("issuer", record.get("parent", "")))
+
+
+def _current_certificate_by_name(
     base_dir: str,
     *,
+    authority: str,
     name: str,
-) -> dict[str, Any] | None:
-    """Return the current certificate pointer for a certificate name."""
-    for record in _read_collection(base_dir, "current_certificates"):
-        if str(record.get("name")) == name:
-            return record
-    return None
+) -> dict[str, Any]:
+    """Resolve a current leaf or CA name within the CRL issuer's scope."""
+    candidates = [
+        record
+        for collection in ("current_certificates", "authorities")
+        for record in _read_collection(base_dir, collection)
+        if str(record.get("name")) == name
+    ]
+    if not candidates:
+        raise ValueError(f"No current certificate named {name} was found")
+    matches = [
+        record for record in candidates if _certificate_issuer(record) == authority
+    ]
+    if not matches:
+        issuers = ", ".join(
+            sorted({_certificate_issuer(record) for record in candidates})
+        )
+        raise ValueError(f"Certificate {name} is issued by {issuers}, not {authority}")
+    if len(matches) > 1:
+        raise ValueError(
+            f"Name {name} matches multiple certificates issued by {authority}; "
+            "select a fingerprint or serial instead"
+        )
+    record = matches[0]
+    if "certificate" in record:
+        return record
+    issued = _issued_certificate_by_pointer(base_dir, record)
+    if issued is None:
+        raise ValueError(f"Inventory record for certificate {name} was not found")
+    return issued
 
 
 def _issued_certificate_by_pointer(
@@ -83,11 +113,12 @@ def _issued_certificate_by_fingerprint(
     algorithm: str,
     fingerprint: str,
 ) -> dict[str, Any]:
-    """Return one issued certificate record matching a fingerprint."""
+    """Return an issued leaf or CA certificate, including archived generations."""
     matches = [
         record
-        for record in _read_collection(base_dir, "issued_certificates")
-        if str(record.get("issuer", "")) == authority
+        for collection in ("issued_certificates", "authority_certificates")
+        for record in _read_collection(base_dir, collection)
+        if _certificate_issuer(record) == authority
         and _certificate_fingerprint_match(
             record,
             algorithm=algorithm,
@@ -124,7 +155,7 @@ def _resolved_revocation_from_record(
     result = dict(entry)
     result["serial_number"] = certificate["serial_number"]
     result["serial_number_hex"] = certificate["serial_number_hex"]
-    result["issuer"] = record["issuer"]
+    result["issuer"] = _certificate_issuer(record)
     result["certificate_name"] = record["name"]
     result["fingerprints"] = certificate.get("fingerprints", {})
     return result
@@ -173,24 +204,11 @@ def _resolve_revocation_entries_unlocked(
                     }
                 )
                 continue
-            pointer = _current_certificate_record(
+            record = _current_certificate_by_name(
                 base_dir,
+                authority=authority,
                 name=certificate_name,
             )
-            if pointer is None:
-                raise ValueError(
-                    f"No current certificate named {certificate_name} was found"
-                )
-            if str(pointer.get("issuer", "")) != authority:
-                raise ValueError(
-                    f"Certificate {certificate_name} is issued by "
-                    f"{pointer.get('issuer')}, not {authority}"
-                )
-            record = _issued_certificate_by_pointer(base_dir, pointer)
-            if record is None:
-                raise ValueError(
-                    f"Inventory record for certificate {certificate_name} was not found"
-                )
             resolved.append(
                 _resolved_revocation_from_record(
                     {**entry, "selector_name": certificate_name}, record
