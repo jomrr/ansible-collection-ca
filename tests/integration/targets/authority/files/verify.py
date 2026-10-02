@@ -37,6 +37,11 @@ def verify_issuance(base: Path) -> None:
     issuer_key = issuer.public_key()
     assert isinstance(issuer_key, ec.EllipticCurvePublicKey)
     assert crl.is_signature_valid(issuer_key)
+    assert crl.issuer == issuer.subject
+    pem_crl = x509.load_pem_x509_crl((base / "crl/issuer-ca.crl.pem").read_bytes())
+    assert pem_crl.public_bytes(serialization.Encoding.DER) == crl.public_bytes(
+        serialization.Encoding.DER
+    )
     assert crl.extensions.get_extension_for_class(x509.CRLNumber).value.crl_number == 2
     revoked = crl.get_revoked_certificate_by_serial_number(web.serial_number)
     assert revoked is not None

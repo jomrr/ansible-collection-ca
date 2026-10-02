@@ -1,0 +1,4 @@
+---
+bugfixes:
+  - crl - use the CA certificate subject for CRL issuance and comparison, preserving email
+    addresses and ordered subject attributes; replace existing CRLs with mismatched issuers.

@@ -11,7 +11,10 @@ Serial parsing and timestamp normalization are delegated to the internal
 ## Behavior
 
 - Reads the CA private key from `<base_dir>/private/<name>-ca.key`.
-- Builds the CRL issuer subject from `subject` and `common_name`.
+- Uses the complete subject of `<base_dir>/ca/<name>-ca.pem` as the CRL issuer,
+  preserving email addresses, attribute order and repeated attributes.
+- Replaces existing CRLs whose issuer differs from the CA subject, incrementing
+  the persisted CRL number. Repeated runs with a matching CRL remain unchanged.
 - Defaults to writing both `pem` and `der` CRL formats when `formats` is not
   supplied.
 - Writes PEM CRLs to `<base_dir>/crl/<name>-ca.crl.pem`.
@@ -66,11 +69,13 @@ module as `revoked_certificates`.
   Type: str; Required: yes; Default: none; Allowed values: any string; Secret:
   yes
 
-- **`common_name`**: CA subject Common Name.
+- **`common_name`**: Accepted for compatibility. The issuer Common Name is taken
+  from the CA certificate; this parameter does not override it.
   Type: str; Required: yes; Default: none; Allowed values: any string; Secret:
   no
 
-- **`subject`**: Subject defaults for the CRL issuer name.
+- **`subject`**: Accepted for compatibility. The full issuer subject is taken
+  from the CA certificate; this parameter does not override it.
   Type: dict; Required: no; Default: `{}`; Allowed values: supported subject
   keys; Secret: no
 

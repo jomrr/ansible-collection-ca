@@ -12,6 +12,9 @@ short_description: Manage CA collection certificate revocation lists
 version_added: 0.1.0
 description:
 - Manage CA collection certificate revocation lists.
+- The CRL issuer is the complete subject of the loaded CA certificate, including
+  email addresses and ordered subject attributes. Existing CRLs with a different
+  issuer are replaced with the next CRL number.
 extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
   jomrr.ca.context.digest, jomrr.ca.context.formats, jomrr.ca.context.file_mode, jomrr.ca.context.cryptography]
 options:
@@ -26,12 +29,12 @@ options:
     type: str
     required: true
   common_name:
-    description: CA subject Common Name.
+    description: Accepted for compatibility; the issuer Common Name comes from the CA certificate.
     version_added: 0.1.0
     type: str
     required: true
   subject:
-    description: Subject defaults for the CRL issuer name.
+    description: Accepted for compatibility; the complete issuer subject comes from the CA certificate.
     version_added: 0.1.0
     type: dict
     default: {}
@@ -133,12 +136,10 @@ from ansible.module_utils.basic import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._crl import (
     _build_crl,
-    _desired_authority_key_identifier,
     _desired_revoked,
     _existing_numbers,
     _load_existing_crls,
     _needs_rebuild,
-    _signature_algorithm_oid,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_state import (
     last_crl_number,
@@ -290,9 +291,6 @@ def run_module() -> None:
                 )
             if any(number > previous_number for number in existing_numbers):
                 raise ValueError("CRL export number exceeds the persistent sequence")
-            desired_signature_algorithm = _signature_algorithm_oid(
-                ca_cert, params["digest"]
-            )
             desired_revoked = _desired_revoked(params["revoked_certificates"])
             changed = (
                 params["force"]
@@ -300,9 +298,8 @@ def run_module() -> None:
                 or _needs_rebuild(
                     existing_crls=existing_crls,
                     params=params,
-                    desired_signature_algorithm=desired_signature_algorithm,
+                    ca_cert=ca_cert,
                     desired_revoked=desired_revoked,
-                    desired_authority_key=_desired_authority_key_identifier(ca_cert),
                 )
             )
             if changed:

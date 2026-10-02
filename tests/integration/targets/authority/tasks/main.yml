@@ -170,6 +170,20 @@
           - '{{ ca_test_root.path }}/pki/ca/issuer-ca.pem'
           - '{{ ca_test_root.path }}/pki/certs/web/web.pem'
       changed_when: false
+    - name: Verify an unrevoked certificate against the issuer CRL
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - verify
+          - -crl_check
+          - -CAfile
+          - '{{ ca_test_root.path }}/pki/ca/root-ca.pem'
+          - -untrusted
+          - '{{ ca_test_root.path }}/pki/ca/issuer-ca.pem'
+          - -CRLfile
+          - '{{ ca_test_root.path }}/pki/crl/issuer-ca.crl.pem'
+          - '{{ ca_test_root.path }}/pki/certs/tls_server/tls_server.pem'
+      changed_when: false
     - name: Verify artifact state independently
       ansible.builtin.script:
         cmd: "{{ ca_verify_script | default('verify.py') }} {{ ca_test_root.path }}"

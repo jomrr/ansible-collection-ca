@@ -26,7 +26,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
 from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
     digest_algorithm,
     signature_algorithm,
-    subject_from_params,
 )
 
 try:
@@ -194,20 +193,20 @@ def _needs_rebuild(
     *,
     existing_crls: dict[str, x509.CertificateRevocationList | None],
     params: dict[str, Any],
-    desired_signature_algorithm: x509.ObjectIdentifier,
+    ca_cert: x509.Certificate,
     desired_revoked: list[tuple[int, str, str, str]],
-    desired_authority_key: bytes | None,
 ) -> bool:
     """Return whether existing CRLs differ from desired CRL state."""
     if not _same_existing_number(existing_crls):
         return True
     current_time = now_utc()
-    issuer = subject_from_params(params)
+    desired_signature_algorithm = _signature_algorithm_oid(ca_cert, params["digest"])
+    desired_authority_key = _desired_authority_key_identifier(ca_cert)
     for crl in existing_crls.values():
         if crl is None:
             return True
         if (
-            crl.issuer != issuer
+            crl.issuer != ca_cert.subject
             or crl.signature_algorithm_oid != desired_signature_algorithm
         ):
             return True
@@ -234,7 +233,7 @@ def _build_crl(
     now = now_utc(strip_microseconds=True)
     builder = (
         x509.CertificateRevocationListBuilder()
-        .issuer_name(subject_from_params(params))
+        .issuer_name(ca_cert.subject)
         .last_update(now)
         .next_update(now + _dt.timedelta(days=int(params["next_update_days"])))
         .add_extension(x509.CRLNumber(crl_number), critical=False)
