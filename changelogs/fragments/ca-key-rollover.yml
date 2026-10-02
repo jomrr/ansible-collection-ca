@@ -1,0 +1,9 @@
+---
+bugfixes:
+  - authority - retain issuer generations and pin legacy AIA/CDP URLs across CA rekey.
+  - crl - sign CRLs with each active generation key and preserve monotonic CRL numbers across rollover.
+  - crl - recover generations from existing CA archives and retire old CRLs at issued certificate or CA expiry.
+  - publish_archive - include retained issuer certificates and their matching active or final CRLs.
+minor_changes:
+  - crl - expose generation lifetimes and accept archived_key_passphrases for keys with different passphrases.
+  - crl - support legacy_generation selection and report migration_conflicts when earlier rollovers reused issuer URLs.

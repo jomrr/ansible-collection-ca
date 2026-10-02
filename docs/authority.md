@@ -309,6 +309,119 @@ Create an issuing CA signed by the root CA:
       rekey: true
 ```
 
+## CA key rollover and publication
+
+The first signing generation keeps `<name>-ca.der` and `<name>-ca.crl`, preserving
+URLs already embedded in certificates. A new key (or changed issuer subject)
+gets `<name>-ca-<generation_id>.der` and `<name>-ca-<generation_id>.crl`.
+The ID is SHA-256 over the DER subject followed by DER SubjectPublicKeyInfo;
+renewing a certificate with the same key and subject keeps its generation ID.
+Explicit AIA/CDP base URL prefixes still apply.
+
+`authority` keeps public issuer material under
+`<base_dir>/generations/<name>/<generation_id>/` and pins the first identity in
+`generations/<name>/legacy.json`. Current signing material remains under `ca/`
+and `private/`; replaced keys remain in `archive/authorities/<name>/<serial>/`.
+
+After the renewal task above, run these tasks before deploying new certificates:
+
+```yaml
+- name: Refresh the current component CA chain
+  jomrr.ca.chain:
+    base_dir: /etc/pki/example
+    name: component
+
+- name: Refresh CRLs for all component CA generations
+  jomrr.ca.crl:
+    base_dir: /etc/pki/example
+    name: component
+    common_name: Example Component CA
+    key_passphrase: "{{ ca_component_passphrase }}"
+    next_update_days: 30
+    revoked_certificates: "{{ ca_revocations.component | default([]) }}"
+
+- name: Package all retained generations for publication
+  jomrr.ca.publish_archive:
+    base_dir: /etc/pki/example
+    dest: /tmp/example-public.tar
+    authorities: "{{ ca_authorities }}"
+```
+
+Create or refresh CRLs for the other listed authorities as well, then transfer
+and unpack the archive on the publication hosts. Continue running CRL and
+publication tasks for old generations while their certificates are in use.
+Every CRL uses its generation's subject, AKI and signing key. All generations
+carry the logical authority's complete revocation list, one monotonic CRL number
+and matching `thisUpdate` times. Old CRLs cap `nextUpdate` at retirement.
+A new signing key does not reset the counter.
+
+### Archive passphrases and retirement
+
+Keep archived keys, their passphrases, public generation material and inventory
+state together in backups. When passphrases change, supply the old values through
+`crl.archived_key_passphrases`; IDs are returned under `generations`:
+
+```yaml
+archived_key_passphrases:
+  "{{ old_generation_id }}": "{{ vaulted_old_ca_passphrase }}"
+```
+
+IDs without an override use the current `key_passphrase`. Missing or unreadable
+keys for an **active** generation stop CRL preparation before any CRL or
+revocation-state update.
+
+`crl` reports `generations[id].retire_at` and `generations[id].retired`. An old
+generation stops signing when the last recorded certificate issued by that key
+expires, and no later than the old CA certificate expiry. This includes managed
+subordinate CAs and CA certificates issued from external CSRs. If historical
+certificates cannot be attributed reliably, or history is absent, the CA expiry
+is used conservatively. Preserve complete issuance inventory; old summaries
+without AKI are resolved against their current or archived certificate files.
+The current CA remains active until it is replaced as the signer.
+
+The final old CRL's `nextUpdate` is capped at its retirement deadline. It is not
+regenerated repeatedly just because this final deadline enters the usual renewal
+window. After retirement the module does not load or decrypt that generation's
+private key. The operator can destroy the archived key and remove its passphrase;
+keys are never deleted automatically. Keep public generation records, the last
+CRL and the persistent counter. Publication includes retained CA certificates and
+any existing final CRLs without requiring a retired private key.
+
+### Recover an earlier rollover
+
+Existing `archive/authorities/<name>/<serial>/<name>-ca.pem` and `.key` material
+is reused; a previous rollover does not require recreating the CA. Run `crl`
+first to adopt the archived generations, restore their CRL service and retain
+their public certificates, then publish with `authorities`. The legacy URL owner
+is inferred from recorded AIA/CDP references or an unambiguous oldest CA
+certificate. The existing CRL sequence continues even if the old path was
+previously overwritten by a CRL signed with the new key.
+
+If multiple generations already used the same legacy URLs, automatic selection
+fails with candidate generation IDs and certificate serials. Explicitly choose
+which generation keeps those URLs:
+
+```yaml
+- name: Recover CRL service after an earlier CA rollover
+  jomrr.ca.crl:
+    base_dir: /etc/pki/example
+    name: component
+    common_name: Example Component CA
+    key_passphrase: "{{ ca_component_passphrase }}"
+    archived_key_passphrases: "{{ ca_archived_key_passphrases }}"
+    legacy_generation: "{{ original_generation_id }}"
+    next_update_days: 30
+  register: recovered_crls
+```
+
+The owner is then pinned. `migration_conflicts` lists unexpired, unrevoked
+certificates whose embedded legacy URLs point at a different generation. Reissue
+these certificates with `certificate`, `certificate_batch` or `authority`, deploy
+the replacements and revoke the superseded serials. New certificates reference
+their generation's suffixed URLs automatically. Both generations' correctly
+signed CRLs and AIA certificates are published throughout this migration.
+Existing conflicting URLs cannot themselves be changed by restoring an archive.
+
 ## Certificate policies
 
 - `certificate_policies`: list of `{oid, cps_uri?}` entries, default `[]`.

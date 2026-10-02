@@ -189,6 +189,20 @@ def _signature_algorithm_oid(
     raise ValueError("Unsupported CA public key for CRL signing")
 
 
+def _renewal_due(
+    crl: x509.CertificateRevocationList, params: dict[str, Any], now: _dt.datetime
+) -> bool:
+    """Do not repeatedly renew a final CRL already covering the retirement date."""
+    next_update = object_datetime(crl, "next_update")
+    stop_at = params.get("crl_stop_at")
+    if stop_at is not None:
+        if next_update > stop_at:
+            return True
+        if next_update == stop_at:
+            return next_update <= now
+    return next_update <= now + _dt.timedelta(days=params["renew_before_days"])
+
+
 def _needs_rebuild(
     *,
     existing_crls: dict[str, x509.CertificateRevocationList | None],
@@ -210,9 +224,7 @@ def _needs_rebuild(
             or crl.signature_algorithm_oid != desired_signature_algorithm
         ):
             return True
-        if object_datetime(crl, "next_update") <= current_time + _dt.timedelta(
-            days=params["renew_before_days"]
-        ):
+        if _renewal_due(crl, params, current_time):
             return True
         if (
             _authority_key_identifier(crl) != desired_authority_key
@@ -230,12 +242,15 @@ def _build_crl(
     private_key: PrivateKey,
 ) -> x509.CertificateRevocationList:
     """Build and sign a CRL from module parameters."""
-    now = now_utc(strip_microseconds=True)
+    now = params.get("crl_time") or now_utc(strip_microseconds=True)
+    next_update = now + _dt.timedelta(days=int(params["next_update_days"]))
+    if params.get("crl_stop_at") is not None:
+        next_update = min(next_update, params["crl_stop_at"])
     builder = (
         x509.CertificateRevocationListBuilder()
         .issuer_name(ca_cert.subject)
         .last_update(now)
-        .next_update(now + _dt.timedelta(days=int(params["next_update_days"])))
+        .next_update(next_update)
         .add_extension(x509.CRLNumber(crl_number), critical=False)
         .add_extension(
             x509.AuthorityKeyIdentifier(

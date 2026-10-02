@@ -13,6 +13,16 @@ version_added: 0.1.0
 description:
 - Manage a CA authority certificate.
 notes:
+- Before CA rekey, retain the previous public issuer identity. Its existing AIA/CDP
+  URLs remain pinned to it; new generations receive a filename suffix derived from
+  their public key and complete subject. Same-key, same-subject renewal keeps its URLs.
+- After rollover, run M(jomrr.ca.crl) and M(jomrr.ca.publish_archive) with C(authorities)
+  on the publication module to refresh every generation before deploying new leaves.
+  Keep archived keys until M(jomrr.ca.crl) reports their generation as retired.
+  Retirement is bounded by the last issued certificate expiry and the old CA expiry.
+- Earlier rollovers can be recovered from archived certificates and keys. If multiple
+  generations used the same legacy URLs, run M(jomrr.ca.crl) with C(legacy_generation)
+  to choose their owner, then reissue or revoke its reported C(migration_conflicts).
 - Managed keys associated with locally recorded C(key_compromise) or C(ca_compromise)
   revocations cannot be reused. Request C(renewal.rekey=true) for a due renewal or
   C(force=true) to generate a new key immediately.
@@ -126,13 +136,13 @@ options:
     default: false
   aia_base_url:
     description: Explicit AIA URL prefix. The module appends C(<parent>-ca.der) (the root
-      name for a root).
+      name for a root), with a generation suffix after a key or subject change.
     version_added: 0.1.0
     type: str
     default: ''
   cdp_base_url:
     description: Explicit CDP URL prefix. The module appends C(<parent>-ca.crl) (the root
-      name for a root).
+      name for a root), with a generation suffix after a key or subject change.
     version_added: 0.1.0
     type: str
     default: ''
@@ -229,6 +239,11 @@ EXAMPLES = r"""
 """
 
 RETURN = r"""
+generation_changed:
+  description: Whether retained public issuer material or legacy URL state changed.
+  type: bool
+  returned: success
+  version_added: 1.1.0
 directory_changed:
   description: Always C(false) for authorities.
   type: bool

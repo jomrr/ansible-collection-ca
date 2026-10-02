@@ -15,6 +15,23 @@ description:
 - The CRL issuer is the complete subject of the loaded CA certificate, including
   email addresses and ordered subject attributes. Existing CRLs with a different
   issuer are replaced with the next CRL number.
+- After CA rekey, renew CRLs for every active issuer generation with its matching
+  current or archived private key. All carry the authority's complete revocation list,
+  a shared monotonic CRL number and C(thisUpdate). Old CRLs cap C(nextUpdate) at retirement.
+- The original generation keeps C(<name>-ca.crl); subsequent generations use
+  C(<name>-ca-<generation_id>.crl). PEM exports append C(.pem).
+- Old generations retire when their last recorded issued certificate expires,
+  bounded by CA expiry. Without complete attribution, CA expiry is the fallback.
+  Managed subordinate CAs and externally requested CA certificates count too.
+- Retired generations are no longer signed or decrypted. Their last CRL and public
+  certificates are retained; the operator may destroy their archived private keys.
+  No key is deleted automatically. Preserve generation and inventory state.
+- A missing or unreadable active generation key fails preparation before writing
+  CRLs or revocation state. Final CRL nextUpdate is capped at the retirement deadline.
+- Earlier rollovers are reconstructed from archived CA certificates and keys.
+  If existing certificates conflict on legacy URLs, select O(legacy_generation).
+  RV(migration_conflicts) identifies certificates to reissue or revoke; rewriting
+  publication files cannot change their embedded URLs.
 extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
   jomrr.ca.context.digest, jomrr.ca.context.formats, jomrr.ca.context.file_mode, jomrr.ca.context.cryptography]
 options:
@@ -28,6 +45,23 @@ options:
     version_added: 0.1.0
     type: str
     required: true
+  archived_key_passphrases:
+    description:
+    - Optional mapping of generation IDs to archived private-key passphrases.
+    - Defaults to O(key_passphrase) for IDs without an override. IDs are returned
+      in RV(generations) and stored below C(generations/<name>/) on the CA host.
+    version_added: 1.1.0
+    type: dict
+    default: {}
+  legacy_generation:
+    description:
+    - Optional generation ID to own the unsuffixed AIA/CDP filenames during migration.
+    - Automatically inferred from historical certificate URLs or an unambiguous
+      oldest CA certificate. Ambiguous selection fails and lists IDs and serials.
+    - Once recorded, this owner cannot be changed through this option.
+    version_added: 1.1.0
+    type: str
+    default: ''
   common_name:
     description: Accepted for compatibility; the issuer Common Name comes from the CA certificate.
     version_added: 0.1.0
@@ -59,7 +93,7 @@ options:
   digest:
     description: Signature digest for RSA and ECDSA CA keys.
   formats:
-    description: CRL output formats written from one generated CRL object.
+    description: Output formats written from one CRL object per issuer generation.
     default: [pem, der]
   mode:
     description: CRL file mode.
@@ -111,13 +145,33 @@ inventory_changed:
   type: bool
   returned: success
 paths:
-  description: Output paths keyed by format.
+  description: Current CA generation output paths keyed by format.
   type: dict
   returned: success
 crl_number:
   description: CRL Number extension value.
   type: int
   returned: success
+generations:
+  description: Mapping of issuer generation IDs to C(paths), C(retire_at) and
+    C(retired). Active generations also include C(crl_number). The current CA
+    remains active while it is the configured signer.
+  type: dict
+  returned: success
+  version_added: 1.1.0
+legacy_generation:
+  description: Generation ID pinned to the unsuffixed AIA/CDP filenames.
+  type: str
+  returned: success
+  version_added: 1.1.0
+migration_conflicts:
+  description: Unexpired, unrevoked certificates whose legacy URLs conflict with
+    the pinned owner, including C(name), C(serial_number) and C(generation_id).
+    An unknown issuer generation is returned as C(null).
+  type: list
+  elements: dict
+  returned: success
+  version_added: 1.1.0
 formats:
   description: Normalized CRL output formats.
   type: list
@@ -128,113 +182,26 @@ formats:
 # Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.
 # pylint: disable=wrong-import-position
 from collections.abc import Callable
-from pathlib import Path
 from typing import Any, cast
 
-from ansible.module_utils.basic import (
-    AnsibleModule,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._crl import (
-    _build_crl,
-    _desired_revoked,
-    _existing_numbers,
-    _load_existing_crls,
-    _needs_rebuild,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._crl_state import (
-    last_crl_number,
-    store_crl_number,
-)
+from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.jomrr.ca.plugins.module_utils._crl_engine import ensure_crls
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     OPERATION_ERRORS,
     require_cryptography,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
-    FileAttributes,
     ca_lock_path,
     file_argument_spec,
     file_locks,
     sanitize_error,
-    write_file,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
-    resolve_revocation_entries,
-    update_crl_inventory,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._inventory_summary import (
-    _crl_number,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
-    load_certificate,
-    load_private_key,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import DIGESTS
-
-try:
-    from cryptography import x509
-    from cryptography.hazmat.primitives import serialization
-except ImportError:
-    pass
 
 # pylint: enable=wrong-import-position
 
 
-SUPPORTED_FORMATS = {"pem", "der"}
-
-
-def _formats(value: Any) -> list[str]:
-    """Return normalized CRL output formats."""
-    if isinstance(value, str):
-        raise TypeError("formats must be a list")
-    formats = [str(item).lower() for item in (value or ["pem", "der"])]
-    unsupported = sorted(set(formats).difference(SUPPORTED_FORMATS))
-    if unsupported:
-        raise ValueError(f"Unsupported CRL formats: {', '.join(unsupported)}")
-    return formats
-
-
-def _with_derived_paths(params: dict[str, Any]) -> dict[str, Any]:
-    """Derive CRL and CA private key paths from base parameters."""
-    result = dict(params)
-    base_dir = str(result["base_dir"]).rstrip("/")
-    name = str(result["name"])
-    result["formats"] = _formats(result.get("formats"))
-    result["paths"] = {
-        "pem": f"{base_dir}/crl/{name}-ca.crl.pem",
-        "der": f"{base_dir}/crl/{name}-ca.crl",
-    }
-    result["paths"] = {
-        crl_format: path
-        for crl_format, path in result["paths"].items()
-        if crl_format in result["formats"]
-    }
-    result["privatekey_path"] = f"{base_dir}/private/{name}-ca.key"
-    result["certificate_path"] = f"{base_dir}/ca/{name}-ca.pem"
-    return result
-
-
-def _write_crls(params: dict[str, Any], crl: x509.CertificateRevocationList) -> bool:
-    """Write one CRL object to all requested output formats."""
-    changed = False
-    for crl_format, path in params["paths"].items():
-        encoding = (
-            serialization.Encoding.DER
-            if crl_format == "der"
-            else serialization.Encoding.PEM
-        )
-        changed = (
-            write_file(
-                path,
-                crl.public_bytes(encoding),
-                FileAttributes.from_params(params, "mode"),
-                force=params["force"],
-            )
-            or changed
-        )
-    return changed
-
-
-def run_module() -> None:
+def main() -> None:
     """Run the Ansible module for certificate revocation lists."""
     module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec={
@@ -248,6 +215,8 @@ def run_module() -> None:
                 "default": ["pem", "der"],
             },
             "key_passphrase": {"type": "str", "required": True, "no_log": True},
+            "archived_key_passphrases": {"type": "dict", "default": {}, "no_log": True},
+            "legacy_generation": {"type": "str", "default": ""},
             "common_name": {"type": "str", "required": True},
             "subject": {"type": "dict", "default": {}},
             "next_update_days": {"type": "int", "required": True},
@@ -261,8 +230,7 @@ def run_module() -> None:
 
     require_cryptography(module)
 
-    params = _with_derived_paths(module.params)
-    inventory_changed = False
+    params: dict[str, Any] = module.params
     try:
         if not 0 <= params["renew_before_days"] < params["next_update_days"]:
             raise ValueError(
@@ -274,71 +242,15 @@ def run_module() -> None:
                 ca_lock_path(params["base_dir"], "crl", params["name"]),
             ]
         ):
-            params["revoked_certificates"] = resolve_revocation_entries(
-                base_dir=str(params["base_dir"]),
-                authority=str(params["name"]),
-                entries=params["revoked_certificates"],
-            )
-            ca_cert = load_certificate(params["certificate_path"])
-            existing_crls = _load_existing_crls(params["paths"])
-            existing_numbers = _existing_numbers(existing_crls)
-            previous_number = last_crl_number(params["base_dir"], params["name"])
-            if not previous_number and any(
-                Path(path).exists() for path in params["paths"].values()
-            ):
-                raise ValueError(
-                    "CRL exports exist but their sequence state is missing"
-                )
-            if any(number > previous_number for number in existing_numbers):
-                raise ValueError("CRL export number exceeds the persistent sequence")
-            desired_revoked = _desired_revoked(params["revoked_certificates"])
-            changed = (
-                params["force"]
-                or previous_number > max(existing_numbers or [0])
-                or _needs_rebuild(
-                    existing_crls=existing_crls,
-                    params=params,
-                    ca_cert=ca_cert,
-                    desired_revoked=desired_revoked,
-                )
-            )
-            if changed:
-                private_key = load_private_key(
-                    params["privatekey_path"],
-                    params["key_passphrase"],
-                )
-                crl_number = previous_number + 1
-                crl = _build_crl(
-                    params,
-                    crl_number=crl_number,
-                    ca_cert=ca_cert,
-                    private_key=private_key,
-                )
-            else:
-                crl = next(crl for crl in existing_crls.values() if crl is not None)
-                existing_crl_number = _crl_number(crl)
-                if existing_crl_number is None:
-                    raise ValueError("existing CRL is missing a CRL Number")
-                crl_number = existing_crl_number
-
-            changed = store_crl_number(params, crl_number) or changed
-            inventory_changed = update_crl_inventory(params, crl)
-            changed = _write_crls(params, crl) or changed
-            changed = changed or inventory_changed
+            result = ensure_crls(params)
     except OPERATION_ERRORS as exc:
         module.fail_json(msg=sanitize_error(exc, module.params))
-    module.exit_json(
-        changed=changed,
-        inventory_changed=inventory_changed,
-        formats=params["formats"],
-        paths=params["paths"],
-        crl_number=crl_number,
-    )
-
-
-def main() -> None:
-    """Execute the module entry point."""
-    run_module()
+    if result["migration_conflicts"]:
+        module.warn(
+            "Some certificates reference legacy URLs assigned to another generation; "
+            "reissue or revoke those listed in migration_conflicts"
+        )
+    module.exit_json(**result)
 
 
 if __name__ == "__main__":

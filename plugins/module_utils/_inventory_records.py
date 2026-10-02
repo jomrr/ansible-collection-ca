@@ -218,6 +218,7 @@ def record_crl_inventory(
     authority = str(params["name"])
     crl_format = str(params["format"])
     record = {
+        "generation_id": params.get("generation_id", ""),
         "record_type": "crl",
         "schema_version": 1,
         "authority": authority,
@@ -231,8 +232,10 @@ def record_crl_inventory(
         "authority_key_identifier": _crl_authority_key_identifier(crl),
         "revoked_certificates": _revoked_from_crl(crl),
     }
+    generation = params.get("generation_suffix", "")
+    record_name = f"{generation}-{crl_format}" if generation else crl_format
     changed = _write_json(
-        _record_path(base_dir, "crls", authority, crl_format),
+        _record_path(base_dir, "crls", authority, record_name),
         record,
         params.get("owner"),
         params.get("group"),

@@ -101,6 +101,10 @@ def _extension_summary(cert: x509.Certificate) -> dict[str, Any]:
                     {"oid": oid.dotted_string, "name": _oid_name(oid)} for oid in value
                 ],
             }
+        elif isinstance(value, x509.AuthorityKeyIdentifier):
+            result["authority_key_identifier"] = (
+                value.key_identifier.hex() if value.key_identifier else ""
+            )
         elif isinstance(value, x509.SubjectAlternativeName):
             result["subject_alt_name"] = {
                 "critical": extension.critical,

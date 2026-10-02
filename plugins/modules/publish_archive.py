@@ -13,6 +13,17 @@ short_description: Create deterministic public AIA/CDP publish archives on the m
 version_added: 0.1.0
 description:
 - Create deterministic public AIA/CDP publish archives on the managed host.
+- Authority-derived archives include certificates and CRLs for every retained issuer
+  generation. Legacy unsuffixed URLs keep their original issuer; subsequent generations
+  receive distinct filenames. Current signing certificates remain in C(ca/).
+- Generate CRLs with M(jomrr.ca.crl) before publishing. Missing active-generation
+  artifacts cause failure. For retired generations, retain public certificates
+  and include their final CRL if it exists; no private key is required.
+- Explicit O(artifacts) remain literal. With this override the caller must include
+  every generation at the URLs embedded in its certificates; do not publish the
+  current CA certificate at a legacy URL belonging to an older key.
+requirements:
+- cryptography >= 43 on the managed host when deriving artifacts from O(authorities)
 extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.file_mode]
 options:
   dest:
@@ -71,21 +82,30 @@ archive_paths:
 import io
 import tarfile
 from collections.abc import Callable
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.jomrr.ca.plugins.module_utils._authority_generations import (
+    authority_generations,
+    generation_root,
+    generation_stem,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     OPERATION_ERRORS,
+    require_cryptography,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
     ca_lock_path,
-    file_lock,
+    file_locks,
     read_file,
     sanitize_error,
     set_attrs,
     write_file,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
+    _read_json,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._validation import authority_map
 
@@ -121,6 +141,14 @@ def _artifact(
     }
 
 
+def _generation_retired(directory: Path) -> bool:
+    """Keep a retired generation's final CRL when present, without requiring one."""
+    try:
+        return bool(_read_json(str(directory / "status.json"))["retired"])
+    except FileNotFoundError:
+        return False
+
+
 def _artifacts_from_authorities(
     authorities: list[dict[str, Any]],
     base_dir: str,
@@ -131,17 +159,39 @@ def _artifacts_from_authorities(
     artifacts = []
 
     for name, authority in authority_by_name.items():
-        ca_stem = f"{name}-ca"
-        for artifact_format in ("pem", "der", "txt"):
-            artifacts.append(
-                _artifact(
-                    "aia",
-                    f"{root}/ca/{ca_stem}.{artifact_format}",
-                    f"{ca_stem}.{artifact_format}",
-                    artifact_format,
-                    "certificate",
+        for identity in authority_generations(root, name):
+            ca_stem = generation_stem(root, name, identity)
+            retained = generation_root(root, name) / identity
+            for artifact_format in ("pem", "der", "txt"):
+                source = (
+                    str(retained / f"certificate.{artifact_format}")
+                    if retained.is_dir()
+                    else f"{root}/ca/{name}-ca.{artifact_format}"
                 )
-            )
+                artifacts.append(
+                    _artifact(
+                        "aia",
+                        source,
+                        f"{ca_stem}.{artifact_format}",
+                        artifact_format,
+                        "certificate",
+                    )
+                )
+            for artifact_format, suffix in (("pem", "crl.pem"), ("der", "crl")):
+                if (
+                    _generation_retired(retained)
+                    and not Path(f"{root}/crl/{ca_stem}.{suffix}").exists()
+                ):
+                    continue
+                artifacts.append(
+                    _artifact(
+                        "cdp",
+                        f"{root}/crl/{ca_stem}.{suffix}",
+                        f"{ca_stem}.{suffix}",
+                        artifact_format,
+                        "crl",
+                    )
+                )
 
         parent = str(authority.get("parent") or name)
         if parent != name:
@@ -156,25 +206,6 @@ def _artifacts_from_authorities(
                         "chain",
                     )
                 )
-
-        artifacts.extend(
-            [
-                _artifact(
-                    "cdp",
-                    f"{root}/crl/{ca_stem}.crl.pem",
-                    f"{ca_stem}.crl.pem",
-                    "pem",
-                    "crl",
-                ),
-                _artifact(
-                    "cdp",
-                    f"{root}/crl/{ca_stem}.crl",
-                    f"{ca_stem}.crl",
-                    "der",
-                    "crl",
-                ),
-            ]
-        )
 
     return artifacts
 
@@ -281,7 +312,14 @@ def run_module() -> None:
 
     params = module.params
     try:
-        with file_lock(ca_lock_path(params["base_dir"], "publish", "archive")):
+        locks = [ca_lock_path(params["base_dir"], "publish", "archive")]
+        if not params["artifacts"]:
+            require_cryptography(module)
+            locks.extend(
+                ca_lock_path(params["base_dir"], "authority", name)
+                for name in authority_map(params["authorities"])
+            )
+        with file_locks(locks):
             artifacts = _resolve_artifacts(params)
             content, archive_paths = _archive_content(
                 artifacts,

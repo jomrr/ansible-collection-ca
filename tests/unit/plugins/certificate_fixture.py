@@ -61,8 +61,8 @@ class CertificateFixture:
             parent_key_passphrase="test-passphrase",
             owner=str(os.getuid()),
             group=str(os.getgid()),
-            **overrides,
         )
+        values.update(overrides)
         params, signed = _authority_params(values)
         return ensure_x509(params, signed=signed, authority=True)
 

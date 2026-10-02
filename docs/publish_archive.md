@@ -45,11 +45,24 @@ rejected. This keeps archive extraction paths fixed below `aia/` and `crl/`.
 
 When `authorities` is used, the module derives the role defaults:
 
-- AIA gets every CA certificate as `pem`, `der`, and `txt`.
+- AIA gets every retained CA generation as `pem`, `der`, and `txt`.
+- The first generation keeps `<name>-ca.*`; subsequent generations use
+  `<name>-ca-<generation_id>.*`. The original URL is never reassigned to a new key.
+- CDP includes matching CRLs for every generation at the same generation-specific
+  stems. Run `crl` first; missing active exports cause publication to fail.
+- Retired generations keep their public CA certificates and any existing final
+  CRL. Publication does not require a retired signing key or create another CRL.
 - AIA gets every issuing CA chain as `pem`, `der`, and `txt`.
 - CDP gets every CRL as `pem` and `der`.
 - Self-signed root CAs do not get chain files because they would be identical
   to the root certificate.
+
+Authority-derived publication requires `cryptography >= 43` on the managed host.
+Explicit `artifacts` remain literal and override this generation discovery. When
+using that override, include every needed generation yourself and preserve the
+URLs embedded in existing certificates. The current file `ca/<name>-ca.der` must
+not replace a legacy AIA URL belonging to an older key. Prefer `authorities` for
+automatic rollover handling. See [CA rollover](authority.md#ca-key-rollover-and-publication).
 
 ## Behavior
 

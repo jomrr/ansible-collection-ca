@@ -195,6 +195,9 @@
       ansible.builtin.include_tasks: csr.yml
     - name: Exercise compromised key renewal protection
       ansible.builtin.include_tasks: key_revocation.yml
+    - name: Verify revocation and publication across CA key rollover
+      ansible.builtin.include_tasks: rollover.yml
+
   always:
     - name: Remove temporary CA fixture
       ansible.builtin.file:

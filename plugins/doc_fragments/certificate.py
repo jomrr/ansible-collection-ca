@@ -14,6 +14,10 @@ class ModuleDocFragment:
 
     DOCUMENTATION: ClassVar[str] = r"""
 notes:
+- AIA/CDP URLs identify the actual signing CA generation. The original issuer keeps
+  its unsuffixed filenames; after CA rekey, new certificates reference filenames
+  containing the new generation ID. Publish every retained generation with
+  M(jomrr.ca.publish_archive) using C(authorities), and refresh CRLs with M(jomrr.ca.crl).
 - Reusing a public key from a locally recorded certificate revoked with C(key_compromise)
   or C(ca_compromise) fails, including renewal, batch issuance and external CSRs.
   The check spans recorded generations and certificate names in the same C(base_dir).

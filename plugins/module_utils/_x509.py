@@ -10,6 +10,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from ansible_collections.jomrr.ca.plugins.module_utils._authority_generations import (
+    issuer_urls,
+    retain_generation,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     CRYPTOGRAPHY_IMPORT_ERROR,
 )
@@ -232,6 +236,8 @@ def _validate_signing_request(
     subject = subject_from_params(params)
     validate_issuer_constraints(params, subject, signer.issuer_chain)
     validate_issuer_policies(params, signer.cert)
+    issuer = params["parent"] if params["authority"] else params["issuer"]
+    issuer_urls(params, issuer, signer.cert.subject, signer.cert.public_key())
     return csr
 
 
@@ -385,6 +391,8 @@ def _ensure_x509_locked(
         "archive_changed": False,
     }
     existing_cert = _load_existing_certificate(params["cert_path"])
+    if params["authority"] and existing_cert is not None:
+        changes["generation_changed"] = retain_generation(params, existing_cert)
     renewal = _renewal_decision(params, existing_cert)
     if renewal["rekey"]:
         changes["archive_changed"] = _archive_existing_material(
@@ -400,6 +408,8 @@ def _ensure_x509_locked(
             if signed
             else key
         )
+    if not signed:
+        issuer_urls(params, params["name"], subject, key.public_key())
     extensions = _desired_extensions(
         params,
         key.public_key(),
@@ -413,5 +423,9 @@ def _ensure_x509_locked(
         renewal,
         existing_cert,
     )
+    if params["authority"]:
+        changes["generation_changed"] = retain_generation(params, cert) or changes.get(
+            "generation_changed", False
+        )
     changes.update(_ensure_exports(params, cert, signer, key, manage_chain))
     return _result(params, changes, renewal)

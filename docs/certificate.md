@@ -104,6 +104,10 @@ The Key Usage lists above describe RSA defaults. Non-RSA subject keys omit
 Changing the effective signature digest reissues the certificate and managed
 CSR with the existing key. An external CSR retains its original signature.
 
+AIA/CDP filenames follow the actual signing CA generation. After CA rekey, newly
+issued certificates use a generation suffix; the old URLs remain assigned to the
+original issuer. See [CA rollover and publication](authority.md#ca-key-rollover-and-publication).
+
 ## Module Parameters
 
 - **`base_dir`**: Base CA directory used to locate issuer material and derive

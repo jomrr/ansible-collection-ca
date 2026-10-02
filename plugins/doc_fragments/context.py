@@ -62,6 +62,7 @@ options:
   base_url:
     description: Base publication URL. If set, AIA defaults to C(<base_url>/aia/<parent>-ca.der)
       and CDP to C(<base_url>/crl/<parent>-ca.crl); a root references itself.
+      After issuer rollover, filenames include its generation suffix.
     version_added: 0.1.0
     type: str
     default: ''
