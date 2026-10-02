@@ -9,6 +9,9 @@ from pathlib import Path
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     MATERIAL_ERRORS,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    authority_directory,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     load_certificates,
 )
@@ -27,7 +30,7 @@ def _authority_name(path: Path) -> str:
 def _load_authorities(base_dir: str) -> dict[str, x509.Certificate]:
     """Load all CA certificates below the managed CA directory."""
     authorities = {}
-    for path in sorted((Path(base_dir.rstrip("/")) / "ca").glob("*-ca.pem")):
+    for path in sorted(authority_directory(base_dir).glob("*-ca.pem")):
         certificates = load_certificates(str(path))
         if certificates:
             authorities[_authority_name(path)] = certificates[0]

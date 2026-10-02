@@ -22,6 +22,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     file_locks,
     sanitize_error,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._formats import normalize_formats
 from ansible_collections.jomrr.ca.plugins.module_utils._renewal import renewal_decision
 from ansible_collections.jomrr.ca.plugins.module_utils._text import ensure_txt
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
@@ -69,7 +70,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     _with_derived_paths,
     ca_authority_argument_spec,
     certificate_params,
-    normalize_formats,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
     validate_issuer_policies,

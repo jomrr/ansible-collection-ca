@@ -97,6 +97,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
+    _mode,
     ca_lock_path,
     file_locks,
     read_file,
@@ -106,6 +107,11 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     _read_json,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    authority_paths,
+    chain_paths,
+    crl_paths,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._validation import authority_map
 
@@ -166,7 +172,11 @@ def _artifacts_from_authorities(
                 source = (
                     str(retained / f"certificate.{artifact_format}")
                     if retained.is_dir()
-                    else f"{root}/ca/{name}-ca.{artifact_format}"
+                    else authority_paths(root, name)[
+                        "certificate_text"
+                        if artifact_format == "txt"
+                        else f"certificate_{artifact_format}"
+                    ]
                 )
                 artifacts.append(
                     _artifact(
@@ -177,17 +187,14 @@ def _artifacts_from_authorities(
                         "certificate",
                     )
                 )
-            for artifact_format, suffix in (("pem", "crl.pem"), ("der", "crl")):
-                if (
-                    _generation_retired(retained)
-                    and not Path(f"{root}/crl/{ca_stem}.{suffix}").exists()
-                ):
+            for artifact_format, source in crl_paths(root, ca_stem).items():
+                if _generation_retired(retained) and not Path(source).exists():
                     continue
                 artifacts.append(
                     _artifact(
                         "cdp",
-                        f"{root}/crl/{ca_stem}.{suffix}",
-                        f"{ca_stem}.{suffix}",
+                        source,
+                        Path(source).name,
                         artifact_format,
                         "crl",
                     )
@@ -195,13 +202,12 @@ def _artifacts_from_authorities(
 
         parent = str(authority.get("parent") or name)
         if parent != name:
-            chain_stem = f"{name}-ca-chain"
-            for artifact_format in ("pem", "der", "txt"):
+            for artifact_format, source in chain_paths(root, name).items():
                 artifacts.append(
                     _artifact(
                         "aia",
-                        f"{root}/chains/{chain_stem}.{artifact_format}",
-                        f"{chain_stem}.{artifact_format}",
+                        source,
+                        Path(source).name,
                         artifact_format,
                         "chain",
                     )
@@ -219,13 +225,6 @@ def _resolve_artifacts(params: dict[str, Any]) -> list[dict[str, Any]]:
     if not authorities:
         raise ValueError("artifacts or authorities is required")
     return _artifacts_from_authorities(authorities, params["base_dir"])
-
-
-def _mode(value: Any, fallback: int = 0o644) -> int:
-    """Return an integer mode from an Ansible-style octal mode value."""
-    if value is None:
-        return fallback
-    return int(str(value), 8)
 
 
 def _archive_path(area: str, filename: str) -> str:
@@ -262,7 +261,7 @@ def _archive_content(
     artifact_mode: Any,
 ) -> tuple[bytes, list[str]]:
     """Return deterministic tar bytes and archive paths for public artifacts."""
-    mode = _mode(artifact_mode)
+    mode = _mode(artifact_mode, fallback=0o644)
     archive_paths: set[str] = set()
     buffer = io.BytesIO()
 

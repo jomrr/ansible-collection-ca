@@ -24,6 +24,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
 from ansible_collections.jomrr.ca.plugins.module_utils._key_revocation import (
     validate_key_revocation,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    archive_directory,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import serial_hex
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
@@ -74,11 +77,11 @@ def _ensure_directory(path: str | None, owner: Any, group: Any, mode: Any) -> bo
 
 def _archive_dir(params: dict[str, Any], cert: x509.Certificate) -> str:
     """Return the archive directory for one existing certificate generation."""
-    namespace = "authorities" if params.get("authority") else "certificates"
-    serial = serial_hex(cert.serial_number)
-    return (
-        f"{str(params['base_dir']).rstrip('/')}/archive/"
-        f"{namespace}/{params['name']}/{serial}"
+    return archive_directory(
+        str(params["base_dir"]),
+        str(params["name"]),
+        authority=bool(params.get("authority")),
+        serial=serial_hex(cert.serial_number),
     )
 
 

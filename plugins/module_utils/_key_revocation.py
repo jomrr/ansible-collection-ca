@@ -4,10 +4,13 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._file import file_lock
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_lookup import (
+    certificate_issuer,
+    record_certificates,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     _inventory_lock_path,
     _read_collection,
@@ -16,7 +19,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._serial import normalize_
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     _cert_fingerprint,
     _public_key_fingerprint,
-    load_certificate,
 )
 
 try:
@@ -35,21 +37,7 @@ def _record_key_fingerprint(base_dir: str, record: dict[str, Any]) -> str:
     certificate = record["certificate"]
     if certificate.get("public_key_sha256"):
         return str(certificate["public_key_sha256"])
-    current = Path(record["paths"]["certificate_pem"])
-    kind = "authorities" if record["record_type"] == "authority" else "certificates"
-    archived = (
-        Path(base_dir)
-        / "archive"
-        / kind
-        / record["name"]
-        / certificate["serial_number_hex"]
-        / current.name
-    )
-    for path in (current, archived):
-        try:
-            cert = load_certificate(str(path))
-        except FileNotFoundError:
-            continue
+    for cert in record_certificates(base_dir, record):
         if normalize_hex(_cert_fingerprint(cert).hex()) == normalize_hex(
             certificate["fingerprints"]["sha256"]
         ):
@@ -75,7 +63,7 @@ def validate_key_revocation(params: dict[str, Any], key: PublicKey) -> None:
         records = _read_collection(base_dir, "issued_certificates")
         records.extend(_read_collection(base_dir, "authority_certificates"))
         for record in records:
-            issuer = record.get("issuer", record.get("parent"))
+            issuer = certificate_issuer(record)
             serial = record["certificate"]["serial_number_hex"]
             if (issuer, serial) not in compromised:
                 continue

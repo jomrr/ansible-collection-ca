@@ -25,6 +25,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory_summary import
     _oid_name,
     _revoked_from_crl,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    authority_paths,
+    certificate_paths,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._renewal import (
     renewal_policy,
     renewal_status,
@@ -40,54 +44,14 @@ except ImportError:
     pass
 
 
-def _authority_paths(
-    base_dir: str,
-    name: str,
-    *,
-    include_chain: bool,
-) -> dict[str, str]:
-    """Return derived authority artifact paths."""
-    ca_file = f"{name}-ca"
-    paths = {
-        "private_key": f"{base_dir}/private/{ca_file}.key",
-        "csr": f"{base_dir}/csr/{ca_file}.csr",
-        "certificate_pem": f"{base_dir}/ca/{ca_file}.pem",
-        "certificate_der": f"{base_dir}/ca/{ca_file}.der",
-        "certificate_text": f"{base_dir}/ca/{ca_file}.txt",
-        "crl_pem": f"{base_dir}/crl/{ca_file}.crl.pem",
-        "crl_der": f"{base_dir}/crl/{ca_file}.crl",
-    }
-    if include_chain:
-        paths["chain"] = f"{base_dir}/chains/{ca_file}-chain.pem"
-    return paths
-
-
-def _certificate_paths(base_dir: str, certificate: dict[str, Any]) -> dict[str, str]:
-    """Return derived managed certificate artifact paths."""
-    name = str(certificate["name"])
-    output_dir = str(certificate.get("output_dir") or f"{base_dir}/certs/{name}")
-    output_dir = output_dir.rstrip("/")
-    return {
-        "output_dir": output_dir,
-        "private_key": f"{output_dir}/{name}.key",
-        "csr": f"{base_dir}/csr/{name}.csr",
-        "certificate_pem": f"{output_dir}/{name}.pem",
-        "certificate_der": f"{output_dir}/{name}.der",
-        "certificate_text": f"{output_dir}/{name}.txt",
-        "chain": f"{output_dir}/{name}-chain.pem",
-        "fullchain": f"{output_dir}/{name}-fullchain.pem",
-        "fritzbox_bundle": f"{output_dir}/{name}-fritzbox.pem",
-        "pkcs12_pfx": f"{output_dir}/{name}.pfx",
-        "pkcs12_p12": f"{output_dir}/{name}.p12",
-    }
-
-
 def _certificate_record_paths(
     base_dir: str,
     certificate: dict[str, Any],
 ) -> dict[str, str]:
     """Return deterministic managed artifact paths for a certificate record."""
-    paths = _certificate_paths(base_dir, certificate)
+    paths = certificate_paths(
+        base_dir, str(certificate["name"]), str(certificate.get("output_dir") or "")
+    )
     formats = {str(item).lower() for item in certificate.get("formats", [])}
     keys = {"output_dir", "csr", "certificate_pem", "chain"}
     if not certificate.get("csr_mode"):
@@ -117,7 +81,7 @@ def record_authority_inventory(
     cert = _load_certificate(result["cert_path"])
     parent = str(params.get("parent") or name)
     self_signed = parent == name
-    paths = _authority_paths(base_dir, name, include_chain=not self_signed)
+    paths = authority_paths(base_dir, name, include_chain=not self_signed)
     certificate = _certificate_summary(cert)
     record = {
         "record_type": "authority",

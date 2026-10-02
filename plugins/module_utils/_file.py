@@ -22,6 +22,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    lock_path as layout_lock_path,
+)
+
 MASK = "********"
 NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 DIRECTORY = getattr(os, "O_DIRECTORY", 0)
@@ -41,7 +45,7 @@ def safe_path_component(value: Any) -> str:
 def ca_lock_path(base_dir: str, namespace: str, name: str) -> str:
     """Return a shared lock path for one managed CA object."""
     stem = f"{safe_path_component(namespace)}-{safe_path_component(name)}"
-    return f"{str(base_dir).rstrip('/')}/.locks/{stem}.lock"
+    return layout_lock_path(base_dir, stem)
 
 
 @contextmanager

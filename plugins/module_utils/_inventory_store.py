@@ -19,16 +19,19 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     safe_path_component,
     write_file,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    inventory_path,
+)
 
 
 def _state_dir(base_dir: str) -> str:
     """Return the directory that stores inventory state fragments."""
-    return f"{str(base_dir).rstrip('/')}/inventory/state"
+    return inventory_path(base_dir, "state")
 
 
 def _inventory_path(base_dir: str) -> str:
     """Return the composed inventory path."""
-    return f"{str(base_dir).rstrip('/')}/inventory/ca-inventory.json"
+    return inventory_path(base_dir, "ca-inventory.json")
 
 
 def _inventory_lock_path(base_dir: str) -> str:

@@ -11,6 +11,14 @@ from __future__ import annotations
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._file import ca_lock_path
+from ansible_collections.jomrr.ca.plugins.module_utils._formats import (
+    normalize_formats,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    authority_paths,
+    certificate_paths,
+    chain_paths,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     DIGESTS,
     KEY_TYPES,
@@ -60,37 +68,37 @@ def _with_derived_paths(
     if authority:
         return _authority_paths(result, signed=signed)
 
-    output_dir = str(result.get("output_dir") or f"{base_dir}/certs/{name}").rstrip("/")
+    paths = certificate_paths(base_dir, name, str(result.get("output_dir") or ""))
+    output_dir = paths["output_dir"]
     issuer = str(result["issuer"])
     issuer_file = f"{issuer}-ca"
     external_csr = _external_csr_configured(result)
     result["lock_path"] = ca_lock_path(base_dir, "certificate", name)
     result["output_dir"] = output_dir
-    result["key_path"] = "" if external_csr else f"{output_dir}/{name}.key"
-    result["csr_path"] = f"{base_dir}/csr/{name}.csr"
-    result["cert_path"] = f"{output_dir}/{name}.pem"
-    result["der_path"] = f"{output_dir}/{name}.der" if "der" in formats else ""
-    result["txt_path"] = f"{output_dir}/{name}.txt" if "txt" in formats else ""
-    result["fullchain_path"] = (
-        f"{output_dir}/{name}-fullchain.pem" if "fullchain" in formats else ""
-    )
+    result["key_path"] = "" if external_csr else paths["private_key"]
+    result["csr_path"] = paths["csr"]
+    result["cert_path"] = paths["certificate_pem"]
+    result["der_path"] = paths["certificate_der"] if "der" in formats else ""
+    result["txt_path"] = paths["certificate_text"] if "txt" in formats else ""
+    result["fullchain_path"] = paths["fullchain"] if "fullchain" in formats else ""
     result["fritzbox_bundle_path"] = (
-        f"{output_dir}/{name}-fritzbox.pem" if "fritzbox" in formats else ""
+        paths["fritzbox_bundle"] if "fritzbox" in formats else ""
     )
     result["pkcs12_paths"] = {
-        export_format: f"{output_dir}/{name}.{export_format}"
+        export_format: paths[f"pkcs12_{export_format}"]
         for export_format in ("pfx", "p12")
         if export_format in formats
     }
     result["directory_path"] = output_dir if manage_directory else None
     if signed:
+        signer_paths = authority_paths(base_dir, issuer)
         result["signer_lock_path"] = ca_lock_path(base_dir, "authority", issuer)
-        result["signer_cert_path"] = f"{base_dir}/ca/{issuer_file}.pem"
-        result["signer_key_path"] = f"{base_dir}/private/{issuer_file}.key"
+        result["signer_cert_path"] = signer_paths["certificate_pem"]
+        result["signer_key_path"] = signer_paths["private_key"]
     result["chain_src_path"] = (
-        f"{base_dir}/chains/{issuer_file}-chain.pem" if manage_chain else ""
+        chain_paths(base_dir, issuer, ("pem",))["pem"] if manage_chain else ""
     )
-    result["chain_path"] = f"{output_dir}/{name}-chain.pem" if manage_chain else ""
+    result["chain_path"] = paths["chain"] if manage_chain else ""
     result["aia_url"] = _base_url(result, f"{issuer_file}.der", "aia_base_url")
     result["cdp_url"] = _base_url(result, f"{issuer_file}.crl", "cdp_base_url")
     return result
@@ -99,19 +107,19 @@ def _with_derived_paths(
 def _authority_paths(result: dict[str, Any], *, signed: bool) -> dict[str, Any]:
     """Derive paths and publication URLs for a CA authority."""
     base_dir, name, formats = result["base_dir"], result["name"], result["formats"]
-    ca_file = f"{name}-ca"
+    paths = authority_paths(base_dir, name)
     result["lock_path"] = ca_lock_path(base_dir, "authority", name)
-    result["key_path"] = f"{base_dir}/private/{ca_file}.key"
-    result["csr_path"] = f"{base_dir}/csr/{ca_file}.csr"
-    result["cert_path"] = f"{base_dir}/ca/{ca_file}.pem"
-    result["der_path"] = f"{base_dir}/ca/{ca_file}.der" if "der" in formats else ""
-    result["txt_path"] = f"{base_dir}/ca/{ca_file}.txt" if "txt" in formats else ""
+    result["key_path"] = paths["private_key"]
+    result["csr_path"] = paths["csr"]
+    result["cert_path"] = paths["certificate_pem"]
+    result["der_path"] = paths["certificate_der"] if "der" in formats else ""
+    result["txt_path"] = paths["certificate_text"] if "txt" in formats else ""
     if signed:
         parent = str(result["parent"])
-        parent_file = f"{parent}-ca"
+        signer_paths = authority_paths(base_dir, parent)
         result["signer_lock_path"] = ca_lock_path(base_dir, "authority", parent)
-        result["signer_cert_path"] = f"{base_dir}/ca/{parent_file}.pem"
-        result["signer_key_path"] = f"{base_dir}/private/{parent_file}.key"
+        result["signer_cert_path"] = signer_paths["certificate_pem"]
+        result["signer_key_path"] = signer_paths["private_key"]
     authority_file = f"{result['parent'] if signed else name}-ca"
     result["aia_url"] = _base_url(result, f"{authority_file}.der", "aia_base_url")
     result["cdp_url"] = _base_url(result, f"{authority_file}.crl", "cdp_base_url")
@@ -181,13 +189,6 @@ def ca_authority_argument_spec(
         if key in spec:
             spec[key]["default"] = value
     return spec
-
-
-def normalize_formats(formats: Any) -> list[str]:
-    """Return normalized certificate output format names."""
-    if isinstance(formats, str):
-        raise TypeError("formats must be a list")
-    return [str(item).lower() for item in (formats or [])]
 
 
 def certificate_params(

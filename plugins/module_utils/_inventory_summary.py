@@ -11,6 +11,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from ansible_collections.jomrr.ca.plugins.module_utils._key_usage import (
+    key_usage_names as _key_usage,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import (
     colon_hex,
     serial_hex,
@@ -52,30 +55,6 @@ def _oid_name(oid: x509.ObjectIdentifier) -> str:
     """Return a readable OID name with dotted-string fallback."""
     name = str(getattr(oid, "_name", "") or "")
     return name if name and name != "Unknown OID" else oid.dotted_string
-
-
-def _key_usage(value: x509.KeyUsage) -> list[str]:
-    """Return key usage names set on an X.509 certificate."""
-    usages = []
-    if value.digital_signature:
-        usages.append("digitalSignature")
-    if value.content_commitment:
-        usages.append("nonRepudiation")
-    if value.key_encipherment:
-        usages.append("keyEncipherment")
-    if value.data_encipherment:
-        usages.append("dataEncipherment")
-    if value.key_agreement:
-        usages.append("keyAgreement")
-    if value.key_cert_sign:
-        usages.append("keyCertSign")
-    if value.crl_sign:
-        usages.append("cRLSign")
-    if value.key_agreement and value.encipher_only:
-        usages.append("encipherOnly")
-    if value.key_agreement and value.decipher_only:
-        usages.append("decipherOnly")
-    return usages
 
 
 def _extension_summary(cert: x509.Certificate) -> dict[str, Any]:

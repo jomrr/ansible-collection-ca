@@ -102,6 +102,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._fritzbox_client import (
     FritzBoxClient,
     _deploy_url,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    certificate_paths,
+)
 
 try:
     from cryptography import x509
@@ -126,8 +129,7 @@ CERTIFICATE_RE = re.compile(
 
 def _bundle_path(base_dir: str, name: str, output_dir: str | None) -> str:
     """Derive the FritzBox bundle path."""
-    directory = (output_dir or f"{base_dir.rstrip('/')}/certs/{name}").rstrip("/")
-    return f"{directory}/{name}-fritzbox.pem"
+    return certificate_paths(base_dir, name, output_dir)["fritzbox_bundle"]
 
 
 def _deploy_lock_path(base_dir: str, url: str) -> str:

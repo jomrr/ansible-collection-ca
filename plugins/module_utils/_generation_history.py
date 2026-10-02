@@ -22,9 +22,17 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     file_lock,
     safe_path_component,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_lookup import (
+    record_certificates,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     _inventory_lock_path,
     _read_collection,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    archive_directory,
+    authority_paths,
+    generation_directory,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import normalize_hex
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
@@ -54,10 +62,13 @@ def generation_id(subject: x509.Name, public_key: PublicKey) -> str:
 def ca_history(base_dir: str, name: str) -> dict[str, x509.Certificate]:
     """Recover every CA identity from current, archived and retained certificates."""
     name = safe_path_component(name)
-    base = Path(base_dir)
     paths = [
-        *sorted((base / "archive" / "authorities" / name).glob(f"*/{name}-ca.pem")),
-        *sorted((base / "generations" / name).glob("*/certificate.pem")),
+        *sorted(
+            Path(archive_directory(base_dir, name, authority=True)).glob(
+                f"*/{name}-ca.pem"
+            )
+        ),
+        *sorted(generation_directory(base_dir, name).glob("*/certificate.pem")),
     ]
     result: dict[str, x509.Certificate] = {}
     for path in paths:
@@ -67,7 +78,7 @@ def ca_history(base_dir: str, name: str) -> dict[str, x509.Certificate]:
             cert
         ) > certificate_not_valid_after(result[identity]):
             result[identity] = cert
-    current = load_certificate(str(base / "ca" / f"{name}-ca.pem"))
+    current = load_certificate(authority_paths(base_dir, name)["certificate_pem"])
     result[generation_id(current.subject, current.public_key())] = current
     return result
 
@@ -78,23 +89,17 @@ def _record_certificate(
     """Find a historical certificate without following a mutable current pointer."""
     name = safe_path_component(str(record["name"]))
     serial = safe_path_component(str(record["certificate"]["serial_number_hex"]))
-    authority = record["record_type"] == "authority"
-    namespace, filename = (
-        ("authorities", f"{name}-ca.pem")
-        if authority
-        else ("certificates", f"{name}.pem")
+    record = {
+        **record,
+        "name": name,
+        "certificate": {**record["certificate"], "serial_number_hex": serial},
+    }
+    filename = (
+        f"{name}-ca.pem" if record["record_type"] == "authority" else f"{name}.pem"
     )
-    candidates = [
-        str(Path(base_dir) / "archive" / namespace / name / serial / filename),
-        str(record.get("paths", {}).get("certificate_pem", "")),
-    ]
-    for path in candidates:
-        if not path:
-            continue
-        try:
-            cert = load_certificate(path)
-        except FileNotFoundError:
-            continue
+    for cert in record_certificates(
+        base_dir, record, archive_first=True, archive_filename=filename
+    ):
         if cert.serial_number == int(serial, 16):
             return cert
     return None

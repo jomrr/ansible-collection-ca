@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from collections.abc import Iterable
 from typing import Any, overload
 
+from ansible_collections.jomrr.ca.plugins.module_utils._key_usage import (
+    key_usage as _key_usage,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._profiles import (
     profile_key_usage,
 )
@@ -131,23 +133,6 @@ def _basic_constraints(values: list[str] | None) -> x509.BasicConstraints:
     if not ca:
         path_length = None
     return x509.BasicConstraints(ca=ca, path_length=path_length)
-
-
-def _key_usage(values: Iterable[str] | None) -> x509.KeyUsage:
-    """Build a KeyUsage extension value from role tokens."""
-    names = {str(value) for value in values or []}
-    key_agreement = "keyAgreement" in names
-    return x509.KeyUsage(
-        digital_signature="digitalSignature" in names,
-        content_commitment=bool({"nonRepudiation", "contentCommitment"} & names),
-        key_encipherment="keyEncipherment" in names,
-        data_encipherment="dataEncipherment" in names,
-        key_agreement=key_agreement,
-        key_cert_sign="keyCertSign" in names,
-        crl_sign="cRLSign" in names,
-        encipher_only=key_agreement and "encipherOnly" in names,
-        decipher_only=key_agreement and "decipherOnly" in names,
-    )
 
 
 def _extended_key_usage(values: list[str] | None) -> x509.ExtendedKeyUsage:

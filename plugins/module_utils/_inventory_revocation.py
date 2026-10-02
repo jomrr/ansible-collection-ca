@@ -11,6 +11,9 @@ from __future__ import annotations
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._file import file_lock
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_lookup import (
+    certificate_issuer as _certificate_issuer,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     _inventory_lock_path,
     _read_collection,
@@ -45,11 +48,6 @@ def _certificate_fingerprint_match(
     if algorithm:
         return normalize_hex(fingerprints.get(algorithm, "")) == fingerprint
     return any(normalize_hex(value) == fingerprint for value in fingerprints.values())
-
-
-def _certificate_issuer(record: dict[str, Any]) -> str:
-    """Return the signing authority for a leaf or managed CA inventory record."""
-    return str(record.get("issuer", record.get("parent", "")))
 
 
 def _current_certificate_by_name(

@@ -36,6 +36,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
     write_file,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._formats import (
+    normalize_formats,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._generation_history import (
     ca_history,
     issued_history,
@@ -48,6 +51,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     _write_json,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    authority_paths,
+    crl_paths,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     now_utc,
@@ -67,17 +74,6 @@ except ImportError:
 
 
 SUPPORTED_FORMATS = {"pem", "der"}
-
-
-def _formats(value: Any) -> list[str]:
-    """Return normalized CRL output formats."""
-    if isinstance(value, str):
-        raise TypeError("formats must be a list")
-    formats = [str(item).lower() for item in (value or ["pem", "der"])]
-    unsupported = sorted(set(formats).difference(SUPPORTED_FORMATS))
-    if unsupported:
-        raise ValueError(f"Unsupported CRL formats: {', '.join(unsupported)}")
-    return formats
 
 
 def _write_crls(params: dict[str, Any], crl: x509.CertificateRevocationList) -> bool:
@@ -123,11 +119,7 @@ def _generation_params(params: dict[str, Any], identity: str) -> dict[str, Any]:
     )
     params["generation_id"] = identity
     params["generation_suffix"] = identity if stem != f"{params['name']}-ca" else ""
-    params["paths"] = {
-        crl_format: f"{params['base_dir']}/crl/{stem}.{suffix}"
-        for crl_format, suffix in (("pem", "crl.pem"), ("der", "crl"))
-        if crl_format in params["formats"]
-    }
+    params["paths"] = crl_paths(params["base_dir"], stem, params["formats"])
     return params
 
 
@@ -253,13 +245,20 @@ def _store_crls(
 def ensure_crls(params: dict[str, Any]) -> dict[str, Any]:
     """Prepare all CRLs first, then reserve numbers and persist state and exports."""
     params = dict(params)
-    params["formats"] = _formats(params.get("formats"))
+    params["formats"] = normalize_formats(
+        params.get("formats"),
+        defaults=("pem", "der"),
+        supported=SUPPORTED_FORMATS,
+        context="CRL",
+    )
     params["revoked_certificates"] = resolve_revocation_entries(
         base_dir=params["base_dir"],
         authority=params["name"],
         entries=params["revoked_certificates"],
     )
-    current = load_certificate(f"{params['base_dir']}/ca/{params['name']}-ca.pem")
+    current = load_certificate(
+        authority_paths(params["base_dir"], params["name"])["certificate_pem"]
+    )
     current_id = generation_id(current.subject, current.public_key())
     issuers = ca_history(params["base_dir"], params["name"])
     records = issued_history(params["base_dir"], params["name"], issuers)

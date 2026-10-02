@@ -14,6 +14,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
     write_file,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._key_usage import (
+    key_usage_names,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import colon_hex
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
@@ -63,26 +66,7 @@ def _public_key_text(public_key: PublicKey) -> list[str]:
 
 def _key_usage_text(value: x509.KeyUsage) -> str:
     """Return readable Key Usage values."""
-    usages = []
-    if value.digital_signature:
-        usages.append("Digital Signature")
-    if value.content_commitment:
-        usages.append("Non Repudiation")
-    if value.key_encipherment:
-        usages.append("Key Encipherment")
-    if value.data_encipherment:
-        usages.append("Data Encipherment")
-    if value.key_agreement:
-        usages.append("Key Agreement")
-    if value.key_cert_sign:
-        usages.append("Certificate Sign")
-    if value.crl_sign:
-        usages.append("CRL Sign")
-    if value.key_agreement and value.encipher_only:
-        usages.append("Encipher Only")
-    if value.key_agreement and value.decipher_only:
-        usages.append("Decipher Only")
-    return ", ".join(usages)
+    return ", ".join(key_usage_names(value, readable=True))
 
 
 def _general_name_text(name: x509.GeneralName) -> str:

@@ -98,15 +98,10 @@ def _as_dict(value: Any, context: str) -> dict[str, Any]:
 
 def _profile_formats(value: Any, profile: str) -> list[str]:
     """Resolve certificate output formats for a profile."""
-    formats = (
-        CERTIFICATE_DEFAULT_FORMATS[profile]
-        if value is None
-        else normalize_formats(value)
+    return normalize_formats(
+        CERTIFICATE_DEFAULT_FORMATS[profile] if value is None else value,
+        supported=SUPPORTED_FORMATS,
     )
-    unsupported = sorted(set(formats).difference(SUPPORTED_FORMATS))
-    if unsupported:
-        raise ValueError(f"Unsupported certificate formats: {', '.join(unsupported)}")
-    return formats
 
 
 def _certificate_profile(

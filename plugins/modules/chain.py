@@ -57,7 +57,7 @@ state:
 # pylint: disable=wrong-import-position
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
@@ -71,6 +71,13 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     file_locks,
     sanitize_error,
     write_file,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._formats import (
+    normalize_formats,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    authority_directory,
+    chain_paths,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._text import certificate_text
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import (
@@ -91,26 +98,9 @@ except ImportError:
 SUPPORTED_FORMATS = {"pem", "der", "txt"}
 
 
-def _formats(value: Any) -> list[str]:
-    """Return normalized CA chain output formats."""
-    if isinstance(value, str):
-        raise TypeError("formats must be a list")
-    formats = [str(item).lower() for item in (value or ["pem", "der", "txt"])]
-    unsupported = sorted(set(formats).difference(SUPPORTED_FORMATS))
-    if unsupported:
-        raise ValueError(f"Unsupported CA chain formats: {', '.join(unsupported)}")
-    return formats
-
-
-def _chain_paths(base_dir: str, name: str, formats: list[str]) -> dict[str, str]:
-    """Return derived CA chain output paths."""
-    base = f"{base_dir.rstrip('/')}/chains/{name}-ca-chain"
-    return {chain_format: f"{base}.{chain_format}" for chain_format in formats}
-
-
 def _authority_lock_paths(base_dir: str, name: str) -> list[str]:
     """Return locks for the target authority and every readable CA certificate."""
-    ca_dir = Path(base_dir.rstrip("/")) / "ca"
+    ca_dir = authority_directory(base_dir)
     authority_names = {_authority_name(path) for path in ca_dir.glob("*-ca.pem")}
     authority_names.add(name)
     return [
@@ -168,8 +158,13 @@ def run_module() -> None:
 
     params = module.params
     try:
-        formats = _formats(params["formats"])
-        paths = _chain_paths(params["base_dir"], params["name"], formats)
+        formats = normalize_formats(
+            params["formats"],
+            defaults=("pem", "der", "txt"),
+            supported=SUPPORTED_FORMATS,
+            context="CA chain",
+        )
+        paths = chain_paths(params["base_dir"], params["name"], formats)
         with file_locks(
             [
                 ca_lock_path(params["base_dir"], "authority", "__graph__"),

@@ -1,0 +1,4 @@
+---
+minor_changes:
+  - Consolidate internal artifact paths, inventory certificate lookup, Key Usage mapping,
+    file mode parsing and format validation while preserving module interfaces and output formats.

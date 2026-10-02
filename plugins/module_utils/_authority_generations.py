@@ -30,6 +30,11 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     _read_json,
     _write_json,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
+    archive_directory,
+    authority_paths,
+    generation_directory,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._text import certificate_text
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     _public_key_bytes,
@@ -62,7 +67,7 @@ __all__ = [
 
 def generation_root(base_dir: str, name: str) -> Path:
     """Return the directory containing public generation records for an authority."""
-    return Path(base_dir) / "generations" / safe_path_component(name)
+    return generation_directory(base_dir, safe_path_component(name))
 
 
 def _legacy_id(base_dir: str, name: str, current_id: str, selected: str = "") -> str:
@@ -75,9 +80,9 @@ def _legacy_id(base_dir: str, name: str, current_id: str, selected: str = "") ->
             issuers = ca_history(base_dir, name)
         except FileNotFoundError:
             if (
-                not (Path(base_dir) / "ca" / f"{name}-ca.pem").exists()
+                not Path(authority_paths(base_dir, name)["certificate_pem"]).exists()
                 and not list(
-                    (Path(base_dir) / "archive" / "authorities" / name).glob(
+                    Path(archive_directory(base_dir, name, authority=True)).glob(
                         f"*/{name}-ca.pem"
                     )
                 )
@@ -150,7 +155,7 @@ def retain_generation(params: dict[str, Any], cert: x509.Certificate) -> bool:
 def authority_generations(base_dir: str, name: str) -> dict[str, x509.Certificate]:
     """Load retained issuers, or the single legacy issuer before first migration."""
     issuers = ca_history(base_dir, name)
-    current = load_certificate(f"{base_dir}/ca/{name}-ca.pem")
+    current = load_certificate(authority_paths(base_dir, name)["certificate_pem"])
     _legacy_id(base_dir, name, generation_id(current.subject, current.public_key()))
     return issuers
 
@@ -160,9 +165,9 @@ def generation_key(
 ) -> PrivateKey:
     """Find the matching current or archived signing key, never silently omit it."""
     base_dir, name = str(params["base_dir"]), str(params["name"])
-    archive = Path(base_dir) / "archive" / "authorities" / name
+    archive = Path(archive_directory(base_dir, name, authority=True))
     paths = [
-        Path(base_dir) / "private" / f"{name}-ca.key",
+        Path(authority_paths(base_dir, name)["private_key"]),
         *sorted(archive.glob(f"*/{name}-ca.key")),
     ]
     passphrase = (params.get("archived_key_passphrases") or {}).get(
