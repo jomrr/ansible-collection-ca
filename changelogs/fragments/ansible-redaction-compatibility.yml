@@ -1,0 +1,3 @@
+---
+bugfixes:
+  - certificate and certificate_batch - preserve nested secret masking in invocation logs and complete results with newer Ansible versions.

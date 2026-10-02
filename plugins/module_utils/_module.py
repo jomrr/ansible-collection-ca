@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible.module_utils.common.parameters import remove_values
 from ansible.module_utils.common.validation import check_type_dict, check_type_list
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     OPERATION_ERRORS,
@@ -54,6 +55,29 @@ class CertificateModule(AnsibleModule):
         # so optional fields, profile defaults and caller metadata remain compatible.
         cast(Callable[[], None], super()._load_params)()
         self.no_log_values.update(_certificate_secrets(self.params))
+
+    def _redact(self, value: Any) -> Any:
+        """Apply the same value masking across supported Ansible versions."""
+        return cast(Callable[[Any, set[str]], Any], remove_values)(
+            value, self.no_log_values
+        )
+
+    def log(self, msg: str, log_args: dict[str, Any] | None = None) -> None:
+        """Protect invocation logging even when core no longer uses no_log_values."""
+        cast(Callable[..., None], super().log)(
+            self._redact(msg), log_args=self._redact(log_args)
+        )
+
+    def _record_module_result(self, o: dict[str, Any]) -> None:
+        """Mask complete results, including invocation and warnings added by core."""
+        redacted = self._redact(o)
+        # Preserve Ansible's top-level boolean/None result contract.
+        redacted.update(
+            (key, value)
+            for key, value in o.items()
+            if value is None or isinstance(value, bool)
+        )
+        cast(Callable[[dict[str, Any]], None], super()._record_module_result)(redacted)
 
 
 def execute_certificate(

@@ -13,6 +13,7 @@ from typing import Any
 from unittest.mock import patch
 
 from ansible.module_utils import basic
+from ansible.module_utils.common.parameters import PASS_VARS
 from ansible_collections.jomrr.ca.plugins.modules import certificate, certificate_batch
 
 
@@ -73,6 +74,9 @@ class CertificateRedactionTests(unittest.TestCase):
             "ensure_certificate_batch" if batch else "ensure_certificate_artifacts"
         )
         inputs = copy.deepcopy(self.inputs)
+        # Newer controllers request invocation metadata; 2.20 always emits it.
+        if "inject_invocation" in PASS_VARS:
+            inputs["_ansible_inject_invocation"] = True
         key = "certificates" if batch else "certificate"
         inputs[key] = [self.item] if batch else self.item
         if encoded:
@@ -89,7 +93,13 @@ class CertificateRedactionTests(unittest.TestCase):
         )
         output = io.StringIO()
         with (
-            patch.object(basic, "_load_params", return_value=inputs),
+            # Exercise Ansible's real decoder, including its original-arguments state.
+            patch.object(
+                basic,
+                "_ANSIBLE_ARGS",
+                json.dumps({"ANSIBLE_MODULE_ARGS": inputs}).encode(),
+            ),
+            patch.object(basic, "_PARSED_MODULE_ARGS", None),
             patch.object(basic, "_ANSIBLE_PROFILE", "legacy"),
             patch.object(basic.AnsibleModule, "log") as log,
             patch.object(plugin, operation_name, return_value=result) as operation,
