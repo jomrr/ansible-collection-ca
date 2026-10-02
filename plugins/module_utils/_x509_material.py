@@ -21,6 +21,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     set_attrs,
     write_file,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._key_revocation import (
+    validate_key_revocation,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import serial_hex
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
@@ -139,9 +142,14 @@ def _ensure_key(
             key = load_private_key(params["key_path"], params["key_passphrase"])
         except FileNotFoundError:
             key = None
-        if key is not None and not _key_matches(key, spec):
-            _archive_file(params, existing_cert, params["key_path"], params["key_mode"])
-            key = None
+        if key is not None:
+            if _key_matches(key, spec):
+                validate_key_revocation(params, key.public_key())
+            else:
+                _archive_file(
+                    params, existing_cert, params["key_path"], params["key_mode"]
+                )
+                key = None
     if key is None:
         _archive_file(params, existing_cert, params["key_path"], params["key_mode"])
         key = _generate_private_key(spec)
@@ -232,6 +240,7 @@ def _validated_external_csr(params: dict[str, Any]) -> x509.CertificateSigningRe
             f"CSR common name {csr_common_name!r} does not match {common_name!r}"
         )
 
+    validate_key_revocation(params, csr.public_key())
     return csr
 
 

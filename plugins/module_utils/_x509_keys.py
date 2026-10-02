@@ -8,6 +8,7 @@ X.509 keys helpers."""
 
 from __future__ import annotations
 
+import hashlib
 import re
 from typing import Any, TypeGuard
 
@@ -243,6 +244,11 @@ def _public_key_bytes(key: PrivateKey | PublicKey) -> bytes:
         serialization.Encoding.DER,
         serialization.PublicFormat.SubjectPublicKeyInfo,
     )
+
+
+def _public_key_fingerprint(key: PrivateKey | PublicKey) -> str:
+    """Return the SHA-256 fingerprint of DER SubjectPublicKeyInfo."""
+    return hashlib.sha256(_public_key_bytes(key)).hexdigest()
 
 
 def _cert_public_key_bytes(cert: x509.Certificate) -> bytes:

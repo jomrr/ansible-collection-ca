@@ -39,6 +39,10 @@ Serial parsing and timestamp normalization are delegated to the internal
 - A name selector binds to its first revoked generation. A reissued certificate
   is not automatically revoked; select its serial or fingerprint to revoke it.
 - An omitted revocation date retains the first recorded revocation time.
+- Recorded `key_compromise` and `ca_compromise` events prevent issuance with the
+  same public key of a known local certificate, even under another name or serial.
+  Recovery requires a new key; see [compromised keys and renewal](certificate.md#compromised-keys-and-renewal).
+  Record the revocation with this module before issuing replacements.
 
 ## Parameters
 

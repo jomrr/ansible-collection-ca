@@ -24,6 +24,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     object_datetime,
     timestamp_z,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    _public_key_fingerprint,
+)
 
 try:
     from cryptography import x509
@@ -177,6 +180,7 @@ def _certificate_summary(cert: x509.Certificate) -> dict[str, Any]:
             "sha256": colon_hex(cert.fingerprint(hashes.SHA256())),
         },
         "public_key": _public_key_summary(cert),
+        "public_key_sha256": _public_key_fingerprint(cert.public_key()),
         "extensions": _extension_summary(cert),
     }
 

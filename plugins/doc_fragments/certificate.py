@@ -14,6 +14,14 @@ class ModuleDocFragment:
 
     DOCUMENTATION: ClassVar[str] = r"""
 notes:
+- Reusing a public key from a locally recorded certificate revoked with C(key_compromise)
+  or C(ca_compromise) fails, including renewal, batch issuance and external CSRs.
+  The check spans recorded generations and certificate names in the same C(base_dir).
+- C(renewal.rekey) defaults to C(false). For a compromised managed key, request
+  C(renewal.rekey=true) when renewal is due or C(force=true) to generate a new key.
+  An external CSR must contain a new key; C(force) cannot bypass the check.
+- Other revocation reasons do not automatically prohibit key reuse. Revocation data
+  must already have been recorded by M(jomrr.ca.crl); external CRLs are not imported.
 - External CSRs supply only the public key. The CSR signature is verified; requested
   subject attributes and SANs are not copied into the certificate.
 - CSR signing requires C(certificate.common_name) or C(certificate.subject_ordered).

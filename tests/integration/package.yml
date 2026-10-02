@@ -4,6 +4,7 @@
   gather_facts: false
   vars:
     ca_verify_script: "{{ playbook_dir }}/targets/authority/files/verify.py"
+    ca_key_script: "{{ playbook_dir }}/targets/authority/files/key_revocation.py"
     ca_csr_script: "{{ playbook_dir }}/targets/authority/files/csr.py"
     ca_pathlen_script: "{{ playbook_dir }}/targets/authority/files/pathlen.py"
   tasks:

@@ -13,6 +13,9 @@ version_added: 0.1.0
 description:
 - Manage a CA authority certificate.
 notes:
+- Managed keys associated with locally recorded C(key_compromise) or C(ca_compromise)
+  revocations cannot be reused. Request C(renewal.rekey=true) for a due renewal or
+  C(force=true) to generate a new key immediately.
 - Parent-signed authorities are checked against the Basic Constraints, certificate-signing
   Key Usage and path length limits of the complete managed issuer chain before writing
   key, CSR or certificate material.

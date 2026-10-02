@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import datetime
-import os
 import shutil
 import tempfile
 import unittest
@@ -15,22 +14,19 @@ from typing import Any
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine import (
     ensure_certificate_artifacts,
     ensure_certificate_batch,
-    single_certificate_argument_spec,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
-    ca_authority_argument_spec,
-    ensure_x509,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import _ordered_chain
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_constraints import (
     validate_issuer_constraints,
 )
-from ansible_collections.jomrr.ca.plugins.modules.authority import _authority_params
 from ansible_collections.jomrr.ca.tests.integration.targets.authority.files.csr import (
     untrusted_csr,
 )
+from ansible_collections.jomrr.ca.tests.unit.plugins.certificate_fixture import (
+    CertificateFixture,
+)
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
@@ -107,102 +103,27 @@ class IssuanceConstraintTests(unittest.TestCase):
     def setUp(self) -> None:
         self.base = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.base)
-        self.authority("root", "root")
-        self.authority("issuer", "root")
-        chain = _ordered_chain(str(self.base), "issuer")
-        (self.base / "chains").mkdir()
-        (self.base / "chains/issuer-ca-chain.pem").write_bytes(
-            b"".join(cert.public_bytes(serialization.Encoding.PEM) for cert in chain)
-        )
-        self.key = ec.generate_private_key(ec.SECP256R1())
-        self.csr = (
-            x509.CertificateSigningRequestBuilder()
-            .subject_name(
-                x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "OpenBao")])
-            )
-            .sign(self.key, hashes.SHA256())
-        )
-
-    def authority(self, name: str, parent: str, **overrides: Any) -> dict[str, Any]:
-        """Create a managed CA using the module's real defaults and engine."""
-        values = {
-            key: spec.get("default")
-            for key, spec in ca_authority_argument_spec().items()
-        }
-        values.update(
-            base_dir=str(self.base),
-            name=name,
-            parent=parent,
-            common_name=name,
-            days=365,
-            key_type="P-256",
-            key_passphrase="test-passphrase",
-            parent_key_passphrase="test-passphrase",
-            owner=str(os.getuid()),
-            group=str(os.getgid()),
-            **overrides,
-        )
-        params, signed = _authority_params(values)
-        return ensure_x509(params, signed=signed, authority=True)
-
-    def request(self, issuer: str = "issuer") -> dict[str, Any]:
-        """Build an external CA request with explicit certificate-signing usage."""
-        params = {
-            key: spec.get("default")
-            for key, spec in single_certificate_argument_spec().items()
-        }
-        params.update(
-            base_dir=str(self.base),
-            owner=str(os.getuid()),
-            group=str(os.getgid()),
-            authorities=[
-                {
-                    "name": "root",
-                    "parent": "root",
-                    "key_passphrase": "test-passphrase",
-                    "default_days": 90,
-                },
-                {
-                    "name": "issuer",
-                    "parent": "root",
-                    "key_passphrase": "test-passphrase",
-                    "default_days": 90,
-                },
-            ],
-            certificate_types={"tls_server": {"issuer": issuer}},
-            certificate={
-                "name": "openbao",
-                "common_name": "OpenBao",
-                "type": "tls_server",
-                "formats": ["pem"],
-                "csr_content": self.csr.public_bytes(
-                    serialization.Encoding.PEM
-                ).decode(),
-                "basic_constraints": ["CA:TRUE", "pathlen:0"],
-                "key_usage": ["keyCertSign", "cRLSign"],
-            },
-        )
-        return params
+        self.ca = CertificateFixture(self.base)
 
     def test_managed_authority_rejected_before_writes(self) -> None:
         """A pathlen:0 issuer must not create a subordinate key, CSR or certificate."""
         with self.assertRaisesRegex(ValueError, "pathlen:0.*exceeded"):
-            self.authority("subca", "issuer")
+            self.ca.authority("subca", "issuer")
         for name in ("private/subca-ca.key", "csr/subca-ca.csr", "ca/subca-ca.pem"):
             self.assertFalse((self.base / name).exists(), name)
-        self.assertTrue(self.authority("direct", "root")["changed"])
-        self.assertFalse(self.authority("direct", "root")["changed"])
+        self.assertTrue(self.ca.authority("direct", "root")["changed"])
+        self.assertFalse(self.ca.authority("direct", "root")["changed"])
 
     def test_external_ca_rejected_before_writes(self) -> None:
         """An external CA CSR is subject to the same issuer path constraints."""
         with self.assertRaisesRegex(ValueError, "pathlen:0.*exceeded"):
-            ensure_certificate_artifacts(self.request())
+            ensure_certificate_artifacts(self.ca.request())
         self.assertFalse((self.base / "csr/openbao.csr").exists())
         self.assertFalse((self.base / "certs/openbao").exists())
 
     def test_root_can_sign_external_ca(self) -> None:
         """A root with room for an intermediate signs a CA CSR idempotently."""
-        params = self.request("root")
+        params = self.ca.request("root")
         self.assertTrue(ensure_certificate_artifacts(params)["cert_changed"])
         self.assertFalse(ensure_certificate_artifacts(params)["changed"])
         root = x509.load_pem_x509_certificate(
@@ -212,7 +133,7 @@ class IssuanceConstraintTests(unittest.TestCase):
             (self.base / "certs/openbao/openbao.pem").read_bytes()
         )
         issued.verify_directly_issued_by(root)
-        self.assertEqual(issued.subject, self.csr.subject)
+        self.assertEqual(issued.subject, self.ca.csr.subject)
         self.assertEqual(
             issued.extensions.get_extension_for_class(x509.BasicConstraints).value,
             x509.BasicConstraints(True, 0),
@@ -221,7 +142,7 @@ class IssuanceConstraintTests(unittest.TestCase):
 
     def test_batch_preflights_each_request(self) -> None:
         """A forbidden CA does not leave an earlier certificate in its batch group."""
-        params = self.request()
+        params = self.ca.request()
         params["certificates"] = [
             {"name": "web", "type": "tls_server", "common_name": "web.example.test"},
             params.pop("certificate"),
@@ -232,15 +153,15 @@ class IssuanceConstraintTests(unittest.TestCase):
 
     def test_self_issued_rollover_chain_reaches_root(self) -> None:
         """Same subject names do not hide the signing root's inherited limit."""
-        self.authority("rollover", "root", subject_ordered=[{"CN": "root"}])
+        self.ca.authority("rollover", "root", subject_ordered=[{"CN": "root"}])
         chain = _ordered_chain(str(self.base), "rollover")
         self.assertEqual(len(chain), 2)
         chain[0].verify_directly_issued_by(chain[1])
 
     def identity_request(self) -> dict[str, Any]:
         """Request unapproved identities with a correctly signed external key."""
-        self.csr = untrusted_csr(self.key)
-        params = self.request()
+        self.ca.csr = untrusted_csr(self.ca.key)
+        params = self.ca.request()
         params["certificate_types"] = {"identity": {"issuer": "issuer"}}
         params["subject"] = {"organization": "Approved Organization"}
         params["certificate"].update(type="identity", common_name="Max Muster")
@@ -270,7 +191,7 @@ class IssuanceConstraintTests(unittest.TestCase):
                     (self.base / "certs/openbao/openbao.pem").read_bytes()
                 )
                 self.assertEqual(cert.subject, expected_subject)
-                self.assertEqual(cert.public_key(), self.key.public_key())
+                self.assertEqual(cert.public_key(), self.ca.key.public_key())
                 self.assertIn(
                     x509.ObjectIdentifier("1.3.6.1.4.1.311.20.2.2"),
                     cert.extensions.get_extension_for_class(

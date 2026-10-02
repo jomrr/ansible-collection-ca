@@ -193,6 +193,8 @@
       ansible.builtin.include_tasks: pathlen.yml
     - name: Exercise external CSR identity approval
       ansible.builtin.include_tasks: csr.yml
+    - name: Exercise compromised key renewal protection
+      ansible.builtin.include_tasks: key_revocation.yml
   always:
     - name: Remove temporary CA fixture
       ansible.builtin.file:

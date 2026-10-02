@@ -85,7 +85,9 @@ ca_renewal:
 Per-certificate `renewal` dictionaries override the module-level renewal policy. `warn_before_days` only affects inventory state.
 `renew_before_days`
 and `renew_at` trigger renewal. `rekey: true` replaces the private key when
-renewal is due; otherwise the existing key is reused.
+renewal is due; otherwise the existing key is reused. Keys associated with locally
+recorded `key_compromise` or `ca_compromise` revocations are rejected on reuse;
+[recovery requires a new key](certificate.md#compromised-keys-and-renewal).
 
 Managed writes use atomic temporary files and advisory locks below
 `<base_dir>/.locks`. Lock names are scoped by object type and name, so unrelated

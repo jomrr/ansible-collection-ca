@@ -324,6 +324,32 @@ Dotted OIDs are accepted for additional EKUs.
 - **`rekey`**: Generates a new private key when renewal is due.
   Type: bool; Default: `false`
 
+## Compromised keys and renewal
+
+`renewal.rekey` defaults to `false`: normal renewal retains the key and issues a
+new serial number. A CRL revokes serial numbers, so a different serial alone does
+not retain the revocation of the previous generation.
+
+Before reusing a managed key or accepting an external CSR, the collection checks
+locally recorded `key_compromise` and `ca_compromise` revocations. A matching
+public key is rejected, including idempotent requests and profile changes outside
+the renewal window. The check covers single and batch issuance, older generations,
+and other certificate names or issuers within the same `base_dir`.
+
+For recovery, use `renewal.rekey: true` when renewal is due, or `force: true` to
+replace a managed key immediately. For external CSRs, generate a new key and CSR
+outside the collection; `force` cannot approve the compromised key. The original
+serial remains revoked after replacement. Other revocation reasons, such as
+`superseded`, do not by themselves mark a key as compromised.
+
+The check uses revocations already recorded by `jomrr.ca.crl` and certificate
+inventory, independently of composed inventory output. Run the CRL task to record
+a new compromise before issuing replacement certificates. It does not import
+external CRLs or identify keys of certificates absent from local inventory.
+New inventory records include a SHA-256 public key fingerprint. Older records
+use the matching current or archived certificate; if that material is missing,
+restore it before reusing a key or signing an external CSR.
+
 ## Generated Files
 
 For `name: web01`, `issuer: component`, and `base_dir: /etc/pki/example`:

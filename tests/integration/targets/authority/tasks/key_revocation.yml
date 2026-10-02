@@ -1,0 +1,124 @@
+---
+- name: Verify compromised key renewal protection
+  vars:
+    ca_key_context: &key_context
+      base_dir: '{{ ca_test_root.path }}/pki'
+      ca_name: test
+      owner: '{{ ca_test_uid.stdout }}'
+      group: '{{ ca_test_gid.stdout }}'
+      authorities:
+        - {name: root, parent: root, key_passphrase: test-root-passphrase, default_days: 365}
+        - {name: issuer, parent: root, key_passphrase: test-issuer-passphrase, default_days: 90}
+      certificate_types:
+        tls_server: {issuer: issuer}
+    ca_key_certificate: &key_certificate
+      name: web
+      type: tls_server
+      common_name: web.example.test
+      san: ['DNS:changed.example.test']
+      key_type: P-256
+      formats: [pem, der, txt]
+      days: 365
+  block:
+    - name: Capture the compromised generation and its key CSR
+      ansible.builtin.script:
+        cmd: "{{ ca_key_script | default('key_revocation.py') }} prepare {{ ca_test_root.path }}/pki"
+        executable: '{{ ansible_python_interpreter }}'
+      changed_when: true
+    - name: Reject automatic renewal with the compromised key
+      jomrr.ca.certificate:
+        <<: *key_context
+        certificate: *key_certificate
+        renewal: {renew_before_days: 100}
+      register: ca_key_single
+      failed_when: false
+    - name: Reject batch renewal with the compromised key
+      jomrr.ca.certificate_batch:
+        <<: *key_context
+        certificates: [*key_certificate]
+        renewal: {renew_before_days: 100}
+      register: ca_key_batch
+      failed_when: false
+    - name: Reject a renamed external CSR even with force
+      jomrr.ca.certificate: &key_csr_request
+        <<: *key_context
+        force: true
+        certificate:
+          name: reused-key
+          type: tls_server
+          common_name: web.example.test
+          csr_path: '{{ ca_test_root.path }}/pki/compromised.csr'
+          formats: [pem]
+      register: ca_key_csr
+      failed_when: false
+    - name: Verify all entry points explain the key compromise
+      ansible.builtin.assert:
+        that:
+          - not item.changed
+          - "'public key recorded as compromised' in item.msg"
+      loop: '{{ [ca_key_single, ca_key_batch, ca_key_csr] }}'
+      loop_control:
+        label: '{{ item.msg }}'
+    - name: Verify rejected requests left the original material intact
+      ansible.builtin.script:
+        cmd: "{{ ca_key_script | default('key_revocation.py') }} unchanged {{ ca_test_root.path }}/pki"
+        executable: '{{ ansible_python_interpreter }}'
+      changed_when: false
+    - name: Renew using an explicitly requested new private key
+      jomrr.ca.certificate: &key_recovery
+        <<: *key_context
+        certificate: *key_certificate
+        renewal: {renew_before_days: 100, rekey: true}
+      register: ca_key_recovered
+    - name: Repeat the repaired certificate request
+      jomrr.ca.certificate: *key_recovery
+      register: ca_key_repeated
+    - name: Verify rekey and idempotence
+      ansible.builtin.assert:
+        that:
+          - ca_key_recovered.key_changed
+          - ca_key_recovered.cert_changed
+          - ca_key_repeated is not changed
+    - name: Verify new public key and original revocation persistence
+      ansible.builtin.script:
+        cmd: "{{ ca_key_script | default('key_revocation.py') }} recovered {{ ca_test_root.path }}/pki"
+        executable: '{{ ansible_python_interpreter }}'
+      changed_when: false
+    - name: Verify the replacement certificate against the unchanged CRL
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - verify
+          - -crl_check
+          - -CAfile
+          - '{{ ca_test_root.path }}/pki/ca/root-ca.pem'
+          - -untrusted
+          - '{{ ca_test_root.path }}/pki/ca/issuer-ca.pem'
+          - -CRLfile
+          - '{{ ca_test_root.path }}/pki/crl/issuer-ca.crl.pem'
+          - '{{ ca_test_root.path }}/pki/certs/web/web.pem'
+      changed_when: false
+    - name: Verify the original certificate stays revoked
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - verify
+          - -crl_check
+          - -CAfile
+          - '{{ ca_test_root.path }}/pki/ca/root-ca.pem'
+          - -untrusted
+          - '{{ ca_test_root.path }}/pki/ca/issuer-ca.pem'
+          - -CRLfile
+          - '{{ ca_test_root.path }}/pki/crl/issuer-ca.crl.pem'
+          - '{{ ca_test_root.path }}/pki/original.pem'
+      register: ca_key_old_verify
+      failed_when: ca_key_old_verify.rc != 2 or 'certificate revoked' not in ca_key_old_verify.stderr
+      changed_when: false
+    - name: Reject the old CSR after recovery
+      jomrr.ca.certificate: *key_csr_request
+      register: ca_key_old_csr
+      failed_when: false
+    - name: Verify renewal did not clear the compromised key history
+      ansible.builtin.assert:
+        that:
+          - "'public key recorded as compromised' in ca_key_old_csr.msg"

@@ -62,3 +62,11 @@ one place.
 
 - `ca_inventory`
 - `ca_x509`
+
+## Revoked keys
+
+Key reuse is refused for locally known `key_compromise` and `ca_compromise`
+revocations. Request a new managed key with `rekey: true` when renewal is due
+or with `force: true`; external CSRs require a new key generated externally.
+See [compromised keys and renewal](certificate.md#compromised-keys-and-renewal)
+for ordering, inventory requirements and the scope of the check.
