@@ -248,20 +248,21 @@ def _create_temp_file(parent_fd: int, target_name: str) -> tuple[int, str]:
     raise FileExistsError(f"Could not create a unique temporary file for {target_name}")
 
 
-def _secret_values(value: Any) -> set[str]:
-    """Collect secret-looking values from nested module parameters."""
+def _secret_values(value: Any, *, secret: bool = False) -> set[str]:
+    """Collect secret values, including short strings and secret-bearing mappings."""
     secret_values: set[str] = set()
     if isinstance(value, dict):
         for key, item in value.items():
-            if SECRET_KEY_RE.search(str(key)) and item is not None:
-                text = str(item)
-                if len(text) >= 3:
-                    secret_values.add(text)
-            else:
-                secret_values.update(_secret_values(item))
+            secret_values.update(
+                _secret_values(
+                    item, secret=secret or bool(SECRET_KEY_RE.search(str(key)))
+                )
+            )
     elif isinstance(value, list):
         for item in value:
-            secret_values.update(_secret_values(item))
+            secret_values.update(_secret_values(item, secret=secret))
+    elif secret and value is not None and str(value):
+        secret_values.add(str(value))
     return secret_values
 
 

@@ -116,7 +116,7 @@
     - name: Verify invalid request failed
       ansible.builtin.assert:
         that:
-          - '''both csr_path and csr_content'' in ca_invalid.msg'
+          - ca_invalid.msg == 'Certificate web uses both csr_path and csr_content'
           - '''test-issuer-passphrase'' not in ca_invalid.msg'
     - name: Revoke issued certificate
       jomrr.ca.crl: &id005

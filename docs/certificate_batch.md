@@ -36,7 +36,7 @@ external CSR through the same issuer grouping and inventory flow.
 
 - **`certificates`**: Certificate models. See
   [jomrr.ca.certificate](certificate.md#certificate-model).
-  Type: list[dict]; Required: yes; Default: none; Secret: yes
+  Type: list[dict]; Required: yes; Default: none; Secret: nested secret fields only
 
 - **`certificate_types`**: Role type map. The selected type must define `issuer`
   and may define `required_fields`.
@@ -44,7 +44,7 @@ external CSR through the same issuer grouping and inventory flow.
 
 - **`authorities`**: Authority list used to resolve issuer passphrase and
   `default_days`.
-  Type: list[dict]; Required: yes; Default: none; Secret: yes
+  Type: list[dict]; Required: yes; Default: none; Secret: nested secret fields only
 
 - **`kerberos_realm`**: Default realm for MSKDC certificates.
   Type: str; Required: no; Default: `""`; Secret: no
@@ -102,3 +102,9 @@ Each item in `results` has the same artifact fields as `jomrr.ca.certificate`.
     owner: root
     group: root
 ```
+
+## Registered results and secret handling
+
+Each certificate uses the same [secret handling as the single-certificate module](certificate.md#registered-results-and-secret-handling).
+Names, formats, issuer groups and returned paths remain usable in registered batch
+results; nested passphrases remain masked, including in validation errors.

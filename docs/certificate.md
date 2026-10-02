@@ -125,7 +125,7 @@ original issuer. See [CA rollover and publication](authority.md#ca-key-rollover-
 
 - **`certificate`**: Declarative certificate item.
   Type: dict; Required: yes; Default: none; Allowed values: see certificate
-  model below; Secret: yes
+  model below; Secret: nested secret fields only
 
 - **`certificate_types`**: Role type map. The selected type must define `issuer`
   and may define `required_fields`.
@@ -135,7 +135,7 @@ original issuer. See [CA rollover and publication](authority.md#ca-key-rollover-
 - **`authorities`**: Authority list used to resolve issuer passphrase and
   `default_days`.
   Type: list[dict]; Required: yes; Default: none; Allowed values: authority
-  dictionaries; Secret: yes
+  dictionaries; Secret: nested secret fields only
 
 - **`kerberos_realm`**: Default realm for MSKDC certificates.
   Type: str; Required: no; Default: `""`; Allowed values: Kerberos realm;
@@ -579,3 +579,13 @@ extension OIDs, including unsupported policyMappings, cannot be passed through
 Policy reordering is idempotent. Changed policy OIDs, CPS URLs, or constraints
 reissue the certificate using the existing key unless renewal requests rekeying.
 See the [source role README](https://github.com/jomrr/ansible-role-ca/blob/0e59800e7528dbe2ad8eeaaf962a849f25d0bd92/README.md) for the original PKI example and client validation limits.
+
+## Registered results and secret handling
+
+Passphrase and other secret fields within the certificate and authority dictionaries
+are masked in Ansible output, including argument-validation errors and invocation
+logging. Names, formats, issuer groups and returned paths remain usable by follow-up
+tasks. Batch results use the same handling for each certificate.
+
+Ansible still masks any public value containing an actual secret value. Use task-level
+`no_log: true` if the certificate metadata itself must also remain confidential.

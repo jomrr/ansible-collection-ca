@@ -88,6 +88,26 @@
   ansible.builtin.assert:
     that:
       - ca_result.changed == ca_expect_changed
+- name: Verify readable single certificate metadata
+  ansible.builtin.assert:
+    that:
+      - ca_result.name == 'web'
+      - ca_result.profile == 'tls_server'
+      - ca_result.formats == ['pem', 'der', 'txt', 'fullchain']
+      - ca_result.cert_path == ca_test_root.path ~ '/pki/certs/web/web.pem'
+      - "'test-root-passphrase' not in (ca_result | to_json)"
+      - "'test-issuer-passphrase' not in (ca_result | to_json)"
+
+- name: Consume the registered certificate path in a follow-up task
+  ansible.builtin.stat:
+    path: '{{ ca_result.cert_path }}'
+  register: ca_registered_certificate
+
+- name: Verify the registered certificate path identifies the created file
+  ansible.builtin.assert:
+    that:
+      - ca_registered_certificate.stat.isreg
+
 - name: Converge certificate_batch
   jomrr.ca.certificate_batch:
     base_dir: '{{ ca_test_root.path }}/pki'
@@ -158,6 +178,30 @@
   ansible.builtin.assert:
     that:
       - ca_result.changed == ca_expect_changed
+- name: Verify readable batch certificate metadata
+  ansible.builtin.assert:
+    that:
+      - "ca_result.issuer_groups == {'issuer': 7}"
+      - "'********' not in (ca_result.results | to_json)"
+      - "'test-export-passphrase' not in (ca_result | to_json)"
+      - "'test-issuer-passphrase' not in (ca_result | to_json)"
+
+- name: Consume each registered batch certificate path in a follow-up task
+  ansible.builtin.stat:
+    path: '{{ item.cert_path }}'
+  loop: '{{ ca_result.results }}'
+  loop_control:
+    label: '{{ item.name }}'
+  register: ca_registered_batch
+
+- name: Verify the registered batch paths identify the created files
+  ansible.builtin.assert:
+    that:
+      - item.stat.isreg
+  loop: '{{ ca_registered_batch.results }}'
+  loop_control:
+    label: '{{ item.item.name }}'
+
 - name: Converge crl
   jomrr.ca.crl:
     base_dir: '{{ ca_test_root.path }}/pki'

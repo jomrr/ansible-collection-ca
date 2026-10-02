@@ -14,6 +14,12 @@ class ModuleDocFragment:
 
     DOCUMENTATION: ClassVar[str] = r"""
 notes:
+- Passphrase and other secret fields inside the certificate and authority dictionaries
+  are masked in Ansible output, including validation failures. Non-secret names,
+  formats, issuer groups and returned paths remain usable in registered results.
+- Ansible masks matching secret values throughout output. A public value identical
+  to or containing an actual passphrase is therefore still redacted. Task-level
+  C(no_log=true) remains available when the complete certificate metadata is confidential.
 - AIA/CDP URLs identify the actual signing CA generation. The original issuer keeps
   its unsuffixed filenames; after CA rekey, new certificates reference filenames
   containing the new generation ID. Publish every retained generation with

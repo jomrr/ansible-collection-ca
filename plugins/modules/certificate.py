@@ -170,10 +170,12 @@ extends_documentation_fragment: [jomrr.ca.certificate]
 from collections.abc import Callable
 from typing import cast
 
-from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine import (
     ensure_certificate_artifacts,
     single_certificate_argument_spec,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._module import (
+    CertificateModule as AnsibleModule,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._module import (
     execute_certificate,

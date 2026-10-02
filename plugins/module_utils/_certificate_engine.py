@@ -50,7 +50,6 @@ def certificate_common_argument_spec() -> dict[str, dict[str, Any]]:
             "type": "list",
             "elements": "dict",
             "required": True,
-            "no_log": True,
         },
         "kerberos_realm": {"type": "str", "default": ""},
         "subject": {"type": "dict", "default": {}},
@@ -64,7 +63,7 @@ def certificate_common_argument_spec() -> dict[str, dict[str, Any]]:
 def single_certificate_argument_spec() -> dict[str, dict[str, Any]]:
     """Return the argument spec for the single-certificate module."""
     spec = certificate_common_argument_spec()
-    spec["certificate"] = {"type": "dict", "required": True, "no_log": True}
+    spec["certificate"] = {"type": "dict", "required": True}
     return spec
 
 
@@ -75,7 +74,6 @@ def batch_certificate_argument_spec() -> dict[str, dict[str, Any]]:
         "type": "list",
         "elements": "dict",
         "required": True,
-        "no_log": True,
     }
     return spec
 

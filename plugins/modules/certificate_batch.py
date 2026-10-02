@@ -76,10 +76,12 @@ results:
 from collections.abc import Callable
 from typing import cast
 
-from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine import (
     batch_certificate_argument_spec,
     ensure_certificate_batch,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._module import (
+    CertificateModule as AnsibleModule,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._module import (
     execute_certificate,
