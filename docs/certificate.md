@@ -12,8 +12,9 @@ X.509 module.
 
 - Requires `certificate.name`, `certificate.type`, and `certificate.common_name`
   for CA-generated certificates.
-- Allows `certificate.csr_path` or `certificate.csr_content` instead of
-  `certificate.common_name` when signing an external CSR.
+- Accepts `certificate.csr_path` or `certificate.csr_content` to sign an external
+  CSR, with `certificate.common_name` or `certificate.subject_ordered` defining
+  the approved subject.
 - Validates `certificate.type` against the built-in profiles and the provided
   `certificate_types` map.
 - Resolves the issuer and issuer passphrase from `authorities`.
@@ -23,8 +24,9 @@ X.509 module.
   and raw extensions.
 - Creates the output directory.
 - Generates or reuses the private key and CSR.
-- For external CSR signing, verifies the CSR signature, uses the CSR subject
-  and public key, and does not create a private key on the CA host.
+- For external CSR signing, verifies the CSR signature and uses its public key,
+  without creating a private key on the CA host. Subject and SANs come exclusively
+  from task parameters and profile defaults; requested CSR identities are ignored.
 - Issues a PEM certificate and optional DER and text exports.
 - Copies the issuer chain into the certificate output directory.
 - Writes requested PKCS#12, fullchain, and FritzBox bundles directly.
@@ -36,6 +38,22 @@ X.509 module.
 - Records certificate inventory state.
 
 ## Certificate Profiles
+
+Issuance checks CA status, certificate-signing key usage and path length along
+the complete managed issuer chain before writing certificate material. This also
+applies when signing an external CSR and when using `certificate_batch`.
+
+For an external issuing CA, explicitly supply `basic_constraints: ["CA:TRUE",
+"pathlen:0"]` and `key_usage: ["keyCertSign", "cRLSign"]` in the certificate
+definition. These values come from the module inputs, not from the CSR's requested
+extensions. Set the selected type's `issuer` to the root to sign directly with it;
+the root certificate supplies the resulting chain. A root with `pathlen:1`
+allows this additional issuing CA; an existing issuing CA with `pathlen:0` does
+not. Leaf CSRs retain the existing requirement to use an issuing CA.
+
+All ancestor limits apply, even if the direct issuer advertises a larger or
+unlimited path length. Rejected requests do not adjust existing CA constraints
+or replace existing certificate material.
 
 - **`tls_server`**
   Default formats: `pem`, `der`, `txt`; Key Usage: `digitalSignature`,
@@ -152,8 +170,8 @@ These keys are accepted inside `certificate`.
   name; Secret: no
 
 - **`common_name`**: Common Name. Required for CA-generated certificates.
-  Optional for CSR-signed certificates; when set, it must match the CSR common
-  name.
+  Required for CSR-signed certificates unless `subject_ordered` supplies the
+  approved subject; when set, it must match the CSR common name.
   Type: str; Required: conditional; Default: none; Allowed values: any string;
   Secret: no
 
@@ -233,7 +251,8 @@ These keys are accepted inside `certificate`.
   Type: bool; Required: no; Default: `false`; Allowed values: `true`, `false`;
   Secret: no
 
-- **`san`**: Subject Alternative Names.
+- **`san`**: Approved Subject Alternative Names. CSR SANs are never inherited,
+  including when this list is empty or omitted. Profile defaults still apply.
   Type: list[str]; Required: no; Default: `[]` plus profile defaults; Allowed
   values: supported SAN syntax; Secret: no
 
@@ -451,6 +470,19 @@ Issue an identity certificate with PKCS#12 export:
 
 Sign an external CSR with the Component CA:
 
+The task must approve the subject and SANs independently of the CSR supplier.
+`common_name` must match the CSR CN. Other CSR subject attributes and every CSR
+SAN type (including UPN `otherName`, DNS and email) are ignored. Define the issued
+subject with `common_name`, merged `subject` and optional `email`, or replace it
+with `subject_ordered`. Set approved identities in `san`; the usual profile
+SAN defaults also apply. For example, `identity` with omitted or empty `san`
+issues no SAN, while `tls_server` adds `DNS:<common_name>`.
+
+Migration: existing CSR tasks that omitted the subject must add `common_name`
+or `subject_ordered`, and explicitly list approved SANs. Never populate those
+fields by blindly copying an untrusted CSR. A subsequent run reissues an existing
+certificate if its subject or extensions differ from the approved values.
+
 ```yaml
 - name: Sign external web CSR
   jomrr.ca.certificate:
@@ -461,6 +493,11 @@ Sign an external CSR with the Component CA:
       name: external-web01
       type: tls_server
       csr_path: /srv/pki/requests/external-web01.csr
+      common_name: web01.example.test
+      subject:
+        organization: Example
+      san:
+        - DNS:web01.example.test
       formats:
         - pem
         - der

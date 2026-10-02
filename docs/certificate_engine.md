@@ -37,9 +37,10 @@ Supported export formats are `pem`, `der`, `txt`, `pfx`, `p12`, `fullchain`,
 and `fritzbox`.
 
 Certificate models that set `csr_path` or `csr_content` are treated as
-CSR-signed certificates. The helper allows `common_name` to be omitted in that
-mode, rejects `pfx`, `p12`, and `fritzbox`, and lets the X.509 helper copy the
-CSR into the managed CSR path before signing it.
+CSR-signed certificates. They require an approved `common_name` or
+`subject_ordered`, reject `pfx`, `p12`, and `fritzbox`, and copy the verified CSR
+to the managed CSR path. Only its public key is used for issuance: the subject
+and SANs come from task parameters and profile defaults, never from the CSR.
 
 The helper validates certificate type, issuer existence, required profile
 fields, PFX passphrase requirements, merged subject defaults, renewal policy

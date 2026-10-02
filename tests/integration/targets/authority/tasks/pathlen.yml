@@ -1,0 +1,148 @@
+---
+- name: Create CAs with finite and wider advertised path limits
+  jomrr.ca.authority:
+    base_dir: '{{ ca_test_root.path }}/pathlen'
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    name: '{{ item.name }}'
+    parent: '{{ item.parent }}'
+    common_name: '{{ item.name }}'
+    days: 365
+    key_type: P-256
+    key_passphrase: pathlen-test
+    parent_key_passphrase: pathlen-test
+    basic_constraints:
+      - CA:TRUE
+      - 'pathlen:{{ item.pathlen }}'
+  loop:
+    - {name: root, parent: root, pathlen: 1}
+    - {name: issuer, parent: root, pathlen: 0}
+    - {name: permissive, parent: root, pathlen: 3}
+- name: Reject a subordinate CA when its issuer or root has no remaining depth
+  jomrr.ca.authority:
+    base_dir: '{{ ca_test_root.path }}/pathlen'
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    name: 'forbidden-{{ item.name }}'
+    parent: '{{ item.name }}'
+    common_name: Forbidden CA
+    days: 30
+    key_type: P-256
+    key_passphrase: pathlen-test
+    parent_key_passphrase: pathlen-test
+  loop:
+    - {name: issuer, limit: 0}
+    - {name: permissive, limit: 1}
+  register: ca_pathlen_rejections
+  failed_when: false
+- name: Verify path constraint diagnostics
+  ansible.builtin.assert:
+    that:
+      - not item.changed
+      - "('pathlen:' ~ item.item.limit) in item.msg"
+      - "'would be exceeded' in item.msg"
+  loop: '{{ ca_pathlen_rejections.results }}'
+- name: Create external CA request fixture
+  ansible.builtin.script:
+    cmd: "{{ ca_pathlen_script | default('pathlen.py') }} prepare {{ ca_test_root.path }}/pathlen"
+    executable: '{{ ansible_python_interpreter }}'
+  changed_when: true
+- name: Read external CSR
+  ansible.builtin.slurp:
+    src: '{{ ca_test_root.path }}/pathlen/external.csr'
+  register: ca_pathlen_csr
+- name: Reject an external CA request under pathlen zero
+  jomrr.ca.certificate:
+    base_dir: '{{ ca_test_root.path }}/pathlen'
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    authorities: &pathlen_authorities
+      - {name: root, parent: root, key_passphrase: pathlen-test, default_days: 90}
+      - {name: issuer, parent: root, key_passphrase: pathlen-test, default_days: 90}
+    certificate_types:
+      tls_server: {issuer: issuer}
+    certificate: &pathlen_request
+      name: openbao
+      common_name: OpenBao CA
+      type: tls_server
+      csr_content: '{{ ca_pathlen_csr.content | b64decode }}'
+      basic_constraints: [CA:TRUE, 'pathlen:0']
+      key_usage: [keyCertSign, cRLSign]
+      formats: [pem, fullchain]
+  register: ca_pathlen_csr_rejected
+  failed_when: false
+- name: Reject the same external CA in the batch module
+  jomrr.ca.certificate_batch:
+    base_dir: '{{ ca_test_root.path }}/pathlen'
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    authorities: *pathlen_authorities
+    certificate_types:
+      tls_server: {issuer: issuer}
+    certificates:
+      - *pathlen_request
+  register: ca_pathlen_batch_rejected
+  failed_when: false
+- name: Verify both CSR entry points reject the invalid path
+  ansible.builtin.assert:
+    that:
+      - "'would be exceeded' in ca_pathlen_csr_rejected.msg"
+      - "'non-self-issued intermediate CAs' in ca_pathlen_csr_rejected.msg"
+      - "'would be exceeded' in ca_pathlen_batch_rejected.msg"
+      - "'non-self-issued intermediate CAs' in ca_pathlen_batch_rejected.msg"
+- name: Inspect paths belonging to rejected requests
+  ansible.builtin.stat:
+    path: '{{ ca_test_root.path }}/pathlen/{{ item }}'
+  loop:
+    - private/forbidden-issuer-ca.key
+    - csr/forbidden-issuer-ca.csr
+    - ca/forbidden-issuer-ca.pem
+    - private/forbidden-permissive-ca.key
+    - csr/forbidden-permissive-ca.csr
+    - ca/forbidden-permissive-ca.pem
+    - csr/openbao.csr
+    - certs/openbao
+  register: ca_pathlen_files
+- name: Verify rejected requests wrote no certificate material
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists
+  loop: '{{ ca_pathlen_files.results }}'
+- name: Prepare the root chain for the external issuing CA
+  jomrr.ca.chain:
+    base_dir: '{{ ca_test_root.path }}/pathlen'
+    name: root
+- name: Sign an external issuing CA directly with the root
+  jomrr.ca.certificate: &pathlen_root_request
+    base_dir: '{{ ca_test_root.path }}/pathlen'
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    authorities: *pathlen_authorities
+    certificate_types:
+      tls_server: {issuer: root}
+    certificate: *pathlen_request
+  register: ca_pathlen_signed
+- name: Repeat the external CA request
+  jomrr.ca.certificate: *pathlen_root_request
+  register: ca_pathlen_repeated
+- name: Verify external CA issuance and idempotence
+  ansible.builtin.assert:
+    that:
+      - ca_pathlen_signed is changed
+      - ca_pathlen_repeated is not changed
+- name: Issue a leaf using the external CA key
+  ansible.builtin.script:
+    cmd: "{{ ca_pathlen_script | default('pathlen.py') }} leaf {{ ca_test_root.path }}/pathlen"
+    executable: '{{ ansible_python_interpreter }}'
+  changed_when: true
+- name: Verify the full leaf path using OpenSSL
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - verify
+      - -CAfile
+      - '{{ ca_test_root.path }}/pathlen/ca/root-ca.pem'
+      - -untrusted
+      - '{{ ca_test_root.path }}/pathlen/certs/openbao/openbao.pem'
+      - '{{ ca_test_root.path }}/pathlen/leaf.pem'
+  changed_when: false

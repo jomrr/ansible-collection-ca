@@ -219,10 +219,8 @@ def _external_csr_bytes(params: dict[str, Any]) -> bytes:
     raise ValueError("csr_path or csr_content is required for CSR signing")
 
 
-def _ensure_external_csr(
-    params: dict[str, Any],
-) -> tuple[x509.CertificateSigningRequest, bool]:
-    """Validate and copy an externally supplied CSR into the managed CSR path."""
+def _validated_external_csr(params: dict[str, Any]) -> x509.CertificateSigningRequest:
+    """Read and validate the request before creating any managed material."""
     csr = _load_csr_bytes(_external_csr_bytes(params))
     if not csr.is_signature_valid:
         raise ValueError("CSR signature verification failed")
@@ -234,6 +232,13 @@ def _ensure_external_csr(
             f"CSR common name {csr_common_name!r} does not match {common_name!r}"
         )
 
+    return csr
+
+
+def _ensure_external_csr(
+    params: dict[str, Any], csr: x509.CertificateSigningRequest
+) -> tuple[x509.CertificateSigningRequest, bool]:
+    """Copy a validated external CSR into the managed CSR path."""
     content = csr.public_bytes(serialization.Encoding.PEM)
     changed = write_file(
         params["csr_path"],

@@ -19,6 +19,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     set_attrs,
     write_file,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import (
+    _is_self_signed,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     _cert_fingerprint,
     _public_key_bytes,
@@ -45,11 +48,16 @@ def _ensure_der(params: dict[str, Any], cert: x509.Certificate) -> bool:
     )
 
 
-def _ensure_chain(params: dict[str, Any]) -> bool:
+def _ensure_chain(params: dict[str, Any], signer_cert: x509.Certificate | None) -> bool:
     """Ensure the optional certificate chain copy exists."""
     if not params["chain_src_path"] or not params["chain_path"]:
         return False
-    content = read_file(params["chain_src_path"])
+    try:
+        content = read_file(params["chain_src_path"])
+    except FileNotFoundError:
+        if signer_cert is None or not _is_self_signed(signer_cert):
+            raise
+        content = signer_cert.public_bytes(serialization.Encoding.PEM)
     return write_file(
         params["chain_path"],
         content,

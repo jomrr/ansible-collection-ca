@@ -32,6 +32,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
     ensure_x509_many,
     normalize_formats,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
+    _basic_constraints,
+)
 
 SUPPORTED_FORMATS = {"pem", "der", "txt", "pfx", "p12", "fullchain", "fritzbox"}
 
@@ -134,7 +137,11 @@ def _certificate_profile(
         )
 
     issuer_authority = authorities[issuer]
-    if csr_mode and string_value(issuer_authority.get("parent")).strip() == issuer:
+    if (
+        csr_mode
+        and string_value(issuer_authority.get("parent")).strip() == issuer
+        and not _basic_constraints(certificate.get("basic_constraints")).ca
+    ):
         raise ValueError(f"Certificate {name} CSR signing requires an issuing CA")
     issuer_passphrase = string_value(
         require_value(issuer_authority, "key_passphrase", f"Authority {issuer}")
@@ -221,7 +228,6 @@ def _resolve_certificate(
             "subject": _merged_setting(params, certificate, "subject", name),
             "renewal": _merged_setting(params, certificate, "renewal", name),
             "csr_mode": csr_mode,
-            "csr_san_from_request": csr_mode and "san" not in certificate,
         }
     )
     if cert_type == "mskdc":
@@ -259,8 +265,6 @@ def prepare_certificate_artifacts(
         default_formats=CERTIFICATE_DEFAULT_FORMATS[model["type"]],
     )
     x509_params = apply_certificate_profile(x509_params, model["type"])
-    if model.get("csr_san_from_request"):
-        x509_params["san"] = []
     return model, x509_params
 
 
@@ -289,7 +293,7 @@ def _finalize_prepared_certificate_result(
 
 
 def _sync_model_common_name(model: dict[str, Any], result: dict[str, Any]) -> None:
-    """Copy a CSR-derived common name into the inventory model when needed."""
+    """Copy the issued subject's common name into inventory when needed."""
     if not model.get("common_name") and result.get("common_name"):
         model["common_name"] = result["common_name"]
 

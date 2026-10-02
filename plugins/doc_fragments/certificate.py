@@ -13,6 +13,23 @@ class ModuleDocFragment:
     """Ansible documentation fragments."""
 
     DOCUMENTATION: ClassVar[str] = r"""
+notes:
+- External CSRs supply only the public key. The CSR signature is verified; requested
+  subject attributes and SANs are not copied into the certificate.
+- CSR signing requires C(certificate.common_name) or C(certificate.subject_ordered).
+  A configured C(common_name) must match the CSR common name. The issued subject is
+  built from task parameters, including merged C(subject) defaults or C(subject_ordered).
+- SANs come from C(certificate.san) and profile defaults, even when C(san) is omitted
+  or empty. Approved UPNs, DNS names and other identities must be supplied by the task.
+  Existing CSR tasks relying on implicit identities must specify them explicitly.
+- Issuance checks the complete managed issuer chain for Basic Constraints,
+  certificate-signing Key Usage and path length limits before writing certificate material.
+- External CA requests must explicitly set C(basic_constraints) to include C(CA:TRUE)
+  and use C(key_usage) containing C(keyCertSign). CSR extensions do not select these values.
+  A root can sign such a CA request when its path length permits the additional CA level.
+- The selected issuer comes from C(certificate_types[type].issuer). A CA with C(pathlen:0)
+  cannot sign another non-self-issued CA usable for leaf issuance. A larger or absent
+  child path length does not override limits inherited from ancestors.
 options:
   certificate_types:
     description: Role type map. The selected type must define C(issuer) and may define

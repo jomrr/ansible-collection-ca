@@ -155,8 +155,10 @@ All public modules currently use `supports_check_mode: false`.
   Certificate path: `<base_dir>/archive/certificates/<name>/<serial>/...`
 
 For certificates, `output_dir` defaults to `<base_dir>/certs/<name>`.
-CSR-signed certificates do not create `<output_dir>/<name>.key`; the CSR subject
-and public key are used instead.
+CSR-signed certificates do not create `<output_dir>/<name>.key`; the verified
+CSR supplies its public key. The task must define the approved subject through
+`common_name` or `subject_ordered`. Subject attributes and SANs are taken from
+task parameters and profile defaults, never from the CSR.
 
 ## Common Value Sets
 

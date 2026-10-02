@@ -1,0 +1,110 @@
+---
+- name: Verify approval of external CSR identities
+  vars:
+    ca_csr_arguments: &csr_args
+      base_dir: '{{ ca_test_root.path }}/pki'
+      owner: '{{ ca_test_uid.stdout }}'
+      group: '{{ ca_test_gid.stdout }}'
+      subject:
+        organization: Approved Organization
+      authorities:
+        - name: root
+          parent: root
+          key_passphrase: test-root-passphrase
+          default_days: 365
+        - name: issuer
+          parent: root
+          key_passphrase: test-issuer-passphrase
+          default_days: 90
+      certificate_types:
+        identity: {issuer: issuer}
+    ca_csr_request: &csr_request
+      type: identity
+      formats: [pem]
+      csr_path: '{{ ca_test_root.path }}/pki/untrusted.csr'
+  block:
+    - name: Prepare a CSR with unapproved organization and SAN identities
+      ansible.builtin.script:
+        cmd: "{{ ca_csr_script | default('csr.py') }} prepare {{ ca_test_root.path }}/pki"
+        executable: '{{ ansible_python_interpreter }}'
+      changed_when: true
+    - name: Reject external CSR without an approved subject
+      jomrr.ca.certificate:
+        <<: *csr_args
+        certificate:
+          <<: *csr_request
+          name: external-max
+      register: ca_csr_missing_subject
+      failed_when: false
+    - name: Inspect rejected certificate output
+      ansible.builtin.stat:
+        path: '{{ ca_test_root.path }}/pki/certs/external-max'
+      register: ca_csr_rejected_directory
+    - name: Verify missing identity approval failed without certificate output
+      ansible.builtin.assert:
+        that:
+          - "'subject_ordered or common_name is required' in ca_csr_missing_subject.msg"
+          - not ca_csr_rejected_directory.stat.exists
+    - name: Issue only the approved subject without inheriting CSR SANs
+      jomrr.ca.certificate: &csr_approved_subject
+        <<: *csr_args
+        certificate:
+          <<: *csr_request
+          name: external-max
+          common_name: Max Muster
+      register: ca_csr_initial
+    - name: Repeat the approved request
+      jomrr.ca.certificate: *csr_approved_subject
+      register: ca_csr_repeated
+    - name: Verify initial issuance and idempotence
+      ansible.builtin.assert:
+        that:
+          - ca_csr_initial is changed
+          - ca_csr_repeated is not changed
+    - name: Inspect the issued subject and absence of CSR SANs
+      ansible.builtin.script:
+        cmd: "{{ ca_csr_script | default('csr.py') }} absent {{ ca_test_root.path }}/pki"
+        executable: '{{ ansible_python_interpreter }}'
+      changed_when: false
+    - name: Update the approved SAN identity
+      jomrr.ca.certificate:
+        <<: *csr_args
+        certificate:
+          <<: *csr_request
+          name: external-max
+          common_name: Max Muster
+          san: ['email:max@example.test']
+      register: ca_csr_updated
+    - name: Verify the approved identity change reissued the certificate
+      ansible.builtin.assert:
+        that:
+          - ca_csr_updated.cert_changed
+    - name: Inspect the explicit SAN override
+      ansible.builtin.script:
+        cmd: "{{ ca_csr_script | default('csr.py') }} approved {{ ca_test_root.path }}/pki"
+        executable: '{{ ansible_python_interpreter }}'
+      changed_when: false
+    - name: Issue external CSR through the batch module with an ordered subject
+      jomrr.ca.certificate_batch: &csr_batch_args
+        <<: *csr_args
+        certificates:
+          - <<: *csr_request
+            name: external-batch
+            subject_ordered:
+              - O: Approved Organization
+              - CN: Max Muster
+            san: []
+      register: ca_csr_batch
+    - name: Repeat the approved batch request
+      jomrr.ca.certificate_batch: *csr_batch_args
+      register: ca_csr_batch_repeated
+    - name: Verify batch issuance and idempotence
+      ansible.builtin.assert:
+        that:
+          - ca_csr_batch is changed
+          - ca_csr_batch_repeated is not changed
+    - name: Inspect the batch certificate and empty SAN list
+      ansible.builtin.script:
+        cmd: "{{ ca_csr_script | default('csr.py') }} batch {{ ca_test_root.path }}/pki"
+        executable: '{{ ansible_python_interpreter }}'
+      changed_when: false

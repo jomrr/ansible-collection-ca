@@ -1,0 +1,8 @@
+---
+security_fixes:
+  - certificate and certificate_batch - stop inheriting external CSR subject attributes and SANs;
+    use task-approved identities and profile defaults after verifying the CSR signature.
+breaking_changes:
+  - External CSR tasks must define common_name or subject_ordered and explicitly supply approved
+    SANs. Omitted or empty SANs no longer import identities from the CSR; normal profile defaults
+    apply.

@@ -218,22 +218,10 @@ def _raw_extension_value(value: str) -> bytes:
     raise ValueError(f"Unsupported raw extension value {value}")
 
 
-def _csr_subject_alt_name(
-    csr: x509.CertificateSigningRequest,
-) -> tuple[x509.SubjectAlternativeName, bool] | None:
-    """Return the CSR SAN extension value and critical flag when present."""
-    try:
-        extension = csr.extensions.get_extension_for_class(x509.SubjectAlternativeName)
-    except x509.ExtensionNotFound:
-        return None
-    return extension.value, extension.critical
-
-
 def _desired_extensions(
     params: dict[str, Any],
     public_key: PublicKey,
     signer_public_key: PublicKey,
-    csr_san: tuple[x509.SubjectAlternativeName, bool] | None = None,
 ) -> list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]]:
     """Build the desired certificate or CSR extension list."""
     extensions = [
@@ -263,15 +251,6 @@ def _desired_extensions(
                 ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
                 bool(params["san_critical"]),
                 _subject_alt_name(params["san"], realm),
-            )
-        )
-    elif params.get("use_csr_san", True) and csr_san is not None:
-        san_value, san_critical = csr_san
-        extensions.append(
-            (
-                ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
-                bool(san_critical),
-                san_value,
             )
         )
     if params["aia_url"]:

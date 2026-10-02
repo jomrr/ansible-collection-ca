@@ -13,6 +13,14 @@ text exports, and CA inventory state for a root or issuing CA.
 - Root CA defaults: `basic_constraints: ["CA:TRUE", "pathlen:1"]`.
 - Issuing CA defaults: `basic_constraints: ["CA:TRUE", "pathlen:0"]`.
 - Both authority types default `key_usage` to `["keyCertSign", "cRLSign"]`.
+- Parent-signed requests validate the complete managed issuer chain's CA status,
+  certificate-signing key usage and path length before writing key, CSR or
+  certificate material. The requested CA counts as an intermediate so that it
+  can subsequently issue usable leaf certificates.
+- `Root(pathlen:1) -> Issuing(pathlen:0) -> Leaf` is valid. Adding another CA
+  below that issuing CA is rejected. The limit counts depth, not sibling CAs;
+  self-issued rollover certificates do not consume a level. Wider or absent
+  limits in a child do not override an ancestor's limit.
 - The default signature digest is `sha384`; SHA-1 signatures are forbidden.
 - Changing the signature digest reissues the certificate and CSR with the
   existing key, unless the signing key fixes its own hash (EdDSA).

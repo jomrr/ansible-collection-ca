@@ -175,6 +175,10 @@
         cmd: "{{ ca_verify_script | default('verify.py') }} {{ ca_test_root.path }}"
         executable: '{{ ansible_python_interpreter }}'
       changed_when: false
+    - name: Exercise CA path constraints and external issuing CA requests
+      ansible.builtin.include_tasks: pathlen.yml
+    - name: Exercise external CSR identity approval
+      ansible.builtin.include_tasks: csr.yml
   always:
     - name: Remove temporary CA fixture
       ansible.builtin.file:

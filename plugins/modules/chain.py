@@ -73,7 +73,11 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     write_file,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._text import certificate_text
-from ansible_collections.jomrr.ca.plugins.module_utils._x509 import load_certificates
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import (
+    _authority_name,
+    _is_self_signed,
+    _ordered_chain,
+)
 
 try:
     from cryptography import x509
@@ -104,21 +108,6 @@ def _chain_paths(base_dir: str, name: str, formats: list[str]) -> dict[str, str]
     return {chain_format: f"{base}.{chain_format}" for chain_format in formats}
 
 
-def _authority_name(path: Path) -> str:
-    """Return the authority short name from a CA certificate path."""
-    return path.name[: -len("-ca.pem")]
-
-
-def _load_authorities(base_dir: str) -> dict[str, x509.Certificate]:
-    """Load all CA certificates below the managed CA directory."""
-    authorities = {}
-    for path in sorted((Path(base_dir.rstrip("/")) / "ca").glob("*-ca.pem")):
-        certificates = load_certificates(str(path))
-        if certificates:
-            authorities[_authority_name(path)] = certificates[0]
-    return authorities
-
-
 def _authority_lock_paths(base_dir: str, name: str) -> list[str]:
     """Return locks for the target authority and every readable CA certificate."""
     ca_dir = Path(base_dir.rstrip("/")) / "ca"
@@ -128,86 +117,6 @@ def _authority_lock_paths(base_dir: str, name: str) -> list[str]:
         ca_lock_path(base_dir, "authority", authority_name)
         for authority_name in authority_names
     ]
-
-
-def _authority_key_identifier(cert: x509.Certificate) -> bytes | None:
-    """Return the certificate Authority Key Identifier when present."""
-    try:
-        value = cert.extensions.get_extension_for_class(
-            x509.AuthorityKeyIdentifier
-        ).value
-    except x509.ExtensionNotFound:
-        return None
-    return value.key_identifier
-
-
-def _subject_key_identifier(cert: x509.Certificate) -> bytes | None:
-    """Return the certificate Subject Key Identifier when present."""
-    try:
-        value = cert.extensions.get_extension_for_class(x509.SubjectKeyIdentifier).value
-    except x509.ExtensionNotFound:
-        return None
-    return value.digest
-
-
-def _is_self_signed(cert: x509.Certificate) -> bool:
-    """Return whether the certificate is self-issued."""
-    return cert.subject == cert.issuer
-
-
-def _issuer_matches(
-    cert: x509.Certificate,
-    candidate: x509.Certificate,
-) -> bool:
-    """Return whether candidate is the issuer certificate for cert."""
-    if candidate.subject != cert.issuer:
-        return False
-    authority_key = _authority_key_identifier(cert)
-    subject_key = _subject_key_identifier(candidate)
-    return authority_key is None or subject_key is None or authority_key == subject_key
-
-
-def _issuer_name(
-    cert: x509.Certificate,
-    authorities: dict[str, x509.Certificate],
-    current_name: str,
-) -> str:
-    """Return the authority short name that issued cert."""
-    matches = [
-        name
-        for name, candidate in authorities.items()
-        if name != current_name and _issuer_matches(cert, candidate)
-    ]
-    if not matches:
-        raise ValueError(
-            f"issuer certificate for authority {current_name} was not found"
-        )
-    if len(matches) > 1:
-        names = ", ".join(sorted(matches))
-        raise ValueError(
-            f"issuer certificate for authority {current_name} is ambiguous: {names}"
-        )
-    return matches[0]
-
-
-def _ordered_chain(base_dir: str, name: str) -> list[x509.Certificate]:
-    """Return the ordered certificate chain for one CA authority."""
-    authorities = _load_authorities(base_dir)
-    if name not in authorities:
-        raise ValueError(f"authority certificate {name}-ca.pem was not found")
-
-    chain = []
-    current_name = name
-    seen = set()
-    while True:
-        if current_name in seen:
-            raise ValueError(f"authority chain for {name} contains a loop")
-        seen.add(current_name)
-        cert = authorities[current_name]
-        chain.append(cert)
-        if _is_self_signed(cert):
-            return chain
-        current_name = _issuer_name(cert, authorities, current_name)
 
 
 def _remove_file(path: str) -> bool:

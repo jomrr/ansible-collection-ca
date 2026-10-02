@@ -12,6 +12,14 @@ short_description: Manage a CA authority certificate
 version_added: 0.1.0
 description:
 - Manage a CA authority certificate.
+notes:
+- Parent-signed authorities are checked against the Basic Constraints, certificate-signing
+  Key Usage and path length limits of the complete managed issuer chain before writing
+  key, CSR or certificate material.
+- A root with C(pathlen:1) can issue another CA with C(pathlen:0). An issuing CA with
+  C(pathlen:0) cannot issue a further non-self-issued CA usable for leaf issuance.
+- Path limits count CA levels, not the number of sibling authorities. Self-issued
+  CA rollover certificates do not consume a level.
 extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
   jomrr.ca.context.digest, jomrr.ca.context.formats, jomrr.ca.context.cryptography]
 options:

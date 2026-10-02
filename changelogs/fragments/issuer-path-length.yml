@@ -1,0 +1,5 @@
+bugfixes:
+  - authority, certificate, certificate_batch - reject issuance that exceeds path length limits
+    anywhere in the managed CA chain before writing certificate material.
+  - certificate, certificate_batch - permit a root to sign explicitly requested external CA
+    certificates when the issuer chain permits the additional CA level.

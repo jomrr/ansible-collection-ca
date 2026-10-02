@@ -24,6 +24,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
     certificate_not_valid_before,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import _ordered_chain
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_constraints import (
+    validate_issuer_constraints,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_exports import (
     _chain_certificates,
     _chain_content,
@@ -34,12 +38,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_exports import (
     _ensure_pkcs12_exports,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
-    _csr_subject_alt_name,
     _desired_extensions,
     subject_from_params,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
-    _csr_common_name,
     _load_existing_certificate,
     digest_algorithm,
     load_certificate,
@@ -56,6 +58,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
     _ensure_directory,
     _ensure_external_csr,
     _ensure_key,
+    _validated_external_csr,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     _external_csr_configured,
@@ -75,6 +78,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
 try:
     from ansible_collections.jomrr.ca.plugins.module_utils._types import PrivateKey
     from cryptography import x509
+    from cryptography.x509.oid import NameOID
 except ImportError:
     pass
 
@@ -203,8 +207,7 @@ def _group_signer(group: list[tuple[int, dict[str, Any]]]) -> SignerMaterial:
     first = group[0][1]
     signer = SignerMaterial(cert=load_certificate(first["signer_cert_path"]))
     for _index, params in group:
-        if signer.cert is not None:
-            validate_issuer_policies(params, signer.cert)
+        _validate_signing_request(params, signer)
     signer.key = load_private_key(
         first["signer_key_path"], first["signer_key_passphrase"]
     )
@@ -215,6 +218,21 @@ def _group_signer(group: list[tuple[int, dict[str, Any]]]) -> SignerMaterial:
         signer.chain_content = _chain_content(first, signer.cert)
         signer.extra_certs = _chain_certificates(first, signer.cert)
     return signer
+
+
+def _validate_signing_request(
+    params: dict[str, Any], signer: SignerMaterial
+) -> x509.CertificateSigningRequest | None:
+    """Check the entire issuer path before writing any request material."""
+    if not signer.issuer_chain:
+        issuer = params["parent"] if params["authority"] else params["issuer"]
+        signer.issuer_chain = _ordered_chain(params["base_dir"], issuer)
+    signer.cert = signer.issuer_chain[0]
+    csr = _validated_external_csr(params) if _external_csr_configured(params) else None
+    subject = subject_from_params(params)
+    validate_issuer_constraints(params, subject, signer.issuer_chain)
+    validate_issuer_policies(params, signer.cert)
+    return csr
 
 
 def _directory_change(params: dict[str, Any], manage_directory: bool) -> bool:
@@ -241,7 +259,7 @@ def _ensure_exports(
     changes = {
         "der_changed": _ensure_der(params, cert),
         "txt_changed": ensure_txt(params, cert),
-        "chain_changed": _ensure_chain(params) if manage_chain else False,
+        "chain_changed": _ensure_chain(params, signer.cert) if manage_chain else False,
         "pkcs12_changed": False,
         "fritzbox_bundle_changed": False,
     }
@@ -289,15 +307,13 @@ def _result(
 
 def _ensure_x509_from_csr_locked(
     params: dict[str, Any],
+    csr: x509.CertificateSigningRequest,
     *,
-    signed: bool,
     manage_directory: bool,
     manage_chain: bool,
     signer: SignerMaterial,
 ) -> dict[str, Any]:
     """Ensure one signed certificate from an externally supplied CSR."""
-    if not signed:
-        raise ValueError("CSR signing requires an issuing CA")
     unsupported = sorted(
         set(params["formats"]).intersection({"pfx", "p12", "fritzbox"})
     )
@@ -314,7 +330,7 @@ def _ensure_x509_from_csr_locked(
     existing_cert = _load_existing_certificate(params["cert_path"])
     renewal = _renewal_decision(params, existing_cert)
     renewal["rekey"] = False
-    csr, changes["csr_changed"] = _ensure_external_csr(params)
+    csr, changes["csr_changed"] = _ensure_external_csr(params, csr)
     if signer.key is None:
         signer.key = load_private_key(
             params["signer_key_path"], params["signer_key_passphrase"]
@@ -323,22 +339,22 @@ def _ensure_x509_from_csr_locked(
         signer.cert = load_certificate(params["signer_cert_path"])
     spec = CertificateSpec(
         csr.public_key(),
-        csr.subject,
+        subject_from_params(params),
         _desired_extensions(
             params,
             csr.public_key(),
             signer.cert.public_key(),
-            _csr_subject_alt_name(csr),
         ),
     )
     cert, changes["cert_changed"] = _ensure_certificate(
         params, spec, signer, renewal, existing_cert
     )
     changes.update(_ensure_exports(params, cert, signer, None, manage_chain))
+    common_names = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
     return {
         **_result(params, changes, renewal),
         "csr_mode": True,
-        "common_name": _csr_common_name(csr),
+        "common_name": str(common_names[0].value) if common_names else "",
         "fritzbox_bundle_path": "",
     }
 
@@ -353,14 +369,13 @@ def _ensure_x509_locked(
 ) -> dict[str, Any]:
     """Ensure one X.509 object while holding its object lock."""
     signer = signer or SignerMaterial()
-    if signed:
-        if signer.cert is None:
-            signer.cert = load_certificate(params["signer_cert_path"])
-        validate_issuer_policies(params, signer.cert)
+    csr = _validate_signing_request(params, signer) if signed else None
     if _external_csr_configured(params):
+        if csr is None:
+            raise ValueError("CSR signing requires an issuing CA")
         return _ensure_x509_from_csr_locked(
             params,
-            signed=signed,
+            csr,
             manage_directory=manage_directory,
             manage_chain=manage_chain,
             signer=signer,

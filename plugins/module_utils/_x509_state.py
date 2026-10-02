@@ -22,6 +22,7 @@ class SignerMaterial:
 
     key: PrivateKey | None = None
     cert: x509.Certificate | None = None
+    issuer_chain: list[x509.Certificate] = field(default_factory=list)
     chain_content: bytes = b""
     extra_certs: list[x509.Certificate] = field(default_factory=list)
 

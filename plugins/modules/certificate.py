@@ -86,6 +86,11 @@ EXAMPLES = r"""
       name: external-web01
       type: tls_server
       csr_path: /srv/pki/requests/external-web01.csr
+      common_name: web01.example.test
+      subject:
+        organization: Example
+      san:
+        - DNS:web01.example.test
       formats:
         - pem
         - der
