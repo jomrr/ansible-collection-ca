@@ -188,6 +188,13 @@ def _resolve_certificate(
     cert_type = string_value(
         require_value(certificate, "type", f"Certificate {name}")
     ).strip()
+    # Resolve CA defaults before deciding whether a root may sign the request.
+    certificate = {
+        "basic_constraints": CERTIFICATE_PROFILE_DEFAULTS.get(cert_type, {}).get(
+            "basic_constraints", ["CA:FALSE"]
+        ),
+        **certificate,
+    }
     if csr_mode:
         common_name = string_value(certificate.get("common_name")).strip()
     else:

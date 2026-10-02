@@ -30,6 +30,7 @@ profile defaults, create artifacts, and update inventory through one code path.
 Profile defaults come from `ca_profiles`:
 
 - standard certificates and MSKDC: `pem`, `der`, `txt`
+- issuing CA certificates: `pem`, `der`, `txt`, `fullchain`
 - identity certificates: `pem`, `der`, `txt`, `pfx`
 - FritzBox certificates: `pem`, `der`, `txt`, `fritzbox`
 
@@ -41,6 +42,12 @@ CSR-signed certificates. They require an approved `common_name` or
 `subject_ordered`, reject `pfx`, `p12`, and `fritzbox`, and copy the verified CSR
 to the managed CSR path. Only its public key is used for issuance: the subject
 and SANs come from task parameters and profile defaults, never from the CSR.
+
+The `issuing_ca` profile defaults to `CA:TRUE`, `pathlen:0`, `keyCertSign` and
+`cRLSign`, without EKU or SAN defaults. Basic Constraints are resolved before
+the root-issuer check, so a managed root can sign the request. The complete
+managed chain still enforces CA constraints before any certificate material is
+written. Explicit extension overrides retain their existing behavior.
 
 The helper validates certificate type, issuer existence, required profile
 fields, PFX passphrase requirements, merged subject defaults, renewal policy

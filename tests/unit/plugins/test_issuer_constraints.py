@@ -116,28 +116,60 @@ class IssuanceConstraintTests(unittest.TestCase):
 
     def test_external_ca_rejected_before_writes(self) -> None:
         """An external CA CSR is subject to the same issuer path constraints."""
-        with self.assertRaisesRegex(ValueError, "pathlen:0.*exceeded"):
-            ensure_certificate_artifacts(self.ca.request())
+        for params in (self.ca.request(), self.issuing_ca_request("issuer")):
+            with (
+                self.subTest(profile=params["certificate"]["type"]),
+                self.assertRaisesRegex(ValueError, "pathlen:0.*exceeded"),
+            ):
+                ensure_certificate_artifacts(params)
         self.assertFalse((self.base / "csr/openbao.csr").exists())
         self.assertFalse((self.base / "certs/openbao").exists())
 
+    def issuing_ca_request(self, issuer: str) -> dict[str, Any]:
+        """Use the issuing CA profile with its default extensions and exports."""
+        params = self.ca.request(issuer)
+        params["certificate_types"] = {"issuing_ca": {"issuer": issuer}}
+        params["certificate"]["type"] = "issuing_ca"
+        for key in ("basic_constraints", "key_usage", "formats"):
+            del params["certificate"][key]
+        return params
+
     def test_root_can_sign_external_ca(self) -> None:
         """A root with room for an intermediate signs a CA CSR idempotently."""
-        params = self.ca.request("root")
-        self.assertTrue(ensure_certificate_artifacts(params)["cert_changed"])
-        self.assertFalse(ensure_certificate_artifacts(params)["changed"])
         root = x509.load_pem_x509_certificate(
             (self.base / "ca/root-ca.pem").read_bytes()
         )
-        issued = x509.load_pem_x509_certificate(
-            (self.base / "certs/openbao/openbao.pem").read_bytes()
-        )
-        issued.verify_directly_issued_by(root)
-        self.assertEqual(issued.subject, self.ca.csr.subject)
-        self.assertEqual(
-            issued.extensions.get_extension_for_class(x509.BasicConstraints).value,
-            x509.BasicConstraints(True, 0),
-        )
+        for params in (self.ca.request("root"), self.issuing_ca_request("root")):
+            with self.subTest(profile=params["certificate"]["type"]):
+                result = ensure_certificate_artifacts(params)
+                self.assertTrue(result["cert_changed"])
+                self.assertFalse(ensure_certificate_artifacts(params)["changed"])
+                issued = x509.load_pem_x509_certificate(
+                    Path(result["cert_path"]).read_bytes()
+                )
+                issued.verify_directly_issued_by(root)
+                self.assertEqual(issued.subject, self.ca.csr.subject)
+                constraints = issued.extensions.get_extension_for_class(
+                    x509.BasicConstraints
+                )
+                self.assertEqual(
+                    constraints.value,
+                    x509.BasicConstraints(True, 0),
+                )
+                usage = issued.extensions.get_extension_for_class(x509.KeyUsage)
+                self.assertTrue(usage.critical)
+                self.assertTrue(usage.value.key_cert_sign)
+                self.assertTrue(usage.value.crl_sign)
+                if result["profile"] == "issuing_ca":
+                    for extension in (
+                        x509.ExtendedKeyUsage, x509.SubjectAlternativeName
+                    ):
+                        with self.assertRaises(x509.ExtensionNotFound):
+                            issued.extensions.get_extension_for_class(extension)
+                    chain = x509.load_pem_x509_certificates(
+                        Path(result["fullchain_path"]).read_bytes()
+                    )
+                    self.assertEqual(chain, [issued, root])
         self.assertFalse((self.base / "certs/openbao/openbao.key").exists())
 
     def test_batch_preflights_each_request(self) -> None:

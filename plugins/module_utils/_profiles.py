@@ -98,10 +98,16 @@ FRITZBOX_CERTIFICATE_DEFAULTS: dict[str, Any] = {
 CERTIFICATE_PROFILE_DEFAULTS: dict[str, dict[str, Any]] = {
     **STANDARD_CERTIFICATE_DEFAULTS,
     **IDENTITY_CERTIFICATE_DEFAULTS,
+    "issuing_ca": {
+        "digest": "sha384",
+        "basic_constraints": ["CA:TRUE", "pathlen:0"],
+        "key_usage": ["keyCertSign", "cRLSign"],
+    },
     "mskdc": MSKDC_CERTIFICATE_DEFAULTS,
     "fritzbox": FRITZBOX_CERTIFICATE_DEFAULTS,
 }
 CERTIFICATE_DEFAULT_FORMATS: dict[str, list[str]] = {
+    "issuing_ca": ["pem", "der", "txt", "fullchain"],
     "tls_server": ["pem", "der", "txt"],
     "tls_client": ["pem", "der", "txt"],
     "eap_tls_client": ["pem", "der", "txt"],

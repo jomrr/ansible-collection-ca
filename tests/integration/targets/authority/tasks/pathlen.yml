@@ -60,15 +60,12 @@
       - {name: root, parent: root, key_passphrase: pathlen-test, default_days: 90}
       - {name: issuer, parent: root, key_passphrase: pathlen-test, default_days: 90}
     certificate_types:
-      tls_server: {issuer: issuer}
+      issuing_ca: {issuer: issuer}
     certificate: &pathlen_request
       name: openbao
       common_name: OpenBao CA
-      type: tls_server
+      type: issuing_ca
       csr_content: '{{ ca_pathlen_csr.content | b64decode }}'
-      basic_constraints: [CA:TRUE, 'pathlen:0']
-      key_usage: [keyCertSign, cRLSign]
-      formats: [pem, fullchain]
   register: ca_pathlen_csr_rejected
   failed_when: false
 - name: Reject the same external CA in the batch module
@@ -78,7 +75,7 @@
     group: '{{ ca_test_gid.stdout }}'
     authorities: *pathlen_authorities
     certificate_types:
-      tls_server: {issuer: issuer}
+      issuing_ca: {issuer: issuer}
     certificates:
       - *pathlen_request
   register: ca_pathlen_batch_rejected
@@ -108,10 +105,6 @@
     that:
       - not item.stat.exists
   loop: '{{ ca_pathlen_files.results }}'
-- name: Prepare the root chain for the external issuing CA
-  jomrr.ca.chain:
-    base_dir: '{{ ca_test_root.path }}/pathlen'
-    name: root
 - name: Sign an external issuing CA directly with the root
   jomrr.ca.certificate: &pathlen_root_request
     base_dir: '{{ ca_test_root.path }}/pathlen'
@@ -119,17 +112,36 @@
     group: '{{ ca_test_gid.stdout }}'
     authorities: *pathlen_authorities
     certificate_types:
-      tls_server: {issuer: root}
+      issuing_ca: {issuer: root}
     certificate: *pathlen_request
   register: ca_pathlen_signed
 - name: Repeat the external CA request
   jomrr.ca.certificate: *pathlen_root_request
   register: ca_pathlen_repeated
+- name: Repeat issuance through the batch module using the CSR file
+  jomrr.ca.certificate_batch:
+    base_dir: '{{ ca_test_root.path }}/pathlen'
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    authorities: *pathlen_authorities
+    certificate_types:
+      issuing_ca: {issuer: root}
+    certificates:
+      - name: openbao
+        common_name: OpenBao CA
+        type: issuing_ca
+        csr_path: '{{ ca_test_root.path }}/pathlen/external.csr'
+  register: ca_pathlen_batch_signed
 - name: Verify external CA issuance and idempotence
   ansible.builtin.assert:
     that:
       - ca_pathlen_signed is changed
       - ca_pathlen_repeated is not changed
+      - ca_pathlen_batch_signed is not changed
+      - ca_pathlen_signed.profile == 'issuing_ca'
+      - ca_pathlen_signed.formats == ['pem', 'der', 'txt', 'fullchain']
+      - not ca_pathlen_signed.key_changed
+      - ca_pathlen_batch_signed.results[0].cert_path == ca_pathlen_signed.cert_path
 - name: Issue a leaf using the external CA key
   ansible.builtin.script:
     cmd: "{{ ca_pathlen_script | default('pathlen.py') }} leaf {{ ca_test_root.path }}/pathlen"
@@ -140,9 +152,12 @@
     argv:
       - openssl
       - verify
+      - -purpose
+      - '{{ item }}'
       - -CAfile
       - '{{ ca_test_root.path }}/pathlen/ca/root-ca.pem'
       - -untrusted
       - '{{ ca_test_root.path }}/pathlen/certs/openbao/openbao.pem'
       - '{{ ca_test_root.path }}/pathlen/leaf.pem'
   changed_when: false
+  loop: [sslserver, sslclient]

@@ -16,9 +16,17 @@ certificate profile defaults used by [`jomrr.ca.certificate`](certificate.md).
 
 ## Profile Defaults
 
+`issuing_ca` was added in version 1.1.0. Its Basic Constraints defaults are
+resolved before the dispatcher's issuer checks; explicit values take precedence.
+
 Key Usage lists below describe RSA defaults. `profile_key_usage` resolves
 them against the actual public key during extension construction and omits
 `keyEncipherment` for ECDSA, Ed25519, and Ed448, including external CSRs.
+
+- **`issuing_ca`**
+  Formats: `pem`, `der`, `txt`, `fullchain`; Digest: `sha384`; Basic Constraints:
+  `CA:TRUE`, `pathlen:0`; Key Usage: `keyCertSign`, `cRLSign`; no Extended Key
+  Usage or default SAN. Accepts external CSRs without managing their private key.
 
 - **`tls_server`**
   Formats: `pem`, `der`, `txt`; Digest: `sha384`; Key Usage: `digitalSignature`,

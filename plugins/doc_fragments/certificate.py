@@ -42,9 +42,19 @@ notes:
   Existing CSR tasks relying on implicit identities must specify them explicitly.
 - Issuance checks the complete managed issuer chain for Basic Constraints,
   certificate-signing Key Usage and path length limits before writing certificate material.
-- External CA requests must explicitly set C(basic_constraints) to include C(CA:TRUE)
-  and use C(key_usage) containing C(keyCertSign). CSR extensions do not select these values.
-  A root can sign such a CA request when its path length permits the additional CA level.
+- Use C(type=issuing_ca) (added in version 1.1.0) to sign an external issuing CA CSR
+  supplied through C(csr_path) on the managed CA host or inline PEM C(csr_content).
+  Set C(certificate_types.issuing_ca.issuer) to the managed root name and supply
+  its C(key_passphrase) in C(authorities). The external private key stays external.
+- The C(issuing_ca) profile defaults to C(basic_constraints=[CA:TRUE, pathlen:0])
+  and C(key_usage=[keyCertSign, cRLSign]), with no EKU or SAN defaults.
+  It exports C(pem), C(der), C(txt) and C(fullchain). Explicit extension overrides
+  remain available; CSR extensions never select these values.
+- A root can sign a CA request when its path length permits the additional CA level.
+  Other profiles can still request a CA using explicit C(basic_constraints) and C(key_usage).
+- The signed external CA is inventoried as a certificate, not installed as a managed
+  authority. Import C(cert_path) or C(fullchain_path) into the external CA separately;
+  that system manages its own leaf certificates and CRLs.
 - The selected issuer comes from C(certificate_types[type].issuer). A CA with C(pathlen:0)
   cannot sign another non-self-issued CA usable for leaf issuance. A larger or absent
   child path length does not override limits inherited from ancestors.

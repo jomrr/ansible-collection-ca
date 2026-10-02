@@ -8,6 +8,9 @@ profiles.
 DER, text, PKCS#12, fullchain, and FritzBox bundle generation live in one place.
 Certificate models can also reference `csr_path` or `csr_content` to sign an
 external CSR through the same issuer grouping and inventory flow.
+Use `type: issuing_ca` for an external issuing CA and map
+`certificate_types.issuing_ca.issuer` to the managed root. The defaults, input
+approval rules and outputs match the [single-certificate example](certificate.md#sign-an-external-issuing-ca-with-the-root).
 
 ## Behavior
 

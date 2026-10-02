@@ -101,6 +101,27 @@ EXAMPLES = r"""
         issuer: component
     authorities: "{{ ca_authorities }}"
 
+- name: Sign an external issuing CA CSR with the managed root
+  jomrr.ca.certificate:
+    base_dir: /etc/pki/example
+    base_url: http://pki.example.test
+    owner: root
+    group: root
+    certificate:
+      name: openbao
+      type: issuing_ca
+      csr_path: /srv/pki/requests/openbao.csr
+      common_name: Example OpenBao Issuing CA
+      days: 1826
+    certificate_types:
+      issuing_ca:
+        issuer: root
+    authorities:
+      - name: root
+        parent: root
+        key_passphrase: "{{ ca_root_passphrase }}"
+  register: signed_issuing_ca
+
 - name: Issue MSKDC certificate
   jomrr.ca.certificate:
     base_dir: /etc/pki/example

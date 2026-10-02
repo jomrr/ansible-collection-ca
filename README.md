@@ -69,7 +69,13 @@ renewal is due, requested attributes differ, or `force` is set.
 Create the root authority first, then each issuing authority. Call
 `jomrr.ca.chain` for issuing authorities before issuing leaf certificates.
 `jomrr.ca.certificate` and `jomrr.ca.certificate_batch` share profiles for
-TLS servers and clients, EAP-TLS, identity, MSKDC and FRITZ!Box certificates.
+TLS servers and clients, EAP-TLS, identity, MSKDC, FRITZ!Box and issuing CA
+certificates. To sign an external issuing CA CSR, use `type: issuing_ca`
+with `csr_path` or `csr_content` and set
+`certificate_types.issuing_ca.issuer` to the managed root. The profile
+supplies CA constraints and signing usages, with no EKU or SAN defaults;
+the private key stays with the external CA. See the
+[external issuing CA example](docs/certificate.md#sign-an-external-issuing-ca-with-the-root).
 Supply `certificate_types` and `authorities` explicitly; these modules do
 not load the standalone role's defaults.
 

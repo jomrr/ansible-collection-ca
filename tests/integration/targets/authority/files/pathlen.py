@@ -44,6 +44,25 @@ def issue_leaf(base: Path) -> None:
     )
     key = serialization.load_pem_private_key((base / "external.key").read_bytes(), None)
     assert isinstance(key, ec.EllipticCurvePrivateKey)
+    assert issuer.public_key() == key.public_key()
+    constraints = issuer.extensions.get_extension_for_class(x509.BasicConstraints)
+    assert constraints.critical
+    assert constraints.value == x509.BasicConstraints(True, 0)
+    usage = issuer.extensions.get_extension_for_class(x509.KeyUsage)
+    assert usage.critical and usage.value.key_cert_sign and usage.value.crl_sign
+    assert not any(
+        isinstance(ext.value, (x509.ExtendedKeyUsage, x509.SubjectAlternativeName))
+        for ext in issuer.extensions
+    )
+    root = x509.load_pem_x509_certificate((base / "ca/root-ca.pem").read_bytes())
+    chain = x509.load_pem_x509_certificates(
+        (base / "certs/openbao/openbao-fullchain.pem").read_bytes()
+    )
+    assert chain == [issuer, root]
+    assert x509.load_der_x509_certificate(
+        (base / "certs/openbao/openbao.der").read_bytes()
+    ) == issuer
+    assert (base / "certs/openbao/openbao.txt").stat().st_size
     leaf_key = ec.generate_private_key(ec.SECP256R1())
     now = datetime.datetime.now(datetime.UTC)
     leaf = (

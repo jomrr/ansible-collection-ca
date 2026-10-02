@@ -43,10 +43,12 @@ Issuance checks CA status, certificate-signing key usage and path length along
 the complete managed issuer chain before writing certificate material. This also
 applies when signing an external CSR and when using `certificate_batch`.
 
-For an external issuing CA, explicitly supply `basic_constraints: ["CA:TRUE",
-"pathlen:0"]` and `key_usage: ["keyCertSign", "cRLSign"]` in the certificate
-definition. These values come from the module inputs, not from the CSR's requested
-extensions. Set the selected type's `issuer` to the root to sign directly with it;
+For an external issuing CA, use `type: issuing_ca` (added in 1.1.0).
+It supplies `basic_constraints: ["CA:TRUE", "pathlen:0"]` and
+`key_usage: ["keyCertSign", "cRLSign"]` without adding EKU or SAN values.
+Explicit extension overrides remain supported. These values come from the task
+and profile, not from the CSR's requested extensions.
+Set `certificate_types.issuing_ca.issuer` to the root to sign directly with it;
 the root certificate supplies the resulting chain. A root with `pathlen:1`
 allows this additional issuing CA; an existing issuing CA with `pathlen:0` does
 not. Leaf CSRs retain the existing requirement to use an issuing CA.
@@ -54,6 +56,12 @@ not. Leaf CSRs retain the existing requirement to use an issuing CA.
 All ancestor limits apply, even if the direct issuer advertises a larger or
 unlimited path length. Rejected requests do not adjust existing CA constraints
 or replace existing certificate material.
+
+- **`issuing_ca`** (added in 1.1.0)
+  Default formats: `pem`, `der`, `txt`, `fullchain`; Basic Constraints:
+  `CA:TRUE`, `pathlen:0`; Key Usage: `keyCertSign`, `cRLSign`; no Extended
+  Key Usage or default SAN. Suitable for an external CA's CSR, including
+  OpenBao or step-ca. The private key remains with the external CA.
 
 - **`tls_server`**
   Default formats: `pem`, `der`, `txt`; Key Usage: `digitalSignature`,
@@ -242,6 +250,13 @@ These keys are accepted inside `certificate`.
 - **`key_usage`**: Overrides profile Key Usage when non-empty.
   Type: list[str]; Required: no; Default: profile default; Allowed values:
   supported Key Usage names; Secret: no
+
+- **`basic_constraints`**: Certificate CA status and optional maximum number of
+  subordinate CA levels. This critical extension defaults to `[CA:TRUE, 'pathlen:0']`
+  for `issuing_ca`, otherwise `[CA:FALSE]`. Explicit values replace the defaults;
+  ancestor constraints still apply.
+  Type: list[str]; Required: no; Allowed values: `CA:TRUE`, `CA:FALSE`,
+  `pathlen:<non-negative integer>`; Secret: no
 
 - **`key_usage_critical`**: Marks Key Usage critical.
   Type: bool; Required: no; Default: `true`; Allowed values: `true`, `false`;
@@ -449,6 +464,66 @@ CSR-signed certificates also store a normalized copy of the CSR at
   Type: str
 
 ## Examples
+
+### Sign an external issuing CA with the root
+
+Create the managed root using `jomrr.ca.authority` first. Its default `pathlen:1`
+allows one issuing CA below it. Generate the key and CSR on the external CA and
+transfer only the CSR to the managed CA host. The module does not contact
+OpenBao or step-ca and does not need their API credentials.
+
+```yaml
+- name: Sign an external issuing CA CSR
+  jomrr.ca.certificate:
+    base_dir: /etc/pki/example
+    ca_name: example
+    base_url: http://pki.example.test
+    owner: root
+    group: root
+    certificate:
+      name: openbao
+      type: issuing_ca
+      csr_path: /srv/pki/requests/openbao.csr
+      common_name: Example OpenBao Issuing CA
+      days: 1826
+    certificate_types:
+      issuing_ca:
+        issuer: root
+    authorities:
+      - name: root
+        parent: root
+        key_passphrase: "{{ ca_root_passphrase }}"
+  register: signed_issuing_ca
+```
+
+`csr_path` is read on the managed CA host. Alternatively, pass PEM text as
+`csr_content`; the two are mutually exclusive. Approve the subject explicitly
+using `common_name` and optional `subject`, or `subject_ordered`. A supplied
+`common_name` must match the CSR. Requested CSR subject attributes and extensions
+are not inherited. Use the same structure in `certificate_batch.certificates`.
+
+The result provides `cert_path` for the CA certificate and `fullchain_path` for
+the certificate followed by the issuer chain. Both paths are on the managed CA
+host; transfer the needed public files to the external system. For this example,
+they are `certs/openbao/openbao.pem` and `certs/openbao/openbao-fullchain.pem`
+below `base_dir`. No private key is generated or copied for an external CSR.
+There is no need to create a managed authority entry for the external CA or
+prebuild the root chain with `jomrr.ca.chain`.
+
+Import the result according to the external system's workflow:
+[OpenBao intermediate CA setup](https://openbao.org/docs/secrets/pki/quick-start-intermediate-ca/)
+or [step-ca with an existing root](https://smallstep.com/docs/tutorials/intermediate-ca-new-ca/).
+The collection records this CA certificate in certificate inventory; the
+external system manages its key, leaf issuance and leaf CRLs. The certificate's
+AIA/CDP identify the managed root, which can revoke this issuing CA certificate
+through `jomrr.ca.crl`. They do not configure the external CA's leaf AIA/CDP.
+
+Repeated signing is idempotent. To rotate the external key, submit a new CSR
+from that system; `renewal.rekey` cannot generate its key. An existing issuer
+with `pathlen:0` is rejected as a signer for a further non-self-issued CA.
+Check mode retains the module's existing skip behavior and performs no issuance.
+
+### Issue a TLS server certificate
 
 Issue a TLS server certificate:
 
