@@ -58,6 +58,12 @@ options:
 """
 
     PUBLISHING: ClassVar[str] = r"""
+notes:
+- When C(ca_name) enables composed inventory, an omitted or empty C(base_url)
+  preserves its stored URL. A non-empty value updates it; an empty value does not
+  clear it. Without a stored URL the inventory value remains empty.
+- This retention applies only to inventory metadata. AIA/CDP URLs are derived from
+  the parameters of the current task, without using the stored inventory URL.
 options:
   base_url:
     description: Base publication URL. If set, AIA defaults to C(<base_url>/aia/<parent>-ca.der)

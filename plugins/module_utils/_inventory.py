@@ -21,6 +21,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     file_lock,
     write_file,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._input import InputValues
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_records import (
     record_authority_inventory,
     record_certificate_inventory,
@@ -33,6 +34,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     inventory_document_path,
     inventory_lock_path,
     read_collection,
+    read_json,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._renewal import renewal_status
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
@@ -148,6 +150,15 @@ def _with_status(
     return result
 
 
+def _stored_base_url(base_dir: str) -> str:
+    """Read shared publication metadata, allowing only absent inventory to default."""
+    try:
+        inventory = read_json(inventory_document_path(base_dir))
+    except FileNotFoundError:
+        return ""
+    return InputValues(inventory).text("base_url")
+
+
 def _compose_inventory_unlocked(
     *,
     base_dir: str,
@@ -201,7 +212,7 @@ def _compose_inventory_unlocked(
         "schema_version": 1,
         "ca_name": ca_name,
         "base_dir": str(base_dir).rstrip("/"),
-        "base_url": base_url,
+        "base_url": base_url or _stored_base_url(base_dir),
         "authorities": authorities,
         "authority_certificates": authority_certificates,
         "certificates": [record for record in issued if record["current"]],

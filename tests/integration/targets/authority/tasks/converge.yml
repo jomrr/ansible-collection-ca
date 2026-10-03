@@ -47,6 +47,7 @@
   jomrr.ca.certificate:
     base_dir: '{{ ca_test_root.path }}/pki'
     ca_name: test
+    base_url: http://pki.example.test
     owner: '{{ ca_test_uid.stdout }}'
     group: '{{ ca_test_gid.stdout }}'
     authorities: &id001
@@ -112,6 +113,7 @@
   jomrr.ca.certificate_batch:
     base_dir: '{{ ca_test_root.path }}/pki'
     ca_name: test
+    base_url: ''
     owner: '{{ ca_test_uid.stdout }}'
     group: '{{ ca_test_gid.stdout }}'
     authorities: *id001

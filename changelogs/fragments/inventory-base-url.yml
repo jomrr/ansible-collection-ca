@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - Preserve the last non-empty base_url in composed inventory when modules omit
+    the parameter or pass an empty string, avoiding changed results when alternating
+    authority, certificate, certificate_batch and crl tasks.

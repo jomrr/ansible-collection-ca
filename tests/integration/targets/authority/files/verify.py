@@ -92,6 +92,7 @@ def main() -> None:
     assert "test-issuer-passphrase" not in inventory_text
     inventory = json.loads(inventory_text)
     assert inventory["ca_name"] == "test"
+    assert inventory["base_url"] == "http://pki.example.test"
     assert len(inventory["authorities"]) == 2
     assert len(inventory["certificates"]) == 8
     assert len(inventory["revocations"]) == 1

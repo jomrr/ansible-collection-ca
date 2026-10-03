@@ -52,6 +52,15 @@ The `record_*_inventory` helpers are intentionally low-level fragment writers.
 Public modules use the `update_*_inventory` hooks so related fragments and the
 composed inventory are updated in one inventory transaction.
 
+The composed inventory retains the last non-empty `base_url`. Calls that omit it
+or pass an empty string preserve the stored value; another non-empty value updates
+it. Before any URL has been supplied, the value is empty. This applies equally to
+authority, certificate, batch and CRL updates, so alternating these modules does
+not cause inventory changes merely because some tasks omit `base_url`.
+
+This retention only affects inventory metadata. Certificate AIA/CDP URLs continue
+to use the current task parameters; the inventory URL is not an issuance default.
+
 ## Stored Files
 
 - **Authority record**

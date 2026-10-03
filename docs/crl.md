@@ -81,7 +81,8 @@ module as `revoked_certificates`.
   Type: path; Required: yes; Default: none; Allowed values: any absolute or
   relative path; Secret: no
 
-- **`base_url`**: Stored in composed inventory when `ca_name` is set.
+- **`base_url`**: A non-empty value updates composed inventory when `ca_name` is
+  set. Omitted or empty values preserve the stored URL.
   Type: str; Required: no; Default: `""`; Allowed values: any URL prefix;
   Secret: no
 
