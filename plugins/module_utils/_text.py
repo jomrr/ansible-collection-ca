@@ -8,15 +8,13 @@ Deterministic text exports for X.509 certificates."""
 
 from __future__ import annotations
 
-from typing import Any
-
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    CertificateOperation,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
-    FileAttributes,
     write_file,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._key_usage import (
-    key_usage_names,
-)
+from ansible_collections.jomrr.ca.plugins.module_utils._key_usage import key_usage_names
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import colon_hex
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
@@ -69,7 +67,7 @@ def _key_usage_text(value: x509.KeyUsage) -> str:
     return ", ".join(key_usage_names(value, readable=True))
 
 
-def _general_name_text(name: x509.GeneralName) -> str:
+def general_name_text(name: x509.GeneralName) -> str:
     """Return readable GeneralName text."""
     for name_type, prefix in GENERAL_NAME_PREFIXES.items():
         if isinstance(name, name_type):
@@ -88,10 +86,10 @@ def _distribution_points_text(value: x509.CRLDistributionPoints) -> list[str]:
     lines = []
     for point in value:
         if point.full_name:
-            names = ", ".join(_general_name_text(name) for name in point.full_name)
+            names = ", ".join(general_name_text(name) for name in point.full_name)
             lines.append(f"Full Name: {names}")
         if point.crl_issuer:
-            issuers = ", ".join(_general_name_text(name) for name in point.crl_issuer)
+            issuers = ", ".join(general_name_text(name) for name in point.crl_issuer)
             lines.append(f"CRL Issuer: {issuers}")
     return lines
 
@@ -103,7 +101,7 @@ def _authority_identifier_text(value: x509.AuthorityKeyIdentifier) -> list[str]:
         lines.append(f"keyid:{colon_hex(value.key_identifier)}")
     if value.authority_cert_issuer:
         issuers = ", ".join(
-            _general_name_text(name) for name in value.authority_cert_issuer
+            general_name_text(name) for name in value.authority_cert_issuer
         )
         lines.append(f"issuer:{issuers}")
     if value.authority_cert_serial_number is not None:
@@ -123,11 +121,11 @@ def _extension_value_text(value: x509.ExtensionType) -> list[str]:
     elif isinstance(value, x509.ExtendedKeyUsage):
         lines = [", ".join(_oid_name(oid) for oid in value)]
     elif isinstance(value, x509.SubjectAlternativeName):
-        lines = [", ".join(_general_name_text(name) for name in value)]
+        lines = [", ".join(general_name_text(name) for name in value)]
     elif isinstance(value, x509.AuthorityInformationAccess):
         lines = [
             f"{_oid_name(item.access_method)} - "
-            f"{_general_name_text(item.access_location)}"
+            f"{general_name_text(item.access_location)}"
             for item in value
         ]
     elif isinstance(value, x509.CRLDistributionPoints):
@@ -172,12 +170,12 @@ def certificate_text(cert: x509.Certificate) -> bytes:
     return ("\n".join(lines) + "\n").encode()
 
 
-def ensure_txt(params: dict[str, Any], cert: x509.Certificate) -> bool:
+def ensure_txt(params: CertificateOperation, cert: x509.Certificate) -> bool:
     """Ensure the optional text certificate export exists."""
-    if not params["txt_path"]:
+    if not params.paths["txt_path"]:
         return False
     return write_file(
-        params["txt_path"],
+        params.paths["txt_path"],
         certificate_text(cert),
-        FileAttributes.from_params(params),
+        params.request["storage"].attributes(),
     )

@@ -45,22 +45,22 @@ def _der_general_string(value: str) -> bytes:
     return _der(0x1B, value.encode("ascii"))
 
 
-def _der_utf8_string(value: str) -> bytes:
+def der_utf8_string(value: str) -> bytes:
     """Encode a value as DER UTF8String."""
     return _der(0x0C, value.encode("utf-8"))
 
 
-def _der_bmp_string(value: str) -> bytes:
+def der_bmp_string(value: str) -> bytes:
     """Encode a value as DER BMPString."""
     return _der(0x1E, value.encode("utf-16-be"))
 
 
-def _der_octet_string(value: bytes) -> bytes:
+def der_octet_string(value: bytes) -> bytes:
     """Encode bytes as a DER OCTET STRING."""
     return _der(0x04, value)
 
 
-def _der_pkinit_principal(realm: str) -> bytes:
+def der_pkinit_principal(realm: str) -> bytes:
     """Encode the MSKDC PKINIT KRB5PrincipalName otherName value."""
     name_string = _der_sequence(
         _der_general_string("krbtgt"), _der_general_string(realm)

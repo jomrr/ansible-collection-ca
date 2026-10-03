@@ -11,6 +11,10 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Any
 
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    RenewalDecision,
+    RenewalPolicy,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     now_utc,
     parse_datetime,
@@ -31,7 +35,7 @@ def _int(value: Any, default: int = 0) -> int:
     return int(value)
 
 
-def renewal_policy(value: Any) -> dict[str, Any]:
+def renewal_policy(value: object) -> RenewalPolicy:
     """Return normalized non-secret renewal policy values."""
     policy = value if isinstance(value, dict) else {}
     return {
@@ -54,11 +58,11 @@ def renewal_decision(
     not_after: _dt.datetime | None,
     policy_value: Any,
     now: _dt.datetime | None = None,
-) -> dict[str, Any]:
+) -> RenewalDecision:
     """Return renewal and rekey decisions for an existing certificate."""
     policy = renewal_policy(policy_value)
     current_time = now if now is not None else now_utc()
-    decision: dict[str, Any] = {
+    decision: RenewalDecision = {
         "renew": False,
         "rekey": False,
         "reason": "",

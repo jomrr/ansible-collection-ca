@@ -97,17 +97,15 @@ from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
-    _mode,
     ca_lock_path,
     file_locks,
+    parse_mode,
     read_file,
     sanitize_error,
     set_attrs,
     write_file,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
-    _read_json,
-)
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import read_json
 from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
     authority_paths,
     chain_paths,
@@ -150,7 +148,7 @@ def _artifact(
 def _generation_retired(directory: Path) -> bool:
     """Keep a retired generation's final CRL when present, without requiring one."""
     try:
-        return bool(_read_json(str(directory / "status.json"))["retired"])
+        return bool(read_json(str(directory / "status.json"))["retired"])
     except FileNotFoundError:
         return False
 
@@ -261,7 +259,7 @@ def _archive_content(
     artifact_mode: Any,
 ) -> tuple[bytes, list[str]]:
     """Return deterministic tar bytes and archive paths for public artifacts."""
-    mode = _mode(artifact_mode, fallback=0o644)
+    mode = parse_mode(artifact_mode, fallback=0o644)
     archive_paths: set[str] = set()
     buffer = io.BytesIO()
 

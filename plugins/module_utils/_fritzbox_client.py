@@ -60,7 +60,7 @@ def _challenge_response(challenge: str, password: str) -> str:
     return f"{challenge}-{response_hash}"
 
 
-def _deploy_url(value: str) -> str:
+def deploy_url(value: str) -> str:
     """Return a normalized FRITZ!Box deployment URL."""
     url = str(value or "").strip().rstrip("/")
     parsed = urllib.parse.urlsplit(url)
@@ -124,7 +124,7 @@ class FritzBoxClient:
         validate_certs: bool,
     ) -> None:
         """Initialize the client connection settings."""
-        self.url = _deploy_url(url)
+        self.url = deploy_url(url)
         self.username = username
         self.password = password
         self.timeout = timeout

@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from ansible.module_utils import basic
 from ansible.module_utils.common.parameters import PASS_VARS
+from ansible.release import __version__
 from ansible_collections.jomrr.ca.plugins.modules import certificate, certificate_batch
 
 
@@ -28,6 +29,7 @@ class CertificateRedactionTests(unittest.TestCase):
             "alias-test-secret",
             "xy",
             "archived-test-secret",
+            "deployment-test-secret",
         ]
         self.inputs: dict[str, Any] = {
             "base_dir": "/tmp/pki",
@@ -51,6 +53,11 @@ class CertificateRedactionTests(unittest.TestCase):
             "pfx_passphrase": self.secrets[2],
             "passphrase": self.secrets[3],
             "key_passphrase": self.secrets[4],
+            "fritzbox_deploy": {
+                "username": "admin",
+                "password": self.secrets[6],
+                "validate_certs": False,
+            },
         }
         self.result = {
             "changed": False,
@@ -117,8 +124,12 @@ class CertificateRedactionTests(unittest.TestCase):
         )
         if mode in {"invalid", "check"}:
             operation.assert_not_called()
+        # Since core 2.22 the raw module transport intentionally preserves secrets.
+        # Controller display masking is exercised by integration; never simulate
+        # it by scrubbing the captured transport in this unit test.
         for secret in self.secrets:
-            self.assertNotIn(secret, output.getvalue())
+            if tuple(map(int, __version__.split(".")[:2])) < (2, 22):
+                self.assertNotIn(secret, output.getvalue())
             self.assertNotIn(secret, str(log.call_args_list))
         decoded: dict[str, Any] = json.loads(output.getvalue())
         return decoded

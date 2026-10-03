@@ -13,7 +13,8 @@ version_added: 0.1.0
 description:
 - Dispatch managed CA collection certificates in one batch.
 extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
-  jomrr.ca.context.cryptography, jomrr.ca.context.dispatch_notes, jomrr.ca.certificate]
+  jomrr.ca.context.cryptography, jomrr.ca.context.dispatch_notes, jomrr.ca.certificate, jomrr.ca.certificate_definition.batch,
+  jomrr.ca.certificate_definition.authorities]
 options:
   subject:
     description: Role-level subject defaults.
@@ -26,12 +27,6 @@ options:
     version_added: 0.1.0
     type: dict
     default: {}
-  certificates:
-    description: Certificate models. See ca_certificate.
-    version_added: 0.1.0
-    type: list
-    required: true
-    elements: dict
   base_url:
     description: Base publication URL for derived AIA/CDP URLs.
 """
@@ -76,12 +71,10 @@ results:
 from collections.abc import Callable
 from typing import cast
 
+from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine import (
     batch_certificate_argument_spec,
     ensure_certificate_batch,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._module import (
-    CertificateModule as AnsibleModule,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._module import (
     execute_certificate,

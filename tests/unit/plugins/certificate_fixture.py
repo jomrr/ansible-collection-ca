@@ -12,16 +12,19 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine impor
     ensure_certificate_artifacts,
     single_certificate_argument_spec,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results import (
+    CertificateResult,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
     update_authority_inventory,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
-    ca_authority_argument_spec,
-    ensure_x509,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import _ordered_chain
+from ansible_collections.jomrr.ca.plugins.module_utils._x509 import ensure_x509
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import ordered_chain
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     load_certificate,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
+    ca_authority_argument_spec,
 )
 from ansible_collections.jomrr.ca.plugins.modules.authority import _authority_params
 from cryptography import x509
@@ -37,7 +40,7 @@ class CertificateFixture:
         self.base = base
         self.authority("root", "root")
         self.authority("issuer", "root")
-        chain = _ordered_chain(str(self.base), "issuer")
+        chain = ordered_chain(str(self.base), "issuer")
         (self.base / "chains").mkdir()
         (self.base / "chains/issuer-ca-chain.pem").write_bytes(
             b"".join(cert.public_bytes(serialization.Encoding.PEM) for cert in chain)
@@ -51,7 +54,7 @@ class CertificateFixture:
             .sign(self.key, hashes.SHA256())
         )
 
-    def authority(self, name: str, parent: str, **overrides: Any) -> dict[str, Any]:
+    def authority(self, name: str, parent: str, **overrides: Any) -> CertificateResult:
         """Create a managed CA using the module's real defaults and engine."""
         values = {
             key: spec.get("default")

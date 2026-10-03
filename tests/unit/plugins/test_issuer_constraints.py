@@ -15,7 +15,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine impor
     ensure_certificate_artifacts,
     ensure_certificate_batch,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import _ordered_chain
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import ordered_chain
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_constraints import (
     validate_issuer_constraints,
 )
@@ -69,20 +69,28 @@ class PathLengthTests(unittest.TestCase):
             with self.subTest(root=root_limit, issuer=issuer_limit, ca=child_ca):
                 root = self.certificate("root", root_limit)
                 issuer = self.certificate("issuer", issuer_limit, root)
-                params = {"name": "child", "basic_constraints": [f"CA:{child_ca}"]}
+                constraints = [f"CA:{child_ca}"]
                 subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "child")])
                 if accepted:
-                    validate_issuer_constraints(params, subject, [issuer, root])
+                    validate_issuer_constraints(
+                        "child", constraints, subject, [issuer, root]
+                    )
                 else:
                     with self.assertRaisesRegex(ValueError, "pathlen:.*exceeded"):
-                        validate_issuer_constraints(params, subject, [issuer, root])
+                        validate_issuer_constraints(
+                            "child",
+                            constraints,
+                            subject,
+                            [issuer, root],
+                        )
 
     def test_self_issued_does_not_consume_path_length(self) -> None:
         """A same-subject CA rollover does not consume a path length slot."""
         root = self.certificate("root", 1)
         issuer = self.certificate("issuer", 0, root)
         validate_issuer_constraints(
-            {"name": "rollover", "basic_constraints": ["CA:TRUE", "pathlen:0"]},
+            "rollover",
+            ["CA:TRUE", "pathlen:0"],
             issuer.subject,
             [issuer, root],
         )
@@ -92,9 +100,7 @@ class PathLengthTests(unittest.TestCase):
         root = self.certificate("root", 1)
         subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "child")])
         for constraints in (["CA:TRUE"], ["CA:TRUE", "pathlen:5"]):
-            validate_issuer_constraints(
-                {"name": "child", "basic_constraints": constraints}, subject, [root]
-            )
+            validate_issuer_constraints("child", constraints, subject, [root])
 
 
 class IssuanceConstraintTests(unittest.TestCase):
@@ -162,7 +168,8 @@ class IssuanceConstraintTests(unittest.TestCase):
                 self.assertTrue(usage.value.crl_sign)
                 if result["profile"] == "issuing_ca":
                     for extension in (
-                        x509.ExtendedKeyUsage, x509.SubjectAlternativeName
+                        x509.ExtendedKeyUsage,
+                        x509.SubjectAlternativeName,
                     ):
                         with self.assertRaises(x509.ExtensionNotFound):
                             issued.extensions.get_extension_for_class(extension)
@@ -186,7 +193,7 @@ class IssuanceConstraintTests(unittest.TestCase):
     def test_self_issued_rollover_chain_reaches_root(self) -> None:
         """Same subject names do not hide the signing root's inherited limit."""
         self.ca.authority("rollover", "root", subject_ordered=[{"CN": "root"}])
-        chain = _ordered_chain(str(self.base), "rollover")
+        chain = ordered_chain(str(self.base), "rollover")
         self.assertEqual(len(chain), 2)
         chain[0].verify_directly_issued_by(chain[1])
 

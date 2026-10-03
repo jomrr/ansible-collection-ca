@@ -65,12 +65,6 @@ options:
     version_added: 0.1.0
     type: dict
     required: true
-  authorities:
-    description: Authority list used to resolve issuer passphrase and C(default_days).
-    version_added: 0.1.0
-    type: list
-    required: true
-    elements: dict
   kerberos_realm:
     description: Default realm for MSKDC certificates.
     version_added: 0.1.0

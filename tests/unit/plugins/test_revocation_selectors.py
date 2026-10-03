@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_revocation import (
     resolve_revocation_entries,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (

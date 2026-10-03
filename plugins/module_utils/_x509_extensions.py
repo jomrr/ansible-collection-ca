@@ -12,17 +12,18 @@ import ipaddress
 import re
 from typing import Any, overload
 
-from ansible_collections.jomrr.ca.plugins.module_utils._key_usage import (
-    key_usage as _key_usage,
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    CertificateOperation,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._key_usage import key_usage
 from ansible_collections.jomrr.ca.plugins.module_utils._profiles import (
     profile_key_usage,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_encoding import (
-    _der_bmp_string,
-    _der_octet_string,
-    _der_pkinit_principal,
-    _der_utf8_string,
+    der_bmp_string,
+    der_octet_string,
+    der_pkinit_principal,
+    der_utf8_string,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
     policy_extension_token,
@@ -89,16 +90,16 @@ def _subject(subject_ordered: list[dict[str, Any]]) -> x509.Name:
     return x509.Name(attributes)
 
 
-def subject_from_params(params: dict[str, Any]) -> x509.Name:
+def subject_from_params(params: CertificateOperation) -> x509.Name:
     """Build an X.509 subject from module parameters."""
-    if params.get("subject_ordered"):
-        return _subject(params["subject_ordered"])
+    if params.request["subject"].ordered:
+        return _subject(params.request["subject"].ordered)
 
-    common_name = str(params.get("common_name") or "").strip()
+    common_name = str(params.request["subject"].common_name or "").strip()
     if not common_name:
         raise ValueError("subject_ordered or common_name is required")
 
-    subject_values = params.get("subject") or {}
+    subject_values = params.request["subject"].values or {}
     subject = [
         {"C": subject_values.get("country", subject_values.get("C", ""))},
         {"ST": subject_values.get("state", subject_values.get("ST", ""))},
@@ -112,13 +113,13 @@ def subject_from_params(params: dict[str, Any]) -> x509.Name:
         },
         {"CN": common_name},
     ]
-    email = str(params.get("email") or "").strip()
+    email = str(params.request["subject"].email or "").strip()
     if email:
         subject.append({"emailAddress": email})
     return _subject(subject)
 
 
-def _basic_constraints(values: list[str] | None) -> x509.BasicConstraints:
+def basic_constraints(values: list[str] | None) -> x509.BasicConstraints:
     """Build a BasicConstraints extension value from OpenSSL-like tokens."""
     ca = False
     path_length = None
@@ -150,11 +151,11 @@ def _extended_key_usage(values: list[str] | None) -> x509.ExtendedKeyUsage:
 def _other_name_value(value: str, pkinit_realm: str | None) -> bytes:
     """Encode supported otherName payload syntaxes."""
     if value.startswith("UTF8:"):
-        return _der_utf8_string(value.split(":", 1)[1])
+        return der_utf8_string(value.split(":", 1)[1])
     if value.startswith("SEQUENCE:"):
         if not pkinit_realm:
             raise ValueError("SEQUENCE otherName requires pkinit.realm")
-        return _der_pkinit_principal(pkinit_realm)
+        return der_pkinit_principal(pkinit_realm)
     raise ValueError(f"Unsupported otherName value {value}")
 
 
@@ -192,19 +193,19 @@ def _subject_alt_name(
 def _raw_extension_value(value: str) -> bytes:
     """Encode supported raw extension value syntaxes as DER bytes."""
     if value.startswith("ASN1:BMPSTRING:"):
-        return _der_bmp_string(value.split(":", 2)[2])
+        return der_bmp_string(value.split(":", 2)[2])
     if value.startswith("ASN1:UTF8String:"):
-        return _der_utf8_string(value.split(":", 2)[2])
+        return der_utf8_string(value.split(":", 2)[2])
     if value.startswith("ASN1:FORMAT:HEX,OCTETSTRING:"):
         raw = value.rsplit(":", 1)[1]
-        return _der_octet_string(bytes.fromhex(re.sub(r"[^0-9A-Fa-f]", "", raw)))
+        return der_octet_string(bytes.fromhex(re.sub(r"[^0-9A-Fa-f]", "", raw)))
     if value.startswith("DER:"):
         return bytes.fromhex(re.sub(r"[^0-9A-Fa-f]", "", value.split(":", 1)[1]))
     raise ValueError(f"Unsupported raw extension value {value}")
 
 
-def _desired_extensions(
-    params: dict[str, Any],
+def desired_extensions(
+    params: CertificateOperation,
     public_key: PublicKey,
     signer_public_key: PublicKey,
 ) -> list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]]:
@@ -213,32 +214,34 @@ def _desired_extensions(
         (
             ExtensionOID.BASIC_CONSTRAINTS,
             True,
-            _basic_constraints(params["basic_constraints"]),
+            basic_constraints(params.request["extensions"].basic_constraints),
         ),
         (
             ExtensionOID.KEY_USAGE,
-            bool(params["key_usage_critical"]),
-            _key_usage(profile_key_usage(params, public_key)),
+            bool(params.request["extensions"].usage.key_usage_critical),
+            key_usage(profile_key_usage(params, public_key)),
         ),
     ]
-    if params["extended_key_usage"]:
+    if params.request["extensions"].usage.extended_key_usage:
         extensions.append(
             (
                 ExtensionOID.EXTENDED_KEY_USAGE,
-                bool(params["extended_key_usage_critical"]),
-                _extended_key_usage(params["extended_key_usage"]),
+                bool(params.request["extensions"].usage.extended_key_usage_critical),
+                _extended_key_usage(
+                    params.request["extensions"].usage.extended_key_usage
+                ),
             )
         )
-    if params["san"]:
-        realm = (params["pkinit"] or {}).get("realm") or None
+    if params.request["extensions"].names.san:
+        realm = params.request["extensions"].names.pkinit_realm or None
         extensions.append(
             (
                 ExtensionOID.SUBJECT_ALTERNATIVE_NAME,
-                bool(params["san_critical"]),
-                _subject_alt_name(params["san"], realm),
+                bool(params.request["extensions"].names.san_critical),
+                _subject_alt_name(params.request["extensions"].names.san, realm),
             )
         )
-    if params["aia_url"]:
+    if params.urls.aia:
         extensions.append(
             (
                 ExtensionOID.AUTHORITY_INFORMATION_ACCESS,
@@ -247,13 +250,13 @@ def _desired_extensions(
                     [
                         x509.AccessDescription(
                             AuthorityInformationAccessOID.CA_ISSUERS,
-                            x509.UniformResourceIdentifier(params["aia_url"]),
+                            x509.UniformResourceIdentifier(params.urls.aia),
                         )
                     ]
                 ),
             )
         )
-    if params["cdp_url"]:
+    if params.urls.cdp:
         extensions.append(
             (
                 ExtensionOID.CRL_DISTRIBUTION_POINTS,
@@ -261,9 +264,7 @@ def _desired_extensions(
                 x509.CRLDistributionPoints(
                     [
                         x509.DistributionPoint(
-                            full_name=[
-                                x509.UniformResourceIdentifier(params["cdp_url"])
-                            ],
+                            full_name=[x509.UniformResourceIdentifier(params.urls.cdp)],
                             relative_name=None,
                             reasons=None,
                             crl_issuer=None,
@@ -273,7 +274,7 @@ def _desired_extensions(
             )
         )
     extensions.extend(policy_extensions(params))
-    for extension in params["raw_extensions"] or []:
+    for extension in params.request["extensions"].raw or []:
         oid = x509.ObjectIdentifier(str(extension["oid"]))
         extensions.append(
             (
@@ -285,7 +286,7 @@ def _desired_extensions(
                 ),
             )
         )
-    if params["include_identifiers"]:
+    if params.request["extensions"].include_identifiers:
         extensions.append(
             (
                 ExtensionOID.SUBJECT_KEY_IDENTIFIER,
@@ -308,20 +309,20 @@ def _desired_extensions(
 
 
 @overload
-def _add_extensions(
+def add_extensions(
     builder: x509.CertificateBuilder,
     extensions: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
 ) -> x509.CertificateBuilder: ...
 
 
 @overload
-def _add_extensions(
+def add_extensions(
     builder: x509.CertificateSigningRequestBuilder,
     extensions: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
 ) -> x509.CertificateSigningRequestBuilder: ...
 
 
-def _add_extensions(
+def add_extensions(
     builder: x509.CertificateBuilder | x509.CertificateSigningRequestBuilder,
     extensions: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
 ) -> x509.CertificateBuilder | x509.CertificateSigningRequestBuilder:
@@ -411,7 +412,7 @@ def _extension_token(
     return policy_extension_token(value) or (value.__class__.__name__, repr(value))
 
 
-def _extensions_equal(
+def extensions_equal(
     existing: x509.Extensions,
     desired: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
 ) -> bool:

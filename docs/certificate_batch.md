@@ -111,3 +111,19 @@ Each item in `results` has the same artifact fields as `jomrr.ca.certificate`.
 Each certificate uses the same [secret handling as the single-certificate module](certificate.md#registered-results-and-secret-handling).
 Names, formats, issuer groups and returned paths remain usable in registered batch
 results; nested passphrases remain masked, including in validation errors.
+
+## Validated dictionary inputs
+
+`certificate`/`certificates` and `authorities` now have explicit nested argument
+schemas, visible in `ansible-doc`. Unknown keys are rejected instead of silently
+passed through; remove unsupported application metadata before passing these mappings.
+The documented `fritzbox_deploy` settings remain accepted, with native protection
+for the nested deployment password. The supported certificate fields and profile defaults remain available.
+Only the declared credential fields are secret; free subject or policy metadata
+must not contain credentials. Use task-level `no_log: true` for confidential
+metadata.
+
+Ansible controls redaction: before core 2.22 secrets are removed from module
+results; newer cores preserve the values and mask displayed output. Their global
+secret masker ignores values shorter than its minimum length. Use sufficiently
+long passphrases or task-level `no_log: true` when short secrets must remain hidden.

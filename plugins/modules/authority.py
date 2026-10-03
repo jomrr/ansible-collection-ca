@@ -265,13 +265,13 @@ from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     OPERATION_ERRORS,
     require_cryptography,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._file import sanitize_error
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
     update_authority_inventory,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
+from ansible_collections.jomrr.ca.plugins.module_utils._x509 import ensure_x509
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     ca_authority_argument_spec,
-    ensure_x509,
-    sanitize_error,
 )
 
 # pylint: enable=wrong-import-position

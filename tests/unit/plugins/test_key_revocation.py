@@ -15,11 +15,19 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine impor
     ensure_certificate_artifacts,
     ensure_certificate_batch,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._crl import _build_crl
+from ansible_collections.jomrr.ca.plugins.module_utils._crl import build_crl
+from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import (
+    CrlPlan,
+    CrlRequest,
+    revocation,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
-    resolve_revocation_entries,
     update_crl_inventory,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_revocation import (
+    resolve_revocation_entries,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._time import now_utc
 from ansible_collections.jomrr.ca.tests.unit.plugins.certificate_fixture import (
     CertificateFixture,
 )
@@ -79,8 +87,22 @@ class KeyRevocationTests(unittest.TestCase):
             (self.base / "private/issuer-ca.key").read_bytes(), b"test-passphrase"
         )
         assert isinstance(key, ec.EllipticCurvePrivateKey)
-        crl = _build_crl(params, crl_number=1, ca_cert=issuer, private_key=key)
-        update_crl_inventory(params, crl)
+        plan = CrlPlan(
+            CrlRequest.from_input(
+                params, [revocation(item) for item in params["revoked_certificates"]]
+            ),
+            "",
+            "",
+            params["paths"],
+        )
+        crl = build_crl(
+            plan,
+            now=now_utc(strip_microseconds=True),
+            crl_number=1,
+            ca_cert=issuer,
+            private_key=key,
+        )
+        update_crl_inventory(plan, crl)
 
     def test_renewal_requires_new_key(self) -> None:
         """Default renewal fails without overwriting the compromised generation."""

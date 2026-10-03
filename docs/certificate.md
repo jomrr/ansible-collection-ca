@@ -657,10 +657,26 @@ See the [source role README](https://github.com/jomrr/ansible-role-ca/blob/0e598
 
 ## Registered results and secret handling
 
-Passphrase and other secret fields within the certificate and authority dictionaries
-are masked in Ansible output, including argument-validation errors and invocation
-logging. Names, formats, issuer groups and returned paths remain usable by follow-up
+The declared `key_passphrase`, `parent_key_passphrase`, `pfx_passphrase` and
+`passphrase` fields use native nested Ansible `no_log` protection. The dynamic
+`archived_key_passphrases` mapping is protected as a whole, including its keys. Names, formats, issuer groups and returned paths remain usable by follow-up
 tasks. Batch results use the same handling for each certificate.
 
 Ansible still masks any public value containing an actual secret value. Use task-level
 `no_log: true` if the certificate metadata itself must also remain confidential.
+
+## Validated dictionary inputs
+
+`certificate`/`certificates` and `authorities` now have explicit nested argument
+schemas, visible in `ansible-doc`. Unknown keys are rejected instead of silently
+passed through; remove unsupported application metadata before passing these mappings.
+The documented `fritzbox_deploy` settings remain accepted, with native protection
+for the nested deployment password. The supported certificate fields and profile defaults remain available.
+Only the declared credential fields are secret; free subject or policy metadata
+must not contain credentials. Use task-level `no_log: true` for confidential
+metadata.
+
+Ansible controls redaction: before core 2.22 secrets are removed from module
+results; newer cores preserve the values and mask displayed output. Their global
+secret masker ignores values shorter than its minimum length. Use sufficiently
+long passphrases or task-level `no_log: true` when short secrets must remain hidden.

@@ -12,11 +12,11 @@ from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._file import file_lock
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_lookup import (
-    certificate_issuer as _certificate_issuer,
+    certificate_issuer,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
-    _inventory_lock_path,
-    _read_collection,
+    inventory_lock_path,
+    read_collection,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import (
     normalize_hex,
@@ -60,17 +60,17 @@ def _current_certificate_by_name(
     candidates = [
         record
         for collection in ("current_certificates", "authorities")
-        for record in _read_collection(base_dir, collection)
+        for record in read_collection(base_dir, collection)
         if str(record.get("name")) == name
     ]
     if not candidates:
         raise ValueError(f"No current certificate named {name} was found")
     matches = [
-        record for record in candidates if _certificate_issuer(record) == authority
+        record for record in candidates if certificate_issuer(record) == authority
     ]
     if not matches:
         issuers = ", ".join(
-            sorted({_certificate_issuer(record) for record in candidates})
+            sorted({certificate_issuer(record) for record in candidates})
         )
         raise ValueError(f"Certificate {name} is issued by {issuers}, not {authority}")
     if len(matches) > 1:
@@ -94,7 +94,7 @@ def _issued_certificate_by_pointer(
     """Return the issued certificate record referenced by a current pointer."""
     issuer = str(pointer.get("issuer", ""))
     serial = str(pointer.get("serial_number_hex", ""))
-    for record in _read_collection(base_dir, "issued_certificates"):
+    for record in read_collection(base_dir, "issued_certificates"):
         if (
             str(record.get("issuer", "")) == issuer
             and str(record.get("certificate", {}).get("serial_number_hex", ""))
@@ -115,8 +115,8 @@ def _issued_certificate_by_fingerprint(
     matches = [
         record
         for collection in ("issued_certificates", "authority_certificates")
-        for record in _read_collection(base_dir, collection)
-        if _certificate_issuer(record) == authority
+        for record in read_collection(base_dir, collection)
+        if certificate_issuer(record) == authority
         and _certificate_fingerprint_match(
             record,
             algorithm=algorithm,
@@ -153,7 +153,7 @@ def _resolved_revocation_from_record(
     result = dict(entry)
     result["serial_number"] = certificate["serial_number"]
     result["serial_number_hex"] = certificate["serial_number_hex"]
-    result["issuer"] = _certificate_issuer(record)
+    result["issuer"] = certificate_issuer(record)
     result["certificate_name"] = record["name"]
     result["fingerprints"] = certificate.get("fingerprints", {})
     return result
@@ -246,10 +246,10 @@ def resolve_revocation_entries(
     entries: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Combine persistent issuer/serial revocations with newly declared entries."""
-    with file_lock(_inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir)):
         revoked = {
             str(event["serial_number"]): event
-            for event in _read_collection(base_dir, "revocations")
+            for event in read_collection(base_dir, "revocations")
             if event["issuer"] == authority
         }
         resolved = _resolve_revocation_entries_unlocked(
@@ -265,7 +265,7 @@ def resolve_revocation_entries(
         for entry in resolved:
             serial = str(parse_serial(entry["serial_number"]))
             previous = revoked.get(serial, {})
-            event = _revocation_event(authority, {**previous, **entry})
+            event = revocation_event(authority, {**previous, **entry})
             event["revocation_date"] = str(
                 entry.get("revocation_date")
                 or previous.get("revocation_date")
@@ -275,7 +275,7 @@ def resolve_revocation_entries(
         return sorted(revoked.values(), key=lambda event: int(event["serial_number"]))
 
 
-def _revocation_event(authority: str, entry: dict[str, Any]) -> dict[str, Any]:
+def revocation_event(authority: str, entry: dict[str, Any]) -> dict[str, Any]:
     """Return one revocation event record from declarative input."""
     serial = parse_serial(entry.get("serial_number", entry.get("serial")))
     event = {
@@ -298,7 +298,7 @@ def _revocation_event(authority: str, entry: dict[str, Any]) -> dict[str, Any]:
     return event
 
 
-def _revocation_map(
+def revocation_map(
     revocations: list[dict[str, Any]],
 ) -> dict[tuple[str, str], dict[str, Any]]:
     """Return revocation events keyed by issuer and serial hex."""

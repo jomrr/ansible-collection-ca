@@ -72,18 +72,16 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     sanitize_error,
     write_file,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._formats import (
-    normalize_formats,
-)
+from ansible_collections.jomrr.ca.plugins.module_utils._formats import normalize_formats
 from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
     authority_directory,
     chain_paths,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._text import certificate_text
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import (
-    _authority_name,
-    _is_self_signed,
-    _ordered_chain,
+    authority_name,
+    is_self_signed,
+    ordered_chain,
 )
 
 try:
@@ -101,7 +99,7 @@ SUPPORTED_FORMATS = {"pem", "der", "txt"}
 def _authority_lock_paths(base_dir: str, name: str) -> list[str]:
     """Return locks for the target authority and every readable CA certificate."""
     ca_dir = authority_directory(base_dir)
-    authority_names = {_authority_name(path) for path in ca_dir.glob("*-ca.pem")}
+    authority_names = {authority_name(path) for path in ca_dir.glob("*-ca.pem")}
     authority_names.add(name)
     return [
         ca_lock_path(base_dir, "authority", authority_name)
@@ -171,8 +169,8 @@ def run_module() -> None:
                 *_authority_lock_paths(params["base_dir"], params["name"]),
             ]
         ):
-            certificates = _ordered_chain(params["base_dir"], params["name"])
-            if len(certificates) == 1 and _is_self_signed(certificates[0]):
+            certificates = ordered_chain(params["base_dir"], params["name"])
+            if len(certificates) == 1 and is_self_signed(certificates[0]):
                 changed = False
                 for path in paths.values():
                     changed = _remove_file(path) or changed

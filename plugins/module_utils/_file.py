@@ -22,9 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
-    lock_path as layout_lock_path,
-)
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import lock_path
 
 MASK = "********"
 NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
@@ -45,17 +43,17 @@ def safe_path_component(value: Any) -> str:
 def ca_lock_path(base_dir: str, namespace: str, name: str) -> str:
     """Return a shared lock path for one managed CA object."""
     stem = f"{safe_path_component(namespace)}-{safe_path_component(name)}"
-    return layout_lock_path(base_dir, stem)
+    return lock_path(base_dir, stem)
 
 
 @contextmanager
 def file_lock(path: str) -> Iterator[None]:
     """Hold an exclusive advisory lock for one managed file operation."""
-    lock_path = Path(path)
-    lock_name = lock_path.name
+    target = Path(path)
+    lock_name = target.name
     if not lock_name:
         raise ValueError(f"Refusing to lock directory path: {path}")
-    parent_fd = _open_parent_directory(lock_path)
+    parent_fd = _open_parent_directory(target)
     try:
         os.fchmod(parent_fd, 0o700)
         fd = _open_no_follow(lock_name, os.O_CREAT | os.O_RDWR, dir_fd=parent_fd)
@@ -102,7 +100,7 @@ def gid(group: Any) -> int:
     return grp.getgrnam(value).gr_gid
 
 
-def _mode(mode: Any, fallback: int = 0o600) -> int:
+def parse_mode(mode: Any, fallback: int = 0o600) -> int:
     """Convert an Ansible-style octal mode value to an integer."""
     if mode is None:
         return fallback
@@ -200,7 +198,7 @@ def _set_attrs_fd(fd: int, owner: Any, group: Any, mode: Any) -> bool:
         os.fchown(fd, desired_uid, desired_gid)
         changed = True
     if mode is not None:
-        desired_mode = _mode(mode)
+        desired_mode = parse_mode(mode)
         if (stat_result.st_mode & 0o7777) != desired_mode:
             os.fchmod(fd, desired_mode)
             changed = True
@@ -252,28 +250,28 @@ def _create_temp_file(parent_fd: int, target_name: str) -> tuple[int, str]:
     raise FileExistsError(f"Could not create a unique temporary file for {target_name}")
 
 
-def _secret_values(value: Any, *, secret: bool = False) -> set[str]:
+def secret_values(value: Any, *, secret: bool = False) -> set[str]:
     """Collect secret values, including short strings and secret-bearing mappings."""
-    secret_values: set[str] = set()
+    values: set[str] = set()
     if isinstance(value, dict):
         for key, item in value.items():
-            secret_values.update(
-                _secret_values(
+            values.update(
+                secret_values(
                     item, secret=secret or bool(SECRET_KEY_RE.search(str(key)))
                 )
             )
     elif isinstance(value, list):
         for item in value:
-            secret_values.update(_secret_values(item, secret=secret))
+            values.update(secret_values(item, secret=secret))
     elif secret and value is not None and str(value):
-        secret_values.add(str(value))
-    return secret_values
+        values.add(str(value))
+    return values
 
 
 def sanitize_error(exc: BaseException, params: Any | None = None) -> str:
     """Return an exception message with module secrets masked."""
     message = str(exc) or exc.__class__.__name__
-    for secret in sorted(_secret_values(params), key=len, reverse=True):
+    for secret in sorted(secret_values(params), key=len, reverse=True):
         message = message.replace(secret, MASK)
     return SECRET_ASSIGNMENT_RE.sub(r"\1=" + MASK, message)
 
@@ -334,7 +332,7 @@ def write_file(
                 desired_gid = gid(attrs.group)
                 if desired_uid != -1 or desired_gid != -1:
                     os.fchown(tmp_fd, desired_uid, desired_gid)
-                os.fchmod(tmp_fd, _mode(attrs.mode))
+                os.fchmod(tmp_fd, parse_mode(attrs.mode))
                 os.close(tmp_fd)
                 tmp_fd = -1
                 os.replace(

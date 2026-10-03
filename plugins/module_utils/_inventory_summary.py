@@ -12,15 +12,13 @@ from datetime import datetime
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._key_usage import (
-    key_usage_names as _key_usage,
+    key_usage_names,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import (
     colon_hex,
     serial_hex,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._text import (
-    _general_name_text as _general_name,
-)
+from ansible_collections.jomrr.ca.plugins.module_utils._text import general_name_text
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
     certificate_not_valid_before,
@@ -28,7 +26,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     timestamp_z,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
-    _public_key_fingerprint,
+    public_key_fingerprint,
 )
 
 try:
@@ -51,7 +49,7 @@ def _name_attributes(name: x509.Name) -> list[dict[str, str]]:
     ]
 
 
-def _oid_name(oid: x509.ObjectIdentifier) -> str:
+def oid_name(oid: x509.ObjectIdentifier) -> str:
     """Return a readable OID name with dotted-string fallback."""
     name = str(getattr(oid, "_name", "") or "")
     return name if name and name != "Unknown OID" else oid.dotted_string
@@ -71,13 +69,13 @@ def _extension_summary(cert: x509.Certificate) -> dict[str, Any]:
         elif isinstance(value, x509.KeyUsage):
             result["key_usage"] = {
                 "critical": extension.critical,
-                "value": _key_usage(value),
+                "value": key_usage_names(value),
             }
         elif isinstance(value, x509.ExtendedKeyUsage):
             result["extended_key_usage"] = {
                 "critical": extension.critical,
                 "value": [
-                    {"oid": oid.dotted_string, "name": _oid_name(oid)} for oid in value
+                    {"oid": oid.dotted_string, "name": oid_name(oid)} for oid in value
                 ],
             }
         elif isinstance(value, x509.AuthorityKeyIdentifier):
@@ -87,20 +85,20 @@ def _extension_summary(cert: x509.Certificate) -> dict[str, Any]:
         elif isinstance(value, x509.SubjectAlternativeName):
             result["subject_alt_name"] = {
                 "critical": extension.critical,
-                "value": [_general_name(name) for name in value],
+                "value": [general_name_text(name) for name in value],
             }
         elif isinstance(value, x509.AuthorityInformationAccess):
             result["authority_information_access"] = [
                 {
                     "method": item.access_method.dotted_string,
-                    "method_name": _oid_name(item.access_method),
-                    "location": _general_name(item.access_location),
+                    "method_name": oid_name(item.access_method),
+                    "location": general_name_text(item.access_location),
                 }
                 for item in value
             ]
         elif isinstance(value, x509.CRLDistributionPoints):
             result["crl_distribution_points"] = [
-                [_general_name(name) for name in point.full_name or []]
+                [general_name_text(name) for name in point.full_name or []]
                 for point in value
             ]
         elif isinstance(value, x509.CertificatePolicies):
@@ -146,7 +144,7 @@ def _public_key_summary(cert: x509.Certificate) -> dict[str, Any]:
     return {"type": key.__class__.__name__}
 
 
-def _certificate_summary(cert: x509.Certificate) -> dict[str, Any]:
+def certificate_summary(cert: x509.Certificate) -> dict[str, Any]:
     """Return stable, non-secret metadata for one certificate."""
     return {
         "subject": cert.subject.rfc4514_string(),
@@ -157,23 +155,23 @@ def _certificate_summary(cert: x509.Certificate) -> dict[str, Any]:
         "serial_number_hex": serial_hex(cert.serial_number),
         "not_valid_before": timestamp_z(certificate_not_valid_before(cert)),
         "not_valid_after": timestamp_z(certificate_not_valid_after(cert)),
-        "signature_algorithm": _oid_name(cert.signature_algorithm_oid),
+        "signature_algorithm": oid_name(cert.signature_algorithm_oid),
         "fingerprints": {
             "sha1": colon_hex(cert.fingerprint(hashes.SHA1())),
             "sha256": colon_hex(cert.fingerprint(hashes.SHA256())),
         },
         "public_key": _public_key_summary(cert),
-        "public_key_sha256": _public_key_fingerprint(cert.public_key()),
+        "public_key_sha256": public_key_fingerprint(cert.public_key()),
         "extensions": _extension_summary(cert),
     }
 
 
-def _crl_update(crl: x509.CertificateRevocationList, name: str) -> datetime:
+def crl_update(crl: x509.CertificateRevocationList, name: str) -> datetime:
     """Return a CRL timestamp across cryptography versions."""
     return object_datetime(crl, name)
 
 
-def _crl_number(crl: x509.CertificateRevocationList) -> int | None:
+def certificate_crl_number(crl: x509.CertificateRevocationList) -> int | None:
     """Return the CRL Number extension value when present."""
     try:
         return crl.extensions.get_extension_for_class(x509.CRLNumber).value.crl_number
@@ -181,7 +179,7 @@ def _crl_number(crl: x509.CertificateRevocationList) -> int | None:
         return None
 
 
-def _crl_authority_key_identifier(crl: x509.CertificateRevocationList) -> str:
+def crl_authority_key_identifier(crl: x509.CertificateRevocationList) -> str:
     """Return the CRL Authority Key Identifier when present."""
     try:
         value = crl.extensions.get_extension_for_class(
@@ -192,7 +190,7 @@ def _crl_authority_key_identifier(crl: x509.CertificateRevocationList) -> str:
     return colon_hex(value.key_identifier or b"")
 
 
-def _revoked_from_crl(crl: x509.CertificateRevocationList) -> list[dict[str, Any]]:
+def revoked_from_crl(crl: x509.CertificateRevocationList) -> list[dict[str, Any]]:
     """Return revoked certificate metadata from a CRL object."""
     revoked = []
     for item in crl:

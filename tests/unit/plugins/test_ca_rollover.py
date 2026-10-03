@@ -16,9 +16,17 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from ansible_collections.jomrr.ca.plugins.module_utils._authority_generations import (
-    generation_id,
+    generation_key,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    IssuerUrls,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_engine import ensure_crls
+from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import CrlCredentials
+from ansible_collections.jomrr.ca.plugins.module_utils._file import read_file
+from ansible_collections.jomrr.ca.plugins.module_utils._generation_history import (
+    generation_id,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
 )
@@ -36,6 +44,7 @@ from ansible_collections.jomrr.ca.tests.unit.plugins.certificate_fixture import 
     CertificateFixture,
 )
 from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 
 
 class TestCaRollover(TestCase):
@@ -129,6 +138,9 @@ class TestCaRollover(TestCase):
         regenerated = self.crl()
         self.assertEqual(regenerated["crl_number"], 3)
         self.assertEqual(regenerated["generations"][legacy_id]["crl_number"], 3)
+        self.crl(mode="0600", ca_name="test")
+        inventory = self.base / "inventory/ca-inventory.json"
+        self.assertEqual(inventory.stat().st_mode & 0o777, 0o644)
 
     def test_missing_archived_key_fails_before_any_crl_write(self) -> None:
         """A partially successful new CRL must never hide a broken old generation."""
@@ -138,7 +150,7 @@ class TestCaRollover(TestCase):
         before = old_path.read_bytes()
         for key in self.base.glob("archive/authorities/issuer/*/*.key"):
             key.unlink()
-        with self.assertRaisesRegex(ValueError, "No usable signing key"):
+        with self.assertRaisesRegex(FileNotFoundError, "Missing signing key"):
             self.crl(revoked_certificates=[{"serial_number": 42}])
         self.assertEqual(old_path.read_bytes(), before)
         self.assertEqual(len(list((self.base / "crl").glob("*.crl"))), 1)
@@ -152,10 +164,20 @@ class TestCaRollover(TestCase):
         )
         with self.assertRaisesRegex(ValueError, "archived_key_passphrases"):
             self.crl(key_passphrase="new-test-passphrase")
-        result = self.crl(
-            key_passphrase="new-test-passphrase",
-            archived_key_passphrases={old_id: "test-passphrase"},
-        )
+        # An unrelated archive key without a certificate is not an issuer pair.
+        # Discovery must not attempt to decrypt it to determine its identity.
+        unrelated = self.base / "archive/authorities/issuer/0000"
+        unrelated.mkdir()
+        (unrelated / "issuer-ca.key").write_bytes(b"invalid unrelated private key")
+        with patch(
+            "cryptography.hazmat.primitives.serialization.load_pem_private_key",
+            wraps=serialization.load_pem_private_key,
+        ) as decrypt:
+            result = self.crl(
+                key_passphrase="new-test-passphrase",
+                archived_key_passphrases={old_id: "test-passphrase"},
+            )
+        self.assertEqual(decrypt.call_count, 2)
         self.assertEqual(len(result["generations"]), 2)
         self.assertFalse(
             self.crl(
@@ -171,7 +193,11 @@ class TestCaRollover(TestCase):
         # Disable only the new URL/retention additions while constructing old state.
         with (
             patch(
-                "ansible_collections.jomrr.ca.plugins.module_utils._x509.issuer_urls"
+                "ansible_collections.jomrr.ca.plugins.module_utils._x509.issuer_urls",
+                return_value=IssuerUrls(
+                    "http://pki.example.test/aia/issuer-ca.der",
+                    "http://pki.example.test/crl/issuer-ca.crl",
+                ),
             ),
             patch(
                 "ansible_collections.jomrr.ca.plugins.module_utils._x509."
@@ -286,3 +312,61 @@ class TestCaRollover(TestCase):
         ):
             retired = self.crl()
             self.assertTrue(retired["generations"][old_id]["retired"])
+
+    def test_selected_key_failures_preserve_their_cause(self) -> None:
+        """Distinguish missing, denied, malformed, undecryptable and mismatched keys."""
+        cert = load_certificate(str(self.base / "ca/issuer-ca.pem"))
+        identity = generation_id(cert.subject, cert.public_key())
+        self.ca.authority("issuer", "root", force=True)
+        archived = next(self.base.glob("archive/authorities/issuer/*/issuer-ca.key"))
+        original = archived.read_bytes()
+        certificate_path = archived.with_suffix(".pem")
+        certificate_bytes = certificate_path.read_bytes()
+        credentials = CrlCredentials("test-passphrase", {})
+
+        def selected() -> object:
+            return generation_key(str(self.base), "issuer", identity, cert, credentials)
+
+        for contents, message in (
+            (b"not a key", "Cannot decrypt or parse signing key"),
+            ((self.base / "private/issuer-ca.key").read_bytes(), "does not match"),
+        ):
+            with self.subTest(message=message):
+                archived.write_bytes(contents)
+                with self.assertRaisesRegex(ValueError, message):
+                    selected()
+        archived.write_bytes(original)
+        credentials.archived[identity] = "wrong-password"
+        with self.assertRaisesRegex(ValueError, "Cannot decrypt or parse") as error:
+            selected()
+        self.assertIsNotNone(error.exception.__cause__)
+        self.assertNotIn("wrong-password", str(error.exception))
+        credentials.archived.clear()
+
+        def denied(path: str) -> bytes:
+            if path == str(archived):
+                raise PermissionError(13, "Permission denied", path)
+            return read_file(path)
+
+        with (
+            patch(
+                "ansible_collections.jomrr.ca.plugins.module_utils."
+                "_x509_keys.read_file",
+                side_effect=denied,
+            ),
+            self.assertRaisesRegex(PermissionError, "Permission denied"),
+        ):
+            selected()
+        certificate_path.write_bytes(b"not a certificate")
+        with self.assertRaisesRegex(
+            ValueError, "Cannot read authority certificate"
+        ) as error:
+            selected()
+        self.assertIsNotNone(error.exception.__cause__)
+        certificate_path.write_bytes(certificate_bytes)
+        archived.unlink()
+        with self.assertRaisesRegex(FileNotFoundError, "Missing signing key"):
+            selected()
+        certificate_path.unlink()
+        with self.assertRaisesRegex(FileNotFoundError, "No certificate/key mapping"):
+            selected()

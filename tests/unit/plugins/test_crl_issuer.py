@@ -9,9 +9,14 @@ import unittest
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._crl import (
-    _build_crl,
-    _needs_rebuild,
+    build_crl,
+    needs_rebuild,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import (
+    CrlPlan,
+    CrlRequest,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._time import now_utc
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -31,6 +36,12 @@ class CRLIssuerTests(unittest.TestCase):
             "renew_before_days": 7,
             "revoked_certificates": [],
         }
+
+    def plan(self, **overrides: Any) -> CrlPlan:
+        """Create the typed plan from ordinary module inputs."""
+        return CrlPlan(
+            CrlRequest.from_input({**self.params, **overrides}, []), "", "", {}
+        )
 
     def ca_certificate(self, subject: x509.Name) -> x509.Certificate:
         """Sign a CA with the requested subject, including ordered attributes."""
@@ -67,22 +78,30 @@ class CRLIssuerTests(unittest.TestCase):
             ),
         )
         legacy_ca = self.ca_certificate(x509.Name([common_name]))
-        legacy_crl = _build_crl(
-            self.params, crl_number=1, ca_cert=legacy_ca, private_key=self.key
+        legacy_crl = build_crl(
+            self.plan(),
+            now=now_utc(strip_microseconds=True),
+            crl_number=1,
+            ca_cert=legacy_ca,
+            private_key=self.key,
         )
         for subject in subjects:
             with self.subTest(subject=subject.rfc4514_string()):
                 ca_cert = self.ca_certificate(subject)
                 self.assertTrue(
-                    _needs_rebuild(
+                    needs_rebuild(
                         existing_crls={"pem": legacy_crl, "der": legacy_crl},
-                        params=self.params,
+                        params=self.plan(),
                         ca_cert=ca_cert,
-                        desired_revoked=[],
+                        expected_revoked=[],
                     )
                 )
-                crl = _build_crl(
-                    self.params, crl_number=2, ca_cert=ca_cert, private_key=self.key
+                crl = build_crl(
+                    self.plan(),
+                    now=now_utc(strip_microseconds=True),
+                    crl_number=2,
+                    ca_cert=ca_cert,
+                    private_key=self.key,
                 )
                 self.assertEqual(
                     crl.issuer.public_bytes(), ca_cert.subject.public_bytes()
@@ -95,22 +114,20 @@ class CRLIssuerTests(unittest.TestCase):
                     2,
                 )
                 self.assertFalse(
-                    _needs_rebuild(
+                    needs_rebuild(
                         existing_crls={"pem": crl, "der": crl},
-                        params=self.params,
+                        params=self.plan(),
                         ca_cert=ca_cert,
-                        desired_revoked=[],
+                        expected_revoked=[],
                     )
                 )
                 self.assertFalse(
-                    _needs_rebuild(
+                    needs_rebuild(
                         existing_crls={"pem": crl, "der": crl},
-                        params={
-                            **self.params,
-                            "common_name": "Ignored",
-                            "subject": {"O": "Ignored"},
-                        },
+                        params=self.plan(
+                            common_name="Ignored", subject={"O": "Ignored"}
+                        ),
                         ca_cert=ca_cert,
-                        desired_revoked=[],
+                        expected_revoked=[],
                     )
                 )

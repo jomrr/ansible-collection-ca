@@ -4,10 +4,8 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
-    _basic_constraints,
+    basic_constraints,
 )
 
 try:
@@ -17,7 +15,10 @@ except ImportError:
 
 
 def validate_issuer_constraints(
-    params: dict[str, Any], subject: x509.Name, chain: list[x509.Certificate]
+    certificate_name: str,
+    requested_constraints: list[str],
+    subject: x509.Name,
+    chain: list[x509.Certificate],
 ) -> None:
     """Require a usable issuer path, counting a requested CA as an intermediate.
 
@@ -25,7 +26,7 @@ def validate_issuer_constraints(
     certificates do not consume path length (RFC 5280, sections 4.2.1.9 and 6.1.4).
     A child's own pathlen never overrides a limit inherited from an ancestor.
     """
-    requested = _basic_constraints(params.get("basic_constraints"))
+    requested = basic_constraints(requested_constraints)
     ca_below = int(requested.ca and subject != chain[0].subject)
     for issuer in chain:
         name = issuer.subject.rfc4514_string()
@@ -45,7 +46,7 @@ def validate_issuer_constraints(
             raise ValueError(f"Issuer {name} is missing keyCertSign")
         if constraints.path_length is not None and ca_below > constraints.path_length:
             raise ValueError(
-                f"Cannot issue certificate {params['name']}: issuer {name} "
+                f"Cannot issue certificate {certificate_name}: issuer {name} "
                 f"pathlen:{constraints.path_length} would be exceeded "
                 f"({ca_below} non-self-issued intermediate CAs). "
                 "Select an issuer whose complete CA chain permits this depth."

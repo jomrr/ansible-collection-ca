@@ -11,6 +11,11 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results import (
+    CertificateMetadata,
+    CertificateResult,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import CrlPlan
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
     file_lock,
@@ -22,13 +27,12 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory_records import
     record_crl_inventory,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_revocation import (
-    _revocation_map,
-    resolve_revocation_entries,
+    revocation_map,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
-    _inventory_lock_path,
-    _inventory_path,
-    _read_collection,
+    inventory_document_path,
+    inventory_lock_path,
+    read_collection,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._renewal import renewal_status
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
@@ -41,78 +45,66 @@ try:
 except ImportError:
     pass
 
-__all__ = [
-    "_compose_inventory_if_configured_unlocked",
-    "_compose_inventory_unlocked",
-    "_status",
-    "_with_status",
-    "_write_composed_inventory_unlocked",
-    "compose_inventory",
-    "compose_inventory_if_configured",
-    "record_authority_inventory",
-    "record_certificate_inventory",
-    "record_crl_inventory",
-    "resolve_revocation_entries",
-    "update_authority_inventory",
-    "update_certificate_inventory",
-    "update_certificates_inventory",
-    "update_crl_inventory",
-    "write_composed_inventory",
-]
-
 
 def update_authority_inventory(
     params: dict[str, Any],
-    result: dict[str, Any],
+    result: CertificateResult,
 ) -> bool:
     """Record authority fragments and compose inventory in one transaction."""
     base_dir = str(params["base_dir"]).rstrip("/")
-    with file_lock(_inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir)):
         changed = record_authority_inventory(params, result)
         return _compose_inventory_if_configured_unlocked(params) or changed
 
 
 def update_certificate_inventory(
     params: dict[str, Any],
-    model: dict[str, Any],
-    result: dict[str, Any],
+    model: CertificateMetadata,
+    result: CertificateResult,
 ) -> bool:
     """Record certificate fragments and compose inventory in one transaction."""
     base_dir = str(params["base_dir"]).rstrip("/")
-    with file_lock(_inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir)):
         changed = record_certificate_inventory(params, model, result)
         return _compose_inventory_if_configured_unlocked(params) or changed
 
 
 def update_certificates_inventory(
-    records: list[tuple[dict[str, Any], dict[str, Any], dict[str, Any]]],
+    records: list[tuple[dict[str, Any], CertificateMetadata, CertificateResult]],
 ) -> bool:
     """Record multiple certificate fragments and compose inventory once."""
     if not records:
         return False
 
     base_dir = str(records[0][0]["base_dir"]).rstrip("/")
-    with file_lock(_inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir)):
         changed = False
         for params, model, result in records:
             changed = record_certificate_inventory(params, model, result) or changed
         return _compose_inventory_if_configured_unlocked(records[0][0]) or changed
 
 
-def update_crl_inventory(
-    params: dict[str, Any],
-    crl: x509.CertificateRevocationList,
-) -> bool:
+def update_crl_inventory(plan: CrlPlan, crl: x509.CertificateRevocationList) -> bool:
     """Record CRL fragments and compose inventory in one transaction."""
-    base_dir = str(params["base_dir"]).rstrip("/")
-    with file_lock(_inventory_lock_path(base_dir)):
+    request = plan.request
+    with file_lock(inventory_lock_path(request.context.base_dir)):
         changed = False
-        for crl_format, path in params["paths"].items():
-            crl_params = dict(params)
-            crl_params["format"] = crl_format
-            crl_params["path"] = path
-            changed = record_crl_inventory(crl_params, crl) or changed
-        return _compose_inventory_if_configured_unlocked(params) or changed
+        for crl_format, path in plan.paths.items():
+            changed = record_crl_inventory(plan, crl, crl_format, path) or changed
+        if request.context.ca_name:
+            changed = (
+                _write_composed_inventory_unlocked(
+                    base_dir=request.context.base_dir,
+                    ca_name=request.context.ca_name,
+                    base_url=request.context.base_url,
+                    attrs=FileAttributes(
+                        request.context.attributes.owner,
+                        request.context.attributes.group,
+                    ),
+                )
+                or changed
+            )
+        return changed
 
 
 def _status(
@@ -164,24 +156,24 @@ def _compose_inventory_unlocked(
 ) -> dict[str, Any]:
     """Compose inventory JSON while the state lock is held."""
     authorities = sorted(
-        _read_collection(base_dir, "authorities"),
+        read_collection(base_dir, "authorities"),
         key=lambda record: str(record.get("name", "")),
     )
     current_pointers = {
         str(record["name"]): record
-        for record in _read_collection(base_dir, "current_certificates")
+        for record in read_collection(base_dir, "current_certificates")
     }
     revocations = sorted(
-        _read_collection(base_dir, "revocations"),
+        read_collection(base_dir, "revocations"),
         key=lambda record: (
             str(record.get("issuer", "")),
             str(record.get("serial_number_hex", "")),
         ),
     )
-    revocation_by_serial = _revocation_map(revocations)
+    revocation_by_serial = revocation_map(revocations)
     issued = [
         _with_status(record, current_pointers, revocation_by_serial)
-        for record in _read_collection(base_dir, "issued_certificates")
+        for record in read_collection(base_dir, "issued_certificates")
     ]
     issued = sorted(
         issued,
@@ -192,14 +184,14 @@ def _compose_inventory_unlocked(
         ),
     )
     crls = sorted(
-        _read_collection(base_dir, "crls"),
+        read_collection(base_dir, "crls"),
         key=lambda record: (
             str(record.get("authority", "")),
             str(record.get("format", "")),
         ),
     )
     authority_certificates = sorted(
-        _read_collection(base_dir, "authority_certificates"),
+        read_collection(base_dir, "authority_certificates"),
         key=lambda record: (
             str(record.get("name", "")),
             str(record.get("certificate", {}).get("serial_number_hex", "")),
@@ -226,7 +218,7 @@ def compose_inventory(
     base_url: str,
 ) -> dict[str, Any]:
     """Compose inventory JSON from internal state fragments."""
-    with file_lock(_inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir)):
         return _compose_inventory_unlocked(
             base_dir=base_dir,
             ca_name=ca_name,
@@ -243,7 +235,7 @@ def write_composed_inventory(
     force: bool = False,
 ) -> bool:
     """Write the composed CA inventory file in an inventory transaction."""
-    with file_lock(_inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir)):
         return _write_composed_inventory_unlocked(
             base_dir=base_dir,
             ca_name=ca_name,
@@ -275,7 +267,7 @@ def _write_composed_inventory_unlocked(
         + b"\n"
     )
     return write_file(
-        _inventory_path(base_dir),
+        inventory_document_path(base_dir),
         content,
         attrs or FileAttributes(),
         force=force,
@@ -297,5 +289,5 @@ def _compose_inventory_if_configured_unlocked(params: dict[str, Any]) -> bool:
 
 def compose_inventory_if_configured(params: dict[str, Any]) -> bool:
     """Compose the central CA inventory when module parameters provide a CA name."""
-    with file_lock(_inventory_lock_path(str(params["base_dir"]))):
+    with file_lock(inventory_lock_path(str(params["base_dir"]))):
         return _compose_inventory_if_configured_unlocked(params)

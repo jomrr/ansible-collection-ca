@@ -11,6 +11,10 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlsplit
 
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    CertificateOperation,
+)
+
 try:
     from cryptography import x509
 except ImportError:
@@ -120,9 +124,11 @@ def normalize_policy_params(params: dict[str, Any], *, signed: bool) -> None:
     params["inhibit_any_policy"] = inhibit_any
 
 
-def validate_issuer_policies(params: dict[str, Any], issuer: x509.Certificate) -> None:
+def validate_issuer_policies(
+    params: CertificateOperation, issuer: x509.Certificate
+) -> None:
     """Require EE policies to be a nonempty subset of a policy-bearing issuer."""
-    if params["authority"]:
+    if params.request["authority"]:
         return
     try:
         issued_under = issuer.extensions.get_extension_for_class(
@@ -131,25 +137,27 @@ def validate_issuer_policies(params: dict[str, Any], issuer: x509.Certificate) -
         allowed = {policy.policy_identifier.dotted_string for policy in issued_under}
     except x509.ExtensionNotFound:
         allowed = set()
-    requested = {policy["oid"] for policy in params["certificate_policies"]}
+    requested = {
+        policy["oid"] for policy in params.request["extensions"].policies.values
+    }
     if allowed and not requested:
         raise ValueError(
-            f"Certificate {params['name']} requires "
+            f"Certificate {params.request['name']} requires "
             "certificate_policies matching its issuer"
         )
     if requested - allowed:
         raise ValueError(
-            f"Certificate {params['name']} policies are not allowed by its issuer: "
-            + ", ".join(sorted(requested - allowed))
+            f"Certificate {params.request['name']} policies "
+            "are not allowed by its issuer: " + ", ".join(sorted(requested - allowed))
         )
 
 
 def policy_extensions(
-    params: dict[str, Any],
+    params: CertificateOperation,
 ) -> list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]]:
     """Build policy extensions from previously normalized configuration."""
     result: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]] = []
-    policies = params["certificate_policies"]
+    policies = params.request["extensions"].policies.values
     if policies:
         value = x509.CertificatePolicies(
             [
@@ -161,15 +169,17 @@ def policy_extensions(
             ]
         )
         result.append((value.oid, False, value))
-    constraints = params["policy_constraints"]
+    constraints = params.request["extensions"].policies.constraints
     if constraints:
         constraint_value = x509.PolicyConstraints(
             require_explicit_policy=constraints.get("require_explicit_policy"),
             inhibit_policy_mapping=constraints.get("inhibit_policy_mapping"),
         )
         result.append((constraint_value.oid, True, constraint_value))
-    if params["inhibit_any_policy"] is not None:
-        inhibit_value = x509.InhibitAnyPolicy(params["inhibit_any_policy"])
+    if params.request["extensions"].policies.inhibit_any_policy is not None:
+        inhibit_value = x509.InhibitAnyPolicy(
+            params.request["extensions"].policies.inhibit_any_policy
+        )
         result.append((inhibit_value.oid, True, inhibit_value))
     return result
 

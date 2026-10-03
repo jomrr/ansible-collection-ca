@@ -26,8 +26,8 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory_lookup import 
     record_certificates,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
-    _inventory_lock_path,
-    _read_collection,
+    inventory_lock_path,
+    read_collection,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
     archive_directory,
@@ -41,8 +41,8 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     parse_datetime,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
-    _public_key_bytes,
     load_certificate,
+    public_key_bytes,
 )
 
 try:
@@ -55,7 +55,7 @@ except ImportError:
 def generation_id(subject: x509.Name, public_key: PublicKey) -> str:
     """Identify an issuer by its complete subject and public key, across renewals."""
     return hashlib.sha256(
-        subject.public_bytes() + _public_key_bytes(public_key)
+        subject.public_bytes() + public_key_bytes(public_key)
     ).hexdigest()
 
 
@@ -138,15 +138,15 @@ def issued_history(
     base_dir: str, name: str, issuers: dict[str, x509.Certificate]
 ) -> list[dict[str, Any]]:
     """Read leaf, external-CA and managed subordinate-CA issuance history."""
-    with file_lock(_inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir)):
         records = [
             record
-            for record in _read_collection(base_dir, "issued_certificates")
+            for record in read_collection(base_dir, "issued_certificates")
             if record["issuer"] == name
         ]
         records.extend(
             record
-            for record in _read_collection(base_dir, "authority_certificates")
+            for record in read_collection(base_dir, "authority_certificates")
             if record["parent"] == name and not record["self_signed"]
         )
         return [

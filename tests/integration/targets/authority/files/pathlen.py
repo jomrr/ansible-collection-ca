@@ -59,9 +59,12 @@ def issue_leaf(base: Path) -> None:
         (base / "certs/openbao/openbao-fullchain.pem").read_bytes()
     )
     assert chain == [issuer, root]
-    assert x509.load_der_x509_certificate(
-        (base / "certs/openbao/openbao.der").read_bytes()
-    ) == issuer
+    assert (
+        x509.load_der_x509_certificate(
+            (base / "certs/openbao/openbao.der").read_bytes()
+        )
+        == issuer
+    )
     assert (base / "certs/openbao/openbao.txt").stat().st_size
     leaf_key = ec.generate_private_key(ec.SECP256R1())
     now = datetime.datetime.now(datetime.UTC)

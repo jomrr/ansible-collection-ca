@@ -15,6 +15,8 @@
   loop: &rollover_authorities
     - {name: root, parent: root, key_passphrase: rollover-test, default_days: 90}
     - {name: issuer, parent: root, key_passphrase: rollover-test, default_days: 90}
+  loop_control:
+    label: '{{ item.name }}'
 - name: Create the original issuing CA chain
   jomrr.ca.chain:
     base_dir: '{{ ca_test_root.path }}/rollover'

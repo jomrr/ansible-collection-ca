@@ -11,23 +11,15 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    CertificateOperation,
+)
+
 try:
     from ansible_collections.jomrr.ca.plugins.module_utils._types import PublicKey
     from cryptography.hazmat.primitives.asymmetric import rsa
 except ImportError:
     pass
-
-
-__all__ = [
-    "CERTIFICATE_DEFAULT_FORMATS",
-    "CERTIFICATE_PROFILE_DEFAULTS",
-    "FRITZBOX_DIGESTS",
-    "IDENTITY_CERTIFICATE_DEFAULTS",
-    "STANDARD_CERTIFICATE_DEFAULTS",
-    "apply_certificate_profile",
-    "apply_profile_defaults",
-    "profile_key_usage",
-]
 
 
 KRB5_REALM_RE = re.compile(r"^[A-Z0-9][A-Z0-9._-]*$")
@@ -219,11 +211,11 @@ def apply_profile_defaults(
     return result
 
 
-def profile_key_usage(params: dict[str, Any], public_key: PublicKey) -> list[str]:
+def profile_key_usage(params: CertificateOperation, public_key: PublicKey) -> list[str]:
     """Resolve default key usage against the actual certificate or CSR key."""
-    if params["key_usage"] or not params.get("profile"):
-        return list(params["key_usage"] or [])
-    usages = CERTIFICATE_PROFILE_DEFAULTS[params["profile"]]["key_usage"]
+    if params.request["extensions"].usage.key_usage or not params.request["profile"]:
+        return list(params.request["extensions"].usage.key_usage or [])
+    usages = CERTIFICATE_PROFILE_DEFAULTS[params.request["profile"]]["key_usage"]
     return [
         usage
         for usage in usages

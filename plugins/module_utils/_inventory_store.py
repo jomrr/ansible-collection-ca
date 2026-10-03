@@ -9,6 +9,7 @@ Ca inventory store helpers."""
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +20,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     safe_path_component,
     write_file,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
-    inventory_path,
-)
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import inventory_path
 
 
 def _state_dir(base_dir: str) -> str:
@@ -29,25 +28,25 @@ def _state_dir(base_dir: str) -> str:
     return inventory_path(base_dir, "state")
 
 
-def _inventory_path(base_dir: str) -> str:
+def inventory_document_path(base_dir: str) -> str:
     """Return the composed inventory path."""
     return inventory_path(base_dir, "ca-inventory.json")
 
 
-def _inventory_lock_path(base_dir: str) -> str:
+def inventory_lock_path(base_dir: str) -> str:
     """Return the shared lock path for inventory state transactions."""
     return ca_lock_path(base_dir, "inventory", "state")
 
 
-def _record_path(base_dir: str, *parts: str) -> str:
+def record_path(base_dir: str, *parts: str) -> str:
     """Return a JSON state fragment path below the inventory state directory."""
     safe_parts = [safe_path_component(part) for part in parts]
     return f"{_state_dir(base_dir)}/{'/'.join(safe_parts)}.json"
 
 
-def _write_json(
+def write_json(
     path: str,
-    data: dict[str, Any],
+    data: Mapping[str, object],
     owner: Any,
     group: Any,
     mode: str,
@@ -57,7 +56,7 @@ def _write_json(
     return write_file(path, content, FileAttributes(owner, group, mode))
 
 
-def _read_json(path: str) -> dict[str, Any]:
+def read_json(path: str) -> dict[str, Any]:
     """Read one JSON state fragment."""
     record = json.loads(read_file(path).decode())
     if not isinstance(record, dict):
@@ -65,7 +64,7 @@ def _read_json(path: str) -> dict[str, Any]:
     return record
 
 
-def _read_collection(base_dir: str, collection: str) -> list[dict[str, Any]]:
+def read_collection(base_dir: str, collection: str) -> list[dict[str, Any]]:
     """Read JSON state fragments below a collection directory."""
     root = Path(_state_dir(base_dir)) / collection
     if not root.is_dir():
@@ -73,5 +72,5 @@ def _read_collection(base_dir: str, collection: str) -> list[dict[str, Any]]:
     records = []
     for path in sorted(root.rglob("*.json")):
         if path.is_file():
-            records.append(_read_json(str(path)))
+            records.append(read_json(str(path)))
     return records

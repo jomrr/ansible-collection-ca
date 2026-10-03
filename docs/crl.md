@@ -312,3 +312,17 @@ with `sha256: "<fingerprint of that CA certificate>"`. The fingerprint identifie
 the certificate, not its public key. The parent must match the CRL's `name`.
 Previously recorded name selectors continue to identify the initially revoked
 certificate; they do not revoke its replacement automatically.
+
+## Selecting archived signing keys
+
+A generation is identified by its CA subject and public key. The module selects
+its current or archived certificate/key pair using the public certificate before
+it decrypts a key. It prefers the current pair, then archived pairs in sorted
+serial-directory order; a missing key may fall back to another pair of the same
+generation. Each active generation decrypts one selected key, including when
+unrelated archived keys are invalid or encrypted with different passwords.
+
+Missing pairs, denied file access, malformed certificates, key mismatch and
+private-key decryption/parsing failures are reported separately. A bad password
+and corrupt encrypted key bytes cannot always be distinguished by the crypto
+backend; the error identifies the key path and generation to investigate.

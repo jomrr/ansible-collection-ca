@@ -14,7 +14,8 @@ version_added: 0.1.0
 description:
 - Dispatch one managed CA collection certificate to the built-in X.509 profiles.
 extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
-  jomrr.ca.context.cryptography, jomrr.ca.context.dispatch_notes, jomrr.ca.certificate]
+  jomrr.ca.context.cryptography, jomrr.ca.context.dispatch_notes, jomrr.ca.certificate, jomrr.ca.certificate_definition,
+  jomrr.ca.certificate_definition.authorities]
 options:
   subject:
     description: Certificate-local subject values merged over module C(subject).
@@ -26,11 +27,6 @@ options:
     version_added: 0.1.0
     type: dict
     default: {}
-  certificate:
-    description: Declarative certificate item.
-    version_added: 0.1.0
-    type: dict
-    required: true
   base_url:
     description: Base publication URL. If set, AIA defaults to C(<base_url>/aia/<issuer>-ca.der)
       and CDP to C(<base_url>/crl/<issuer>-ca.crl).
@@ -191,12 +187,10 @@ extends_documentation_fragment: [jomrr.ca.certificate]
 from collections.abc import Callable
 from typing import cast
 
+from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine import (
     ensure_certificate_artifacts,
     single_certificate_argument_spec,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._module import (
-    CertificateModule as AnsibleModule,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._module import (
     execute_certificate,

@@ -100,11 +100,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._fritzbox_client import (
     FritzBoxClient,
-    _deploy_url,
+    deploy_url,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
-    certificate_paths,
-)
+from ansible_collections.jomrr.ca.plugins.module_utils._paths import certificate_paths
 
 try:
     from cryptography import x509
@@ -134,7 +132,7 @@ def _bundle_path(base_dir: str, name: str, output_dir: str | None) -> str:
 
 def _deploy_lock_path(base_dir: str, url: str) -> str:
     """Return the local lock path for one FRITZ!Box deployment target."""
-    return ca_lock_path(base_dir, "fritzbox-deploy", _deploy_url(url))
+    return ca_lock_path(base_dir, "fritzbox-deploy", deploy_url(url))
 
 
 def _params(params: dict[str, Any]) -> dict[str, Any]:
@@ -159,7 +157,7 @@ def _params(params: dict[str, Any]) -> dict[str, Any]:
             result[key] = deploy[key]
     if not result.get("url"):
         result["url"] = "https://fritz.box"
-    result["url"] = _deploy_url(result["url"])
+    result["url"] = deploy_url(result["url"])
     if result.get("timeout") is None:
         result["timeout"] = 30
     if result.get("validate_certs") is None:

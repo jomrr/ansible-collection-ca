@@ -9,12 +9,16 @@ from __future__ import annotations
 import datetime as _dt
 from typing import Any, cast
 
+from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import (
+    CrlPlan,
+    Revocation,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     MATERIAL_ERRORS,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import read_file
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_summary import (
-    _crl_number,
+    certificate_crl_number,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import parse_serial
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
@@ -23,15 +27,13 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     parse_datetime,
     timestamp_iso,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     digest_algorithm,
     signature_algorithm,
 )
 
 try:
-    from ansible_collections.jomrr.ca.plugins.module_utils._types import (
-        PrivateKey,
-    )
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import PrivateKey
     from cryptography import x509
     from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
     from cryptography.x509.oid import SignatureAlgorithmOID
@@ -96,11 +98,11 @@ def _revoked_signature(
     return sorted(result)
 
 
-def _desired_revoked(entries: list[dict[str, Any]]) -> list[tuple[int, str, str, str]]:
+def desired_revoked(entries: list[Revocation]) -> list[tuple[int, str, str, str]]:
     """Return comparable revoked certificate entries from module params."""
     result = []
     for entry in entries or []:
-        serial = parse_serial(entry.get("serial_number", entry.get("serial")))
+        serial = parse_serial(entry["serial_number"])
         reason = str(entry.get("reason") or "")
         invalidity_date = ""
         if entry.get("invalidity_date"):
@@ -129,7 +131,7 @@ def _desired_authority_key_identifier(ca_cert: x509.Certificate) -> bytes:
     return x509.SubjectKeyIdentifier.from_public_key(ca_cert.public_key()).digest
 
 
-def _load_existing_crls(
+def load_existing_crls(
     paths: dict[str, str],
 ) -> dict[str, x509.CertificateRevocationList | None]:
     """Load existing CRLs for all requested formats."""
@@ -142,7 +144,7 @@ def _load_existing_crls(
     return existing
 
 
-def _existing_numbers(
+def existing_numbers(
     existing_crls: dict[str, x509.CertificateRevocationList | None],
 ) -> list[int]:
     """Return all available CRL Number values from existing CRLs."""
@@ -150,7 +152,7 @@ def _existing_numbers(
     for crl in existing_crls.values():
         if crl is None:
             continue
-        number = _crl_number(crl)
+        number = certificate_crl_number(crl)
         if number is not None:
             numbers.append(number)
     return numbers
@@ -161,7 +163,8 @@ def _same_existing_number(
 ) -> bool:
     """Return whether all requested existing CRLs have the same CRL Number."""
     numbers = [
-        _crl_number(crl) if crl is not None else None for crl in existing_crls.values()
+        certificate_crl_number(crl) if crl is not None else None
+        for crl in existing_crls.values()
     ]
     return bool(numbers) and None not in numbers and len(set(numbers)) == 1
 
@@ -190,31 +193,35 @@ def _signature_algorithm_oid(
 
 
 def _renewal_due(
-    crl: x509.CertificateRevocationList, params: dict[str, Any], now: _dt.datetime
+    crl: x509.CertificateRevocationList, params: CrlPlan, now: _dt.datetime
 ) -> bool:
     """Do not repeatedly renew a final CRL already covering the retirement date."""
     next_update = object_datetime(crl, "next_update")
-    stop_at = params.get("crl_stop_at")
+    stop_at = params.stop_at
     if stop_at is not None:
         if next_update > stop_at:
             return True
         if next_update == stop_at:
             return next_update <= now
-    return next_update <= now + _dt.timedelta(days=params["renew_before_days"])
+    return next_update <= now + _dt.timedelta(
+        days=params.request.policy.renew_before_days
+    )
 
 
-def _needs_rebuild(
+def needs_rebuild(
     *,
     existing_crls: dict[str, x509.CertificateRevocationList | None],
-    params: dict[str, Any],
+    params: CrlPlan,
     ca_cert: x509.Certificate,
-    desired_revoked: list[tuple[int, str, str, str]],
+    expected_revoked: list[tuple[int, str, str, str]],
 ) -> bool:
     """Return whether existing CRLs differ from desired CRL state."""
     if not _same_existing_number(existing_crls):
         return True
     current_time = now_utc()
-    desired_signature_algorithm = _signature_algorithm_oid(ca_cert, params["digest"])
+    desired_signature_algorithm = _signature_algorithm_oid(
+        ca_cert, params.request.policy.digest
+    )
     desired_authority_key = _desired_authority_key_identifier(ca_cert)
     for crl in existing_crls.values():
         if crl is None:
@@ -228,24 +235,24 @@ def _needs_rebuild(
             return True
         if (
             _authority_key_identifier(crl) != desired_authority_key
-            or _revoked_signature(crl) != desired_revoked
+            or _revoked_signature(crl) != expected_revoked
         ):
             return True
     return False
 
 
-def _build_crl(
-    params: dict[str, Any],
+def build_crl(
+    params: CrlPlan,
     *,
     crl_number: int,
+    now: _dt.datetime,
     ca_cert: x509.Certificate,
     private_key: PrivateKey,
 ) -> x509.CertificateRevocationList:
     """Build and sign a CRL from module parameters."""
-    now = params.get("crl_time") or now_utc(strip_microseconds=True)
-    next_update = now + _dt.timedelta(days=int(params["next_update_days"]))
-    if params.get("crl_stop_at") is not None:
-        next_update = min(next_update, params["crl_stop_at"])
+    next_update = now + _dt.timedelta(days=int(params.request.policy.next_update_days))
+    if params.stop_at is not None:
+        next_update = min(next_update, params.stop_at)
     builder = (
         x509.CertificateRevocationListBuilder()
         .issuer_name(ca_cert.subject)
@@ -259,12 +266,10 @@ def _build_crl(
             critical=False,
         )
     )
-    for entry in params["revoked_certificates"] or []:
+    for entry in params.request.revoked_certificates or []:
         revoked = (
             x509.RevokedCertificateBuilder()
-            .serial_number(
-                parse_serial(entry.get("serial_number", entry.get("serial")))
-            )
+            .serial_number(parse_serial(entry["serial_number"]))
             .revocation_date(_parse_revocation_date(entry.get("revocation_date")))
         )
         if entry.get("reason"):
@@ -278,5 +283,5 @@ def _build_crl(
         builder = builder.add_revoked_certificate(revoked.build())
     return builder.sign(
         private_key=private_key,
-        algorithm=signature_algorithm(private_key, params["digest"]),
+        algorithm=signature_algorithm(private_key, params.request.policy.digest),
     )

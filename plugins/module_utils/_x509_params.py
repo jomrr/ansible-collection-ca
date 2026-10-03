@@ -10,10 +10,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from ansible_collections.jomrr.ca.plugins.module_utils._file import ca_lock_path
-from ansible_collections.jomrr.ca.plugins.module_utils._formats import (
-    normalize_formats,
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_input import (
+    certificate_request,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    CertificateOperation,
+    CertificatePaths,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._file import ca_lock_path
+from ansible_collections.jomrr.ca.plugins.module_utils._formats import normalize_formats
 from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
     authority_paths,
     certificate_paths,
@@ -22,7 +27,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     DIGESTS,
     KEY_TYPES,
-    digest_algorithm,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
     normalize_policy_params,
@@ -30,103 +34,70 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
 )
 
 
-def _external_csr_configured(params: dict[str, Any]) -> bool:
-    """Return whether certificate issuance should use an externally supplied CSR."""
-    return bool(params.get("csr_source_path") or params.get("csr_content"))
-
-
-def _base_url(params: dict[str, Any], name: str, key: str) -> str:
-    """Derive an AIA or CDP URL from explicit or base URL parameters."""
-    value = str(params.get(key) or "").rstrip("/")
-    if not value:
-        base_url = str(params.get("base_url") or "").rstrip("/")
-        if base_url:
-            suffix = "aia" if key == "aia_base_url" else "crl"
-            value = f"{base_url}/{suffix}"
-    return f"{value}/{name}" if value else ""
-
-
-def _with_derived_paths(
+def with_derived_paths(
     params: dict[str, Any],
     *,
     authority: bool,
     signed: bool,
     manage_directory: bool,
     manage_chain: bool,
-) -> dict[str, Any]:
-    """Derive managed file paths and publication URLs from base parameters."""
-    result = dict(params)
-    result["digest"] = digest_algorithm(result["digest"]).name
-    base_dir = str(result["base_dir"]).rstrip("/")
-    name = str(result["name"])
-    formats = normalize_formats(result.get("formats"))
-    result["formats"] = formats
-    result["base_dir"] = base_dir
-    result["authority"] = authority
-    normalize_policy_params(result, signed=signed)
-
-    if authority:
-        return _authority_paths(result, signed=signed)
-
-    paths = certificate_paths(base_dir, name, str(result.get("output_dir") or ""))
-    output_dir = paths["output_dir"]
-    issuer = str(result["issuer"])
-    issuer_file = f"{issuer}-ca"
-    external_csr = _external_csr_configured(result)
-    result["lock_path"] = ca_lock_path(base_dir, "certificate", name)
-    result["output_dir"] = output_dir
-    result["key_path"] = "" if external_csr else paths["private_key"]
-    result["csr_path"] = paths["csr"]
-    result["cert_path"] = paths["certificate_pem"]
-    result["der_path"] = paths["certificate_der"] if "der" in formats else ""
-    result["txt_path"] = paths["certificate_text"] if "txt" in formats else ""
-    result["fullchain_path"] = paths["fullchain"] if "fullchain" in formats else ""
-    result["fritzbox_bundle_path"] = (
-        paths["fritzbox_bundle"] if "fritzbox" in formats else ""
+) -> CertificateOperation:
+    """Validate input, then derive paths separately from certificate configuration."""
+    normalized = {**params, "authority": authority}
+    normalize_policy_params(normalized, signed=signed)
+    request = certificate_request(normalized, authority=authority)
+    base_dir, name, formats = (
+        request["storage"].base_dir,
+        request["name"],
+        request["exports"].formats,
     )
-    result["pkcs12_paths"] = {
-        export_format: paths[f"pkcs12_{export_format}"]
-        for export_format in ("pfx", "p12")
-        if export_format in formats
-    }
-    result["directory_path"] = output_dir if manage_directory else None
+    paths = (
+        authority_paths(base_dir, name)
+        if authority
+        else certificate_paths(base_dir, name, request["exports"].output_dir)
+    )
+    result = CertificatePaths(
+        lock_path=ca_lock_path(
+            base_dir, "authority" if authority else "certificate", name
+        ),
+        key_path="" if request["csr"].external else paths["private_key"],
+        csr_path=paths["csr"],
+        cert_path=paths["certificate_pem"],
+        der_path=paths["certificate_der"] if "der" in formats else "",
+        txt_path=paths["certificate_text"] if "txt" in formats else "",
+        directory_path="",
+        signer_lock_path="",
+        signer_cert_path="",
+        signer_key_path="",
+        chain_src_path="",
+        chain_path="",
+        fullchain_path="",
+        fritzbox_bundle_path="",
+        pkcs12_paths={},
+    )
     if signed:
-        signer_paths = authority_paths(base_dir, issuer)
-        result["signer_lock_path"] = ca_lock_path(base_dir, "authority", issuer)
+        signer_paths = authority_paths(base_dir, request["issuer"].name)
+        result["signer_lock_path"] = ca_lock_path(
+            base_dir, "authority", request["issuer"].name
+        )
         result["signer_cert_path"] = signer_paths["certificate_pem"]
         result["signer_key_path"] = signer_paths["private_key"]
-    result["chain_src_path"] = (
-        chain_paths(base_dir, issuer, ("pem",))["pem"] if manage_chain else ""
-    )
-    result["chain_path"] = paths["chain"] if manage_chain else ""
-    result["aia_url"] = _base_url(result, f"{issuer_file}.der", "aia_base_url")
-    result["cdp_url"] = _base_url(result, f"{issuer_file}.crl", "cdp_base_url")
-    return result
-
-
-def _authority_paths(result: dict[str, Any], *, signed: bool) -> dict[str, Any]:
-    """Derive paths and publication URLs for a CA authority."""
-    base_dir, name, formats = result["base_dir"], result["name"], result["formats"]
-    paths = authority_paths(base_dir, name)
-    result["lock_path"] = ca_lock_path(base_dir, "authority", name)
-    result["key_path"] = paths["private_key"]
-    result["csr_path"] = paths["csr"]
-    result["cert_path"] = paths["certificate_pem"]
-    result["der_path"] = paths["certificate_der"] if "der" in formats else ""
-    result["txt_path"] = paths["certificate_text"] if "txt" in formats else ""
-    if signed:
-        parent = str(result["parent"])
-        signer_paths = authority_paths(base_dir, parent)
-        result["signer_lock_path"] = ca_lock_path(base_dir, "authority", parent)
-        result["signer_cert_path"] = signer_paths["certificate_pem"]
-        result["signer_key_path"] = signer_paths["private_key"]
-    authority_file = f"{result['parent'] if signed else name}-ca"
-    result["aia_url"] = _base_url(result, f"{authority_file}.der", "aia_base_url")
-    result["cdp_url"] = _base_url(result, f"{authority_file}.crl", "cdp_base_url")
-    result["directory_path"] = None
-    result["chain_src_path"] = ""
-    result["chain_path"] = ""
-    return result
+    if not authority:
+        result["directory_path"] = paths["output_dir"] if manage_directory else ""
+        result["fullchain_path"] = paths["fullchain"] if "fullchain" in formats else ""
+        result["fritzbox_bundle_path"] = (
+            paths["fritzbox_bundle"] if "fritzbox" in formats else ""
+        )
+        result["pkcs12_paths"] = {
+            fmt: paths[f"pkcs12_{fmt}"] for fmt in ("pfx", "p12") if fmt in formats
+        }
+        result["chain_path"] = paths["chain"] if manage_chain else ""
+        result["chain_src_path"] = (
+            chain_paths(base_dir, request["issuer"].name, ("pem",))["pem"]
+            if manage_chain
+            else ""
+        )
+    return CertificateOperation(request, result)
 
 
 def ca_authority_argument_spec(
