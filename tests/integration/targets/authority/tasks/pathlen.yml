@@ -142,9 +142,41 @@
       - ca_pathlen_signed.formats == ['pem', 'der', 'txt', 'fullchain']
       - not ca_pathlen_signed.key_changed
       - ca_pathlen_batch_signed.results[0].cert_path == ca_pathlen_signed.cert_path
+- name: Sign external CAs with leaf profiles without inheriting leaf extensions
+  jomrr.ca.certificate_batch:
+    base_dir: '{{ ca_test_root.path }}/pathlen'
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    authorities: *pathlen_authorities
+    certificate_types:
+      tls_server: {issuer: root}
+      tls_client: {issuer: root}
+    certificates:
+      - <<: &pathlen_leaf_profile
+          common_name: OpenBao CA
+          csr_path: '{{ ca_test_root.path }}/pathlen/external.csr'
+          basic_constraints: [CA:TRUE, 'pathlen:0']
+          key_usage: [keyCertSign, cRLSign]
+          formats: [pem, der, txt, fullchain]
+        name: tls-server-ca
+        type: tls_server
+      - <<: *pathlen_leaf_profile
+        name: tls-client-ca
+        type: tls_client
+        extended_key_usage: []
+        san: []
+  loop: [first, repeat]
+  register: ca_pathlen_leaf_profiles
+- name: Verify leaf-profile CA issuance and idempotence
+  ansible.builtin.assert:
+    that:
+      - ca_pathlen_leaf_profiles.results[0] is changed
+      - ca_pathlen_leaf_profiles.results[1] is not changed
 - name: Issue a leaf using the external CA key
   ansible.builtin.script:
-    cmd: "{{ ca_pathlen_script | default('pathlen.py') }} leaf {{ ca_test_root.path }}/pathlen"
+    cmd: >-
+      {{ ca_pathlen_script | default('pathlen.py') }} leaf
+      {{ ca_test_root.path }}/pathlen openbao tls-server-ca tls-client-ca
     executable: '{{ ansible_python_interpreter }}'
   changed_when: true
 - name: Verify the full leaf path using OpenSSL
@@ -153,11 +185,13 @@
       - openssl
       - verify
       - -purpose
-      - '{{ item }}'
+      - '{{ item.1 }}'
       - -CAfile
       - '{{ ca_test_root.path }}/pathlen/ca/root-ca.pem'
       - -untrusted
-      - '{{ ca_test_root.path }}/pathlen/certs/openbao/openbao.pem'
+      - '{{ ca_test_root.path }}/pathlen/certs/{{ item.0 }}/{{ item.0 }}.pem'
       - '{{ ca_test_root.path }}/pathlen/leaf.pem'
   changed_when: false
-  loop: [sslserver, sslclient]
+  loop: "{{ ['openbao', 'tls-server-ca', 'tls-client-ca'] | product(['sslserver', 'sslclient']) | list }}"
+  loop_control:
+    label: '{{ item.0 }} / {{ item.1 }}'

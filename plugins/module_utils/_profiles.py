@@ -189,7 +189,7 @@ def apply_profile_defaults(
 ) -> dict[str, Any]:
     """Apply certificate profile defaults without overriding explicit values."""
     result = dict(params)
-    if defaults.get("extended_key_usage") and not result.get("extended_key_usage"):
+    if defaults.get("extended_key_usage") and result.get("extended_key_usage") is None:
         result["extended_key_usage"] = list(defaults["extended_key_usage"])
 
     if defaults.get("raw_extensions"):
@@ -223,17 +223,24 @@ def profile_key_usage(params: CertificateOperation, public_key: PublicKey) -> li
     ]
 
 
-def apply_certificate_profile(params: dict[str, Any], profile: str) -> dict[str, Any]:
+def apply_certificate_profile(
+    params: dict[str, Any], profile: str, *, ca: bool
+) -> dict[str, Any]:
     """Apply built-in certificate profile defaults and validations."""
     if profile not in CERTIFICATE_PROFILE_DEFAULTS:
         raise ValueError(f"Unsupported certificate profile {profile}")
 
     result = dict(params)
     result["profile"] = profile
+    defaults = dict(CERTIFICATE_PROFILE_DEFAULTS[profile])
+    if ca:
+        defaults.pop("extended_key_usage", None)
+    if ca or result.get("san") == []:
+        defaults.pop("default_dns_san", None)
     if profile == "mskdc":
         result = _apply_mskdc_extensions(result)
 
-    result = apply_profile_defaults(result, CERTIFICATE_PROFILE_DEFAULTS[profile])
+    result = apply_profile_defaults(result, defaults)
 
     if profile == "fritzbox":
         digest = str(result["digest"]).replace("-", "").lower()

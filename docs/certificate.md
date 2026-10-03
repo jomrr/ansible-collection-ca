@@ -53,6 +53,14 @@ the root certificate supplies the resulting chain. A root with `pathlen:1`
 allows this additional issuing CA; an existing issuing CA with `pathlen:0` does
 not. Leaf CSRs retain the existing requirement to use an issuing CA.
 
+Other profiles can also request a CA with explicit `basic_constraints` and
+`key_usage`. Whenever `CA:TRUE` is set, automatic leaf EKU and DNS SAN defaults
+are disabled, regardless of profile. Explicit `extended_key_usage` and `san`
+values are still used. An empty `extended_key_usage: []` omits the EKU extension
+for both CA and leaf certificates; an empty `san: []` disables the automatic
+DNS SAN derived from the common name. The `mskdc` profile still adds its required
+PKINIT SAN.
+
 All ancestor limits apply, even if the direct issuer advertises a larger or
 unlimited path length. Rejected requests do not adjust existing CA constraints
 or replace existing certificate material.
@@ -66,7 +74,7 @@ or replace existing certificate material.
 - **`tls_server`**
   Default formats: `pem`, `der`, `txt`; Key Usage: `digitalSignature`,
   `keyEncipherment`; Extended Key Usage: `serverAuth`; Extra behavior: Adds
-  `DNS:<common_name>` when no DNS SAN is set.
+  `DNS:<common_name>` for leaves when no DNS SAN is set, unless `san: []` is explicit.
 
 - **`tls_client`**
   Default formats: `pem`, `der`, `txt`; Key Usage: `digitalSignature`,
@@ -262,8 +270,9 @@ These keys are accepted inside `certificate`.
   Type: bool; Required: no; Default: `true`; Allowed values: `true`, `false`;
   Secret: no
 
-- **`extended_key_usage`**: Overrides profile EKU when non-empty.
-  Type: list[str]; Required: no; Default: profile default; Allowed values: EKU
+- **`extended_key_usage`**: Explicit EKU values; `[]` omits the extension.
+  When omitted, leaf certificates use profile defaults; CAs receive no default EKU.
+  Type: list[str]; Required: no; Default: leaf profile default or none for CAs; Allowed values: EKU
   names or dotted OIDs; Secret: no
 
 - **`extended_key_usage_critical`**: Marks EKU critical.
@@ -271,8 +280,10 @@ These keys are accepted inside `certificate`.
   Secret: no
 
 - **`san`**: Approved Subject Alternative Names. CSR SANs are never inherited,
-  including when this list is empty or omitted. Profile defaults still apply.
-  Type: list[str]; Required: no; Default: `[]` plus profile defaults; Allowed
+  including when this list is empty or omitted. Explicit `[]` disables the
+  automatic DNS SAN derived from the common name. CAs never receive that
+  automatic DNS SAN. The `mskdc` profile still adds its required PKINIT SAN.
+  Type: list[str]; Required: no; Default: applicable profile defaults; Allowed
   values: supported SAN syntax; Secret: no
 
 - **`san_critical`**: Marks SAN critical.
@@ -581,7 +592,9 @@ SAN type (including UPN `otherName`, DNS and email) are ignored. Define the issu
 subject with `common_name`, merged `subject` and optional `email`, or replace it
 with `subject_ordered`. Set approved identities in `san`; the usual profile
 SAN defaults also apply. For example, `identity` with omitted or empty `san`
-issues no SAN, while `tls_server` adds `DNS:<common_name>`.
+issues no SAN, while a `tls_server` leaf with omitted `san` adds
+`DNS:<common_name>`. Explicit `san: []` suppresses that automatic DNS SAN.
+Certificates with `CA:TRUE` receive neither automatic leaf EKU nor DNS SAN.
 
 Migration: existing CSR tasks that omitted the subject must add `common_name`
 or `subject_ordered`, and explicitly list approved SANs. Never populate those

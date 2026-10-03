@@ -11,6 +11,10 @@ external CSR through the same issuer grouping and inventory flow.
 Use `type: issuing_ca` for an external issuing CA and map
 `certificate_types.issuing_ca.issuer` to the managed root. The defaults, input
 approval rules and outputs match the [single-certificate example](certificate.md#sign-an-external-issuing-ca-with-the-root).
+For every profile, certificates with `CA:TRUE` receive no automatic leaf EKU
+or DNS SAN. Each entry can set explicit extension values; `extended_key_usage: []`
+omits EKU, and `san: []` disables the automatic DNS SAN derived from the common
+name. The `mskdc` profile still adds its required PKINIT SAN.
 
 ## Behavior
 

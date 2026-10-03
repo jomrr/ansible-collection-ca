@@ -26,7 +26,7 @@ from ansible_collections.jomrr.ca.tests.unit.plugins.certificate_fixture import 
     CertificateFixture,
 )
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 
@@ -141,43 +141,94 @@ class IssuanceConstraintTests(unittest.TestCase):
         return params
 
     def test_root_can_sign_external_ca(self) -> None:
-        """A root with room for an intermediate signs a CA CSR idempotently."""
+        """CA requests retain explicit extensions without inheriting leaf defaults."""
         root = x509.load_pem_x509_certificate(
             (self.base / "ca/root-ca.pem").read_bytes()
         )
-        for params in (self.ca.request("root"), self.issuing_ca_request("root")):
-            with self.subTest(profile=params["certificate"]["type"]):
-                result = ensure_certificate_artifacts(params)
-                self.assertTrue(result["cert_changed"])
-                self.assertFalse(ensure_certificate_artifacts(params)["changed"])
-                issued = x509.load_pem_x509_certificate(
-                    Path(result["cert_path"]).read_bytes()
-                )
-                issued.verify_directly_issued_by(root)
-                self.assertEqual(issued.subject, self.ca.csr.subject)
-                constraints = issued.extensions.get_extension_for_class(
-                    x509.BasicConstraints
-                )
-                self.assertEqual(
-                    constraints.value,
-                    x509.BasicConstraints(True, 0),
-                )
-                usage = issued.extensions.get_extension_for_class(x509.KeyUsage)
-                self.assertTrue(usage.critical)
-                self.assertTrue(usage.value.key_cert_sign)
-                self.assertTrue(usage.value.crl_sign)
-                if result["profile"] == "issuing_ca":
-                    for extension in (
-                        x509.ExtendedKeyUsage,
-                        x509.SubjectAlternativeName,
-                    ):
-                        with self.assertRaises(x509.ExtensionNotFound):
-                            issued.extensions.get_extension_for_class(extension)
-                    chain = x509.load_pem_x509_certificates(
-                        Path(result["fullchain_path"]).read_bytes()
+        subject = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "OpenBao CA")])
+        csr = (
+            x509.CertificateSigningRequestBuilder()
+            .subject_name(subject)
+            .sign(self.ca.key, hashes.SHA256())
+        )
+        overrides: tuple[dict[str, list[str]], ...] = (
+            {},
+            {"extended_key_usage": [], "san": []},
+            {
+                "extended_key_usage": ["clientAuth"],
+                "san": ["URI:https://pki.example.test"],
+            },
+        )
+        for profile in ("tls_server", "tls_client", "issuing_ca"):
+            for index, override in enumerate(overrides):
+                with self.subTest(profile=profile, override=override):
+                    params = (
+                        self.issuing_ca_request("root")
+                        if profile == "issuing_ca"
+                        else self.ca.request("root")
                     )
-                    self.assertEqual(chain, [issued, root])
-        self.assertFalse((self.base / "certs/openbao/openbao.key").exists())
+                    params["certificate_types"] = {profile: {"issuer": "root"}}
+                    params["certificate"].update(
+                        name=f"external-{profile}-{index}",
+                        type=profile,
+                        common_name="OpenBao CA",
+                        csr_content=csr.public_bytes(
+                            serialization.Encoding.PEM
+                        ).decode(),
+                        **override,
+                    )
+                    result = ensure_certificate_artifacts(params)
+                    self.assertTrue(result["cert_changed"])
+                    self.assertFalse(ensure_certificate_artifacts(params)["changed"])
+                    issued = x509.load_pem_x509_certificate(
+                        Path(result["cert_path"]).read_bytes()
+                    )
+                    issued.verify_directly_issued_by(root)
+                    self.assertEqual(issued.subject, subject)
+                    constraints = issued.extensions.get_extension_for_class(
+                        x509.BasicConstraints
+                    )
+                    self.assertEqual(constraints.value, x509.BasicConstraints(True, 0))
+                    usage = issued.extensions.get_extension_for_class(x509.KeyUsage)
+                    self.assertTrue(usage.critical)
+                    self.assertTrue(usage.value.key_cert_sign)
+                    self.assertTrue(usage.value.crl_sign)
+                    if override.get("extended_key_usage"):
+                        self.assertEqual(
+                            list(
+                                issued.extensions.get_extension_for_class(
+                                    x509.ExtendedKeyUsage
+                                ).value
+                            ),
+                            [x509.ObjectIdentifier("1.3.6.1.5.5.7.3.2")],
+                        )
+                        self.assertEqual(
+                            list(
+                                issued.extensions.get_extension_for_class(
+                                    x509.SubjectAlternativeName
+                                ).value
+                            ),
+                            [
+                                x509.UniformResourceIdentifier(
+                                    "https://pki.example.test"
+                                )
+                            ],
+                        )
+                    else:
+                        for extension in (
+                            x509.ExtendedKeyUsage,
+                            x509.SubjectAlternativeName,
+                        ):
+                            with self.assertRaises(x509.ExtensionNotFound):
+                                issued.extensions.get_extension_for_class(extension)
+                    if profile == "issuing_ca":
+                        chain = x509.load_pem_x509_certificates(
+                            Path(result["fullchain_path"]).read_bytes()
+                        )
+                        self.assertEqual(chain, [issued, root])
+                    self.assertFalse(
+                        Path(result["cert_path"]).with_suffix(".key").exists()
+                    )
 
     def test_batch_preflights_each_request(self) -> None:
         """A forbidden CA does not leave an earlier certificate in its batch group."""
@@ -283,6 +334,14 @@ class IssuanceConstraintTests(unittest.TestCase):
                 "subject_ordered": [],
             },
         ]
+        params["certificates"].append(
+            {
+                **params["certificates"][1],
+                "name": "web-empty",
+                "san": [],
+                "extended_key_usage": [],
+            }
+        )
         self.assertTrue(ensure_certificate_batch(params)["changed"])
         self.assertFalse(ensure_certificate_batch(params)["changed"])
         issued = x509.load_pem_x509_certificate(
@@ -300,3 +359,13 @@ class IssuanceConstraintTests(unittest.TestCase):
             ),
             [x509.DNSName("Max Muster")],
         )
+        self.assertEqual(
+            list(web.extensions.get_extension_for_class(x509.ExtendedKeyUsage).value),
+            [x509.ObjectIdentifier("1.3.6.1.5.5.7.3.1")],
+        )
+        empty = x509.load_pem_x509_certificate(
+            (self.base / "certs/web-empty/web-empty.pem").read_bytes()
+        )
+        for extension in (x509.ExtendedKeyUsage, x509.SubjectAlternativeName):
+            with self.assertRaises(x509.ExtensionNotFound):
+                empty.extensions.get_extension_for_class(extension)

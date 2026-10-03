@@ -165,14 +165,21 @@ options:
         description: Marks Key Usage critical.
         type: bool
       extended_key_usage:
-        description: Extended Key Usage overrides; omitted or empty values use the selected profile defaults.
+        description:
+          - Extended Key Usage overrides. An empty list omits the extension.
+          - When omitted, leaf certificates use the selected profile defaults.
+            Certificates with C(CA:TRUE) have no automatic Extended Key Usage.
         type: list
         elements: str
       extended_key_usage_critical:
         description: Marks Extended Key Usage critical.
         type: bool
       san:
-        description: Subject Alternative Name entries.
+        description:
+          - Approved Subject Alternative Name entries. CSR SANs are never inherited.
+          - An empty list disables the automatic DNS SAN derived from C(common_name).
+            Certificates with C(CA:TRUE) never receive that automatic DNS SAN.
+          - The C(mskdc) profile still adds its required PKINIT SAN.
         type: list
         elements: str
       san_critical:

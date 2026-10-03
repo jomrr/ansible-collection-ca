@@ -37,8 +37,9 @@ notes:
 - CSR signing requires C(certificate.common_name) or C(certificate.subject_ordered).
   A configured C(common_name) must match the CSR common name. The issued subject is
   built from task parameters, including merged C(subject) defaults or C(subject_ordered).
-- SANs come from C(certificate.san) and profile defaults, even when C(san) is omitted
-  or empty. Approved UPNs, DNS names and other identities must be supplied by the task.
+- SANs come from C(certificate.san) and profile defaults. An explicit C(san=[]) disables
+  the automatic DNS SAN derived from C(common_name); the C(mskdc) PKINIT SAN remains.
+  Approved UPNs, DNS names and other identities must be supplied by the task.
   Existing CSR tasks relying on implicit identities must specify them explicitly.
 - Issuance checks the complete managed issuer chain for Basic Constraints,
   certificate-signing Key Usage and path length limits before writing certificate material.
@@ -52,6 +53,8 @@ notes:
   remain available; CSR extensions never select these values.
 - A root can sign a CA request when its path length permits the additional CA level.
   Other profiles can still request a CA using explicit C(basic_constraints) and C(key_usage).
+  Certificates with C(CA:TRUE) receive no automatic leaf EKU or DNS SAN from any profile;
+  explicitly configured C(extended_key_usage) and C(san) remain supported.
 - The signed external CA is inventoried as a certificate, not installed as a managed
   authority. Import C(cert_path) or C(fullchain_path) into the external CA separately;
   that system manages its own leaf certificates and CRLs.

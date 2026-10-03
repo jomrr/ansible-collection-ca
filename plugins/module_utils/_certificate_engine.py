@@ -302,7 +302,11 @@ def prepare_certificate_artifacts(
         module_params,
         default_formats=CERTIFICATE_DEFAULT_FORMATS[model["type"]],
     )
-    x509_params = apply_certificate_profile(x509_params, model["type"])
+    x509_params = apply_certificate_profile(
+        x509_params,
+        model["type"],
+        ca=basic_constraints(x509_params.get("basic_constraints")).ca,
+    )
     return model, x509_params
 
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.x509.oid import NameOID
+from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 
 def prepare(base: Path) -> None:
@@ -37,10 +37,10 @@ def prepare(base: Path) -> None:
     (base / "external.csr").write_bytes(csr.public_bytes(serialization.Encoding.PEM))
 
 
-def issue_leaf(base: Path) -> None:
+def issue_leaf(base: Path, name: str) -> None:
     """Use the imported CA certificate and original external key to issue a leaf."""
     issuer = x509.load_pem_x509_certificate(
-        (base / "certs/openbao/openbao.pem").read_bytes()
+        (base / f"certs/{name}/{name}.pem").read_bytes()
     )
     key = serialization.load_pem_private_key((base / "external.key").read_bytes(), None)
     assert isinstance(key, ec.EllipticCurvePrivateKey)
@@ -56,16 +56,14 @@ def issue_leaf(base: Path) -> None:
     )
     root = x509.load_pem_x509_certificate((base / "ca/root-ca.pem").read_bytes())
     chain = x509.load_pem_x509_certificates(
-        (base / "certs/openbao/openbao-fullchain.pem").read_bytes()
+        (base / f"certs/{name}/{name}-fullchain.pem").read_bytes()
     )
     assert chain == [issuer, root]
     assert (
-        x509.load_der_x509_certificate(
-            (base / "certs/openbao/openbao.der").read_bytes()
-        )
+        x509.load_der_x509_certificate((base / f"certs/{name}/{name}.der").read_bytes())
         == issuer
     )
-    assert (base / "certs/openbao/openbao.txt").stat().st_size
+    assert (base / f"certs/{name}/{name}.txt").stat().st_size
     leaf_key = ec.generate_private_key(ec.SECP256R1())
     now = datetime.datetime.now(datetime.UTC)
     leaf = (
@@ -79,11 +77,25 @@ def issue_leaf(base: Path) -> None:
         .not_valid_before(now - datetime.timedelta(minutes=1))
         .not_valid_after(now + datetime.timedelta(days=1))
         .add_extension(x509.BasicConstraints(False, None), critical=True)
+        .add_extension(
+            x509.ExtendedKeyUsage(
+                [ExtendedKeyUsageOID.SERVER_AUTH, ExtendedKeyUsageOID.CLIENT_AUTH]
+            ),
+            critical=False,
+        )
+        .add_extension(
+            x509.SubjectAlternativeName([x509.DNSName("service.example.test")]),
+            critical=False,
+        )
         .sign(key, hashes.SHA256())
     )
     (base / "leaf.pem").write_bytes(leaf.public_bytes(serialization.Encoding.PEM))
-    assert not (base / "certs/openbao/openbao.key").exists()
+    assert not (base / f"certs/{name}/{name}.key").exists()
 
 
 if __name__ == "__main__":
-    {"prepare": prepare, "leaf": issue_leaf}[sys.argv[1]](Path(sys.argv[2]))
+    if sys.argv[1] == "leaf":
+        for issuer_name in sys.argv[3:]:
+            issue_leaf(Path(sys.argv[2]), issuer_name)
+    else:
+        {"prepare": prepare}[sys.argv[1]](Path(sys.argv[2]))
