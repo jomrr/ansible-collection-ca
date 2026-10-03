@@ -35,6 +35,8 @@ Serial parsing and timestamp normalization are delegated to the internal
   for retained material, publication order and migration limitations.
 - Uses the complete subject of each generation's CA certificate as its CRL issuer,
   preserving email addresses, attribute order and repeated attributes.
+- Requires no subject parameters. The optional legacy `common_name` and `subject`
+  parameters are ignored and can be removed from existing tasks.
 - Replaces existing CRLs whose issuer differs from the CA subject, incrementing
   the persisted CRL number. Repeated runs with a matching CRL remain unchanged.
 - Defaults to writing both `pem` and `der` CRL formats when `formats` is not
@@ -113,15 +115,14 @@ module as `revoked_certificates`.
   changed through this option.
   Type: str; Required: no; Default: `""`; Secret: no
 
-- **`common_name`**: Accepted for compatibility. The issuer Common Name is taken
-  from the CA certificate; this parameter does not override it.
-  Type: str; Required: yes; Default: none; Allowed values: any string; Secret:
+- **`common_name`**: Ignored legacy parameter, accepted only for compatibility.
+  Omit it; the issuer Common Name is taken from the CA certificate.
+  Type: str; Required: no; Default: none; Allowed values: any string; Secret:
   no
 
-- **`subject`**: Accepted for compatibility. The full issuer subject is taken
-  from the CA certificate; this parameter does not override it.
-  Type: dict; Required: no; Default: `{}`; Allowed values: supported subject
-  keys; Secret: no
+- **`subject`**: Ignored legacy parameter, accepted only for compatibility.
+  Omit it; the full issuer subject is taken from the CA certificate.
+  Type: dict; Required: no; Default: `{}`; Allowed values: dictionary; Secret: no
 
 - **`next_update_days`**: Number of days until CRL `nextUpdate`.
   Type: int; Required: yes; Default: none; Allowed values: positive integer;
@@ -245,11 +246,6 @@ Create a PEM CRL:
     base_dir: /etc/pki/example
     ca_name: example
     name: component
-    common_name: Example Component CA
-    subject:
-      country: DE
-      organization: Example
-      organizational_unit: Example PKI
     next_update_days: 7
     renew_before_days: 1
     key_passphrase: "{{ ca_component_passphrase }}"
@@ -263,7 +259,6 @@ Create default PEM and DER CRLs with one revoked certificate by name:
     base_dir: /etc/pki/example
     ca_name: example
     name: component
-    common_name: Example Component CA
     next_update_days: 7
     renew_before_days: 1
     key_passphrase: "{{ ca_component_passphrase }}"
@@ -281,7 +276,6 @@ Revoke by SHA-256 fingerprint:
     base_dir: /etc/pki/example
     ca_name: example
     name: component
-    common_name: Example Component CA
     next_update_days: 7
     renew_before_days: 1
     key_passphrase: "{{ ca_component_passphrase }}"
@@ -300,7 +294,6 @@ Revoke a managed issuing CA in the Root CA's CRL:
   jomrr.ca.crl:
     base_dir: /etc/pki/example
     name: root
-    common_name: Example Root CA
     key_passphrase: "{{ ca_root_passphrase }}"
     next_update_days: 30
     revoked_certificates:

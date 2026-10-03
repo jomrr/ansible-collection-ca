@@ -3,7 +3,6 @@
   jomrr.ca.crl: &parent_crl
     base_dir: '{{ ca_test_root.path }}/pki'
     name: root
-    common_name: Test Root
     key_passphrase: test-root-passphrase
     next_update_days: 30
 

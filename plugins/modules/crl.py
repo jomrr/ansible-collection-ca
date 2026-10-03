@@ -63,12 +63,15 @@ options:
     type: str
     default: ''
   common_name:
-    description: Accepted for compatibility; the issuer Common Name comes from the CA certificate.
+    description:
+    - Ignored legacy parameter, accepted only for compatibility with existing tasks.
+    - Omit this option. The issuer Common Name comes from the CA certificate.
     version_added: 0.1.0
     type: str
-    required: true
   subject:
-    description: Accepted for compatibility; the complete issuer subject comes from the CA certificate.
+    description:
+    - Ignored legacy parameter, accepted only for compatibility with existing tasks.
+    - Omit this option. The complete issuer subject comes from the CA certificate.
     version_added: 0.1.0
     type: dict
     default: {}
@@ -117,8 +120,6 @@ EXAMPLES = r"""
     base_dir: /etc/pki/example
     ca_name: example
     name: component
-    common_name: Example Component CA
-    subject: {country: DE, organization: Example, organizational_unit: Example PKI}
     next_update_days: 7
     renew_before_days: 1
     key_passphrase: "{{ ca_component_passphrase }}"
@@ -128,7 +129,6 @@ EXAMPLES = r"""
     base_dir: /etc/pki/example
     ca_name: example
     name: component
-    common_name: Example Component CA
     next_update_days: 7
     renew_before_days: 1
     key_passphrase: "{{ ca_component_passphrase }}"
@@ -141,7 +141,6 @@ EXAMPLES = r"""
   jomrr.ca.crl:
     base_dir: /etc/pki/example
     name: root
-    common_name: Example Root CA
     key_passphrase: "{{ ca_root_passphrase }}"
     next_update_days: 30
     revoked_certificates:
@@ -153,7 +152,6 @@ EXAMPLES = r"""
     base_dir: /etc/pki/example
     ca_name: example
     name: component
-    common_name: Example Component CA
     next_update_days: 7
     renew_before_days: 1
     key_passphrase: "{{ ca_component_passphrase }}"
@@ -240,7 +238,7 @@ def main() -> None:
             "key_passphrase": {"type": "str", "required": True, "no_log": True},
             "archived_key_passphrases": {"type": "dict", "default": {}, "no_log": True},
             "legacy_generation": {"type": "str", "default": ""},
-            "common_name": {"type": "str", "required": True},
+            "common_name": {"type": "str"},
             "subject": {"type": "dict", "default": {}},
             "next_update_days": {"type": "int", "required": True},
             "renew_before_days": {"type": "float", "default": 7},

@@ -335,7 +335,6 @@ After the renewal task above, run these tasks before deploying new certificates:
   jomrr.ca.crl:
     base_dir: /etc/pki/example
     name: component
-    common_name: Example Component CA
     key_passphrase: "{{ ca_component_passphrase }}"
     next_update_days: 30
     revoked_certificates: "{{ ca_revocations.component | default([]) }}"
@@ -406,7 +405,6 @@ which generation keeps those URLs:
   jomrr.ca.crl:
     base_dir: /etc/pki/example
     name: component
-    common_name: Example Component CA
     key_passphrase: "{{ ca_component_passphrase }}"
     archived_key_passphrases: "{{ ca_archived_key_passphrases }}"
     legacy_generation: "{{ original_generation_id }}"

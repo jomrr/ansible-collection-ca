@@ -41,7 +41,6 @@
     owner: '{{ ca_test_uid.stdout }}'
     group: '{{ ca_test_gid.stdout }}'
     name: '{{ item }}'
-    common_name: '{{ item }}'
     key_passphrase: rollover-test
     next_update_days: 30
   loop: [root, issuer]
@@ -94,7 +93,6 @@
     owner: '{{ ca_test_uid.stdout }}'
     group: '{{ ca_test_gid.stdout }}'
     name: issuer
-    common_name: issuer
     key_passphrase: rollover-test
     next_update_days: 30
     revoked_certificates:
@@ -137,7 +135,6 @@
     owner: '{{ ca_test_uid.stdout }}'
     group: '{{ ca_test_gid.stdout }}'
     name: issuer
-    common_name: issuer
     key_passphrase: rollover-test
     next_update_days: 30
   register: ca_rollover_ambiguous

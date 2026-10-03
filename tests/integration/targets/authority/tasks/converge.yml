@@ -211,7 +211,6 @@
     owner: '{{ ca_test_uid.stdout }}'
     group: '{{ ca_test_gid.stdout }}'
     name: issuer
-    common_name: Test Issuer
     key_passphrase: test-issuer-passphrase
     next_update_days: 30
   register: ca_result

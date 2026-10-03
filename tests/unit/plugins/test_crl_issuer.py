@@ -29,8 +29,6 @@ class CRLIssuerTests(unittest.TestCase):
     def setUp(self) -> None:
         self.key = ec.generate_private_key(ec.SECP256R1())
         self.params: dict[str, Any] = {
-            "common_name": "Test CA",
-            "subject": {},
             "digest": "sha384",
             "next_update_days": 30,
             "renew_before_days": 7,

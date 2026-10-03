@@ -118,14 +118,15 @@
         that:
           - ca_invalid.msg == 'Certificate web uses both csr_path and csr_content'
           - '''test-issuer-passphrase'' not in ca_invalid.msg'
-    - name: Revoke issued certificate
+    - name: Revoke issued certificate with ignored legacy subject parameters
       jomrr.ca.crl: &id005
         base_dir: '{{ ca_test_root.path }}/pki'
         ca_name: test
         owner: '{{ ca_test_uid.stdout }}'
         group: '{{ ca_test_gid.stdout }}'
         name: issuer
-        common_name: Test Issuer
+        common_name: Ignored legacy Common Name
+        subject: {organization: Ignored legacy organization}
         key_passphrase: test-issuer-passphrase
         next_update_days: 30
         revoked_certificates:
