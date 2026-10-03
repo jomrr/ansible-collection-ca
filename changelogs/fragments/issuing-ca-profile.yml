@@ -1,4 +1,0 @@
----
-minor_changes:
-  - certificate and certificate_batch - add the issuing_ca profile for signing external
-    issuing CA CSRs with a managed root, with CA constraints, signing key usages and fullchain export defaults.

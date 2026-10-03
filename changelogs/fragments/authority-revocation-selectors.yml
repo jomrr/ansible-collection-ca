@@ -1,4 +1,0 @@
----
-bugfixes:
-  - crl - resolve managed CA certificates by name and fingerprint in their parent's CRL, including historical CA certificates by fingerprint.
-  - crl - reject ambiguous names shared by a leaf and CA under the same issuer instead of selecting one silently.

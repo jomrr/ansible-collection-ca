@@ -1,6 +1,0 @@
----
-bugfixes:
-  - crl - reuse one authority-history snapshot and legacy URL resolution per run,
-    including migration; derive publication paths and select signing keys without
-    rereading CA certificates.
-  - publish_archive - reuse the loaded authority history and resolved legacy URL owner for every published generation.

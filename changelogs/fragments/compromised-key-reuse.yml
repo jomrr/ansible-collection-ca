@@ -1,8 +1,0 @@
----
-security_fixes:
-  - certificate, certificate_batch and authority - reject reuse of locally known keys
-    revoked for key_compromise or ca_compromise, including renewal and external CSRs.
-    Replacement requires a new key; certificate names and serial numbers do not bypass the check.
-minor_changes:
-  - Certificate inventory records include a SHA-256 public key fingerprint to retain
-    compromised-key identity across generations; older records use current or archived certificates.
