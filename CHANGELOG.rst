@@ -4,6 +4,17 @@ jomrr.ca 1.1 Release Notes
 
 .. contents:: Topics
 
+v1.1.1
+======
+
+Bugfixes
+--------
+
+- Preserve the last non-empty base_url in composed inventory when modules omit the parameter or pass an empty string, avoiding changed results when alternating authority, certificate, certificate_batch and crl tasks.
+- certificate and certificate_batch - avoid automatic leaf Extended Key Usage and common-name DNS SAN defaults when issuing certificates with CA:TRUE, including external CA CSRs signed with tls_server or tls_client profiles.
+- certificate and certificate_batch - honor explicitly empty extended_key_usage and san lists, allowing certificates without EKU or automatic DNS SAN while preserving omitted leaf profile defaults and required mskdc PKINIT SANs.
+- crl - stop requiring the ignored common_name parameter. The CRL issuer comes entirely from the CA certificate. Both common_name and subject remain accepted as optional, ignored compatibility parameters; omit them in new tasks.
+
 v1.1.0
 ======
 

@@ -1,4 +1,0 @@
----
-bugfixes:
-  - crl - stop requiring the ignored common_name parameter. The CRL issuer comes entirely from the CA certificate.
-    Both common_name and subject remain accepted as optional, ignored compatibility parameters; omit them in new tasks.

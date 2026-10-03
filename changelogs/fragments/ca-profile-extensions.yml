@@ -1,6 +1,0 @@
----
-bugfixes:
-  - certificate and certificate_batch - avoid automatic leaf Extended Key Usage and common-name DNS SAN defaults
-    when issuing certificates with CA:TRUE, including external CA CSRs signed with tls_server or tls_client profiles.
-  - certificate and certificate_batch - honor explicitly empty extended_key_usage and san lists, allowing certificates
-    without EKU or automatic DNS SAN while preserving omitted leaf profile defaults and required mskdc PKINIT SANs.
