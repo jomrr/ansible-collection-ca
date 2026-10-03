@@ -10,6 +10,7 @@ Stable issuer publication identities across CA key rollovers.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
     IssuerUrls,
@@ -22,6 +23,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     write_file,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._generation_history import (
+    AuthorityHistory,
     ca_history,
     generation_id,
     infer_legacy_id,
@@ -32,13 +34,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     write_json,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
-    archive_directory,
-    authority_paths,
     generation_directory,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._text import certificate_text
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
-    load_certificate,
     load_signing_key,
     public_key_bytes,
 )
@@ -59,41 +58,39 @@ def generation_root(base_dir: str, name: str) -> Path:
     return generation_directory(base_dir, safe_path_component(name))
 
 
-def legacy_id(base_dir: str, name: str, current_id: str, selected: str = "") -> str:
-    """Read the pinned identity or recover its owner from pre-upgrade history."""
+def legacy_id(
+    base_dir: str,
+    name: str,
+    selected: str = "",
+    history: AuthorityHistory | None = None,
+    records: list[dict[str, Any]] | None = None,
+) -> str:
+    """Resolve the legacy owner, reusing already observed migration history."""
     root = generation_root(base_dir, name)
     try:
         legacy = str(read_json(str(root / "legacy.json"))["generation_id"])
     except FileNotFoundError:
-        try:
-            issuers = ca_history(base_dir, name)
-        except FileNotFoundError:
-            if (
-                not Path(authority_paths(base_dir, name)["certificate_pem"]).exists()
-                and not list(
-                    Path(archive_directory(base_dir, name, authority=True)).glob(
-                        f"*/{name}-ca.pem"
-                    )
-                )
-                and not list(root.glob("*/certificate.pem"))
-            ):
-                return current_id
-            raise
-        if selected:
-            if selected not in issuers:
-                raise ValueError(
-                    f"Unknown legacy_generation for authority {name}"
-                ) from None
-            return selected
-        return infer_legacy_id(name, issuers, issued_history(base_dir, name, issuers))
-    if selected and selected != legacy:
-        raise ValueError(f"The legacy URL owner for authority {name} is already pinned")
-    return legacy
+        legacy = None
+    if legacy is not None:
+        if selected and selected != legacy:
+            raise ValueError(
+                f"The legacy URL owner for authority {name} is already pinned"
+            )
+        return legacy
+    history = history if history is not None else ca_history(base_dir, name)
+    if not history.certificates:
+        return ""
+    if selected:
+        if selected not in history.certificates:
+            raise ValueError(f"Unknown legacy_generation for authority {name}")
+        return selected
+    if records is None:
+        records = issued_history(base_dir, name, history.certificates)
+    return infer_legacy_id(name, history.certificates, records)
 
 
-def generation_stem(base_dir: str, name: str, identity: str, selected: str = "") -> str:
-    """Keep the original issuer at its legacy URL and suffix subsequent issuers."""
-    legacy = legacy_id(base_dir, name, identity, selected)
+def generation_stem(name: str, identity: str, legacy: str) -> str:
+    """Derive a publication filename from the already resolved legacy owner."""
     return f"{name}-ca" if identity == legacy else f"{name}-ca-{identity}"
 
 
@@ -105,7 +102,8 @@ def issuer_urls(
     public_key: PublicKey,
 ) -> IssuerUrls:
     """Return AIA/CDP URLs from the actual locked signing identity."""
-    stem = generation_stem(base_dir, name, generation_id(subject, public_key))
+    identity = generation_id(subject, public_key)
+    stem = generation_stem(name, identity, legacy_id(base_dir, name) or identity)
     return IssuerUrls(
         publication.url(f"{stem}.der", aia=True),
         publication.url(f"{stem}.crl", aia=False),
@@ -120,11 +118,21 @@ def retain_generation(
     selected: str = "",
 ) -> bool:
     """Retain public issuer material before replacing a CA and after issuance."""
-    identity = generation_id(cert.subject, cert.public_key())
+    history = ca_history(base_dir, name)
+    legacy = legacy_id(base_dir, name, selected, history)
+    history.certificates[generation_id(cert.subject, cert.public_key())] = cert
+    return store_generations(base_dir, name, history.certificates, legacy, attributes)
+
+
+def store_generations(
+    base_dir: str,
+    name: str,
+    issuers: dict[str, x509.Certificate],
+    legacy: str,
+    attributes: FileAttributes,
+) -> bool:
+    """Persist the resolved legacy owner and supplied public generation snapshot."""
     root = generation_root(base_dir, name)
-    legacy = legacy_id(base_dir, name, identity, selected)
-    issuers = ca_history(base_dir, name)
-    issuers[identity] = cert
     changed = write_json(
         str(root / "legacy.json"),
         {"generation_id": legacy},
@@ -150,46 +158,21 @@ def retain_generation(
     return changed
 
 
-def authority_generations(base_dir: str, name: str) -> dict[str, x509.Certificate]:
-    """Load retained issuers, or the single legacy issuer before first migration."""
-    issuers = ca_history(base_dir, name)
-    current = load_certificate(authority_paths(base_dir, name)["certificate_pem"])
-    legacy_id(base_dir, name, generation_id(current.subject, current.public_key()))
-    return issuers
-
-
-def _generation_key_path(base_dir: str, name: str, identity: str) -> str:
-    """Select a key via its paired public certificate, current before archive.
+def _generation_key_path(name: str, identity: str, paths: list[str]) -> str:
+    """Select a key from observed public pairs, current before archive.
 
     Renewals of the same subject/key may have several serials. Prefer the current
     pair, then archived pairs in serial-directory order. Only a missing key allows
-    a later matching pair; unreadable or malformed certificates are errors.
+    a later matching pair. Public certificates were validated while loading history.
     """
-    current = authority_paths(base_dir, name)
-    candidates = [Path(current["certificate_pem"])]
-    archive = Path(archive_directory(base_dir, name, authority=True))
-    candidates.extend(sorted(archive.glob(f"*/{name}-ca.pem")))
     missing: list[str] = []
-    for path in candidates:
+    for path in paths:
         try:
-            certificate = load_certificate(str(path))
+            Path(path).stat()
         except FileNotFoundError:
+            missing.append(path)
             continue
-        except (ValueError, TypeError) as exc:
-            raise ValueError(f"Cannot read authority certificate {path}") from exc
-        if generation_id(certificate.subject, certificate.public_key()) != identity:
-            continue
-        key_path = (
-            Path(current["private_key"])
-            if path == Path(current["certificate_pem"])
-            else path.with_suffix(".key")
-        )
-        try:
-            key_path.stat()
-        except FileNotFoundError:
-            missing.append(str(key_path))
-            continue
-        return str(key_path)
+        return path
     if missing:
         raise FileNotFoundError(
             f"Missing signing key for authority {name}, generation {identity}: "
@@ -202,18 +185,18 @@ def _generation_key_path(base_dir: str, name: str, identity: str) -> str:
 
 
 def generation_key(
-    base_dir: str,
     name: str,
     identity: str,
     cert: x509.Certificate,
     credentials: CrlCredentials,
+    key_paths: list[str],
 ) -> PrivateKey:
     """Resolve the public identity first, decrypt exactly one key, then verify it."""
     if generation_id(cert.subject, cert.public_key()) != identity:
         raise ValueError(
             f"Certificate identity mismatch for authority {name}, generation {identity}"
         )
-    path = _generation_key_path(base_dir, name, identity)
+    path = _generation_key_path(name, identity, key_paths)
     try:
         key = load_signing_key(
             path, credentials.archived.get(identity, credentials.current)

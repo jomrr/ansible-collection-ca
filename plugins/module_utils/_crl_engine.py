@@ -19,7 +19,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._authority_generations im
     generation_root,
     generation_stem,
     legacy_id,
-    retain_generation,
+    store_generations,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._crl import (
     build_crl,
@@ -59,16 +59,12 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     write_json,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
-    authority_paths,
     crl_paths,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     now_utc,
     parse_datetime,
     timestamp_z,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
-    load_certificate,
 )
 
 try:
@@ -118,9 +114,7 @@ def _generation_params(
     params: CrlRequest, identity: str, stop_at: datetime | None = None
 ) -> CrlPlan:
     """Derive publication paths without loading a potentially retired key."""
-    stem = generation_stem(
-        params.context.base_dir, params.context.name, identity, params.legacy_generation
-    )
+    stem = generation_stem(params.context.name, identity, params.legacy_generation)
     return CrlPlan(
         params,
         identity,
@@ -131,14 +125,12 @@ def _generation_params(
 
 
 def _prepare_crl(
-    request: CrlRequest,
-    identity: str,
+    params: CrlPlan,
     cert: x509.Certificate,
     previous_number: int,
-    stop_at: datetime | None,
+    key_paths: list[str],
 ) -> CrlGeneration:
     """Validate sequence state and every required key before making any writes."""
-    params = _generation_params(request, identity, stop_at)
     existing_crls = load_existing_crls(params.paths)
     numbers = existing_numbers(existing_crls)
     if not previous_number and any(
@@ -161,11 +153,11 @@ def _prepare_crl(
         params,
         cert,
         generation_key(
-            request.context.base_dir,
-            request.context.name,
-            identity,
+            params.request.context.name,
+            params.identity,
             cert,
-            request.credentials,
+            params.request.credentials,
+            key_paths,
         ),
         next((crl for crl in existing_crls.values() if crl is not None), None),
         changed,
@@ -231,7 +223,7 @@ def _store_status(
 
 def _store_crls(
     params: CrlRequest,
-    current: x509.Certificate,
+    issuers: dict[str, x509.Certificate],
     prepared: list[CrlGeneration],
     status: dict[str, GenerationStatus],
 ) -> dict[str, Any]:
@@ -243,12 +235,12 @@ def _store_crls(
     crls = _build_crls(prepared, number, rebuild)
     changed, generations = _store_status(params, status)
     changed = (
-        retain_generation(
+        store_generations(
             params.context.base_dir,
             params.context.name,
-            current,
-            params.context.attributes,
+            issuers,
             params.legacy_generation,
+            params.context.attributes,
         )
         or changed
     )
@@ -295,17 +287,17 @@ def ensure_crls(values: dict[str, Any]) -> dict[str, Any]:
             )
         ],
     )
-    current = load_certificate(
-        authority_paths(params.context.base_dir, params.context.name)["certificate_pem"]
-    )
+    history = ca_history(params.context.base_dir, params.context.name)
+    current = history.require_current()
     current_id = generation_id(current.subject, current.public_key())
-    issuers = ca_history(params.context.base_dir, params.context.name)
+    issuers = history.certificates
     records = issued_history(params.context.base_dir, params.context.name, issuers)
     params.legacy_generation = legacy_id(
         params.context.base_dir,
         params.context.name,
-        current_id,
-        str(params.legacy_generation or ""),
+        params.legacy_generation,
+        history,
+        records,
     )
     deadlines = retirement_times(issuers, records)
     crl_time = now_utc(strip_microseconds=True)
@@ -319,16 +311,19 @@ def ensure_crls(values: dict[str, Any]) -> dict[str, Any]:
     previous_number = last_crl_number(params.context.base_dir, params.context.name)
     prepared = [
         _prepare_crl(
-            params,
-            identity,
+            _generation_params(
+                params,
+                identity,
+                deadlines[identity] if identity != current_id else None,
+            ),
             cert,
             previous_number,
-            deadlines[identity] if identity != current_id else None,
+            history.key_paths.get(identity, []),
         )
         for identity, cert in issuers.items()
         if not status[identity]["retired"]
     ]
-    result = _store_crls(params, current, prepared, status)
+    result = _store_crls(params, issuers, prepared, status)
     revoked = {str(entry["serial_number"]) for entry in params.revoked_certificates}
     conflicts = [
         {

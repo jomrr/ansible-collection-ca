@@ -10,6 +10,7 @@ Recover issuer identities and their remaining certificate lifetimes from history
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -59,28 +60,67 @@ def generation_id(subject: x509.Name, public_key: PublicKey) -> str:
     ).hexdigest()
 
 
-def ca_history(base_dir: str, name: str) -> dict[str, x509.Certificate]:
-    """Recover every CA identity from current, archived and retained certificates."""
-    name = safe_path_component(name)
-    paths = [
-        *sorted(
-            Path(archive_directory(base_dir, name, authority=True)).glob(
-                f"*/{name}-ca.pem"
-            )
-        ),
-        *sorted(generation_directory(base_dir, name).glob("*/certificate.pem")),
-    ]
-    result: dict[str, x509.Certificate] = {}
-    for path in paths:
-        cert = load_certificate(str(path))
+@dataclass
+class AuthorityHistory:
+    """Public certificates and ordered key candidates observed during one run."""
+
+    current_path: str
+    current: x509.Certificate | None
+    certificates: dict[str, x509.Certificate] = field(default_factory=dict)
+    key_paths: dict[str, list[str]] = field(default_factory=dict)
+
+    def include(self, cert: x509.Certificate, key_path: str = "") -> None:
+        """Keep the longest-lived certificate and current-before-archive key order."""
         identity = generation_id(cert.subject, cert.public_key())
-        if identity not in result or certificate_not_valid_after(
+        if identity not in self.certificates or certificate_not_valid_after(
             cert
-        ) > certificate_not_valid_after(result[identity]):
-            result[identity] = cert
-    current = load_certificate(authority_paths(base_dir, name)["certificate_pem"])
-    result[generation_id(current.subject, current.public_key())] = current
-    return result
+        ) > certificate_not_valid_after(self.certificates[identity]):
+            self.certificates[identity] = cert
+        if key_path:
+            self.key_paths.setdefault(identity, []).append(key_path)
+
+    def require_current(self) -> x509.Certificate:
+        """Require a current CA except while creating the first certificate."""
+        if self.current is None:
+            raise FileNotFoundError(
+                2, "Missing current CA certificate", self.current_path
+            )
+        return self.current
+
+
+def _load_authority_certificate(path: str) -> x509.Certificate:
+    """Preserve filesystem failures and identify malformed public material."""
+    try:
+        return load_certificate(path)
+    except (ValueError, TypeError) as exc:
+        raise ValueError(f"Cannot read authority certificate {path}") from exc
+
+
+def ca_history(base_dir: str, name: str) -> AuthorityHistory:
+    """Read each CA certificate once, indexing its identity and paired key path."""
+    name = safe_path_component(name)
+    paths = authority_paths(base_dir, name)
+    try:
+        current = _load_authority_certificate(paths["certificate_pem"])
+    except FileNotFoundError:
+        current = None
+    history = AuthorityHistory(paths["certificate_pem"], current)
+    if current is not None:
+        history.include(current, paths["private_key"])
+    archive = Path(archive_directory(base_dir, name, authority=True))
+    for path in sorted(archive.glob(f"*/{name}-ca.pem")):
+        history.include(
+            _load_authority_certificate(str(path)), str(path.with_suffix(".key"))
+        )
+    for path in sorted(generation_directory(base_dir, name).glob("*/certificate.pem")):
+        history.include(_load_authority_certificate(str(path)))
+    if history.certificates:
+        current = history.require_current()
+        # A current renewal remains authoritative for its generation's lifetime.
+        history.certificates[generation_id(current.subject, current.public_key())] = (
+            current
+        )
+    return history
 
 
 def _record_certificate(

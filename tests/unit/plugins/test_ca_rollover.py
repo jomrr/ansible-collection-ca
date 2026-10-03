@@ -8,6 +8,9 @@ import io
 import json
 import shutil
 import tarfile
+from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import timedelta
 from pathlib import Path
 from tempfile import mkdtemp
@@ -25,6 +28,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._crl_engine import ensure
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import CrlCredentials
 from ansible_collections.jomrr.ca.plugins.module_utils._file import read_file
 from ansible_collections.jomrr.ca.plugins.module_utils._generation_history import (
+    ca_history,
     generation_id,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
@@ -54,6 +58,22 @@ class TestCaRollover(TestCase):
         self.base = Path(mkdtemp())
         self.addCleanup(shutil.rmtree, self.base)
         self.ca = CertificateFixture(self.base)
+
+    @contextmanager
+    def certificate_reads_once(self) -> Iterator[None]:
+        """Bound repeated filesystem reads without replacing certificate parsing."""
+        with patch(
+            "ansible_collections.jomrr.ca.plugins.module_utils._x509_keys.read_file",
+            wraps=read_file,
+        ) as reads:
+            yield
+        counts = Counter(
+            call.args[0]
+            for call in reads.call_args_list
+            if Path(call.args[0]).suffix == ".pem"
+        )
+        self.assertTrue(counts)
+        self.assertEqual(max(counts.values()), 1, counts)
 
     def crl(self, name: str = "issuer", **overrides: Any) -> dict[str, Any]:
         """Use the CRL engine with ordinary module defaults."""
@@ -169,10 +189,13 @@ class TestCaRollover(TestCase):
         unrelated = self.base / "archive/authorities/issuer/0000"
         unrelated.mkdir()
         (unrelated / "issuer-ca.key").write_bytes(b"invalid unrelated private key")
-        with patch(
-            "cryptography.hazmat.primitives.serialization.load_pem_private_key",
-            wraps=serialization.load_pem_private_key,
-        ) as decrypt:
+        with (
+            self.certificate_reads_once(),
+            patch(
+                "cryptography.hazmat.primitives.serialization.load_pem_private_key",
+                wraps=serialization.load_pem_private_key,
+            ) as decrypt,
+        ):
             result = self.crl(
                 key_passphrase="new-test-passphrase",
                 archived_key_passphrases={old_id: "test-passphrase"},
@@ -219,9 +242,10 @@ class TestCaRollover(TestCase):
     def test_pre_upgrade_rollover_is_recovered_from_archived_keys(self) -> None:
         """An already performed rollover can adopt its old key and fixed URLs."""
         old_id = self.legacy_rollover(new_leaf=False)
-        result = self.crl(
-            revoked_certificates=[{"name": "old", "reason": "superseded"}]
-        )
+        with self.certificate_reads_once():
+            result = self.crl(
+                revoked_certificates=[{"name": "old", "reason": "superseded"}]
+            )
         self.assertEqual(result["legacy_generation"], old_id)
         self.assertEqual(result["migration_conflicts"], [])
         self.assertEqual(len(result["generations"]), 2)
@@ -325,7 +349,14 @@ class TestCaRollover(TestCase):
         credentials = CrlCredentials("test-passphrase", {})
 
         def selected() -> object:
-            return generation_key(str(self.base), "issuer", identity, cert, credentials)
+            history = ca_history(str(self.base), "issuer")
+            return generation_key(
+                "issuer",
+                identity,
+                cert,
+                credentials,
+                history.key_paths.get(identity, []),
+            )
 
         for contents, message in (
             (b"not a key", "Cannot decrypt or parse signing key"),

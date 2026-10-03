@@ -87,9 +87,9 @@ from typing import Any, cast
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.jomrr.ca.plugins.module_utils._authority_generations import (
-    authority_generations,
     generation_root,
     generation_stem,
+    legacy_id,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     OPERATION_ERRORS,
@@ -104,6 +104,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     sanitize_error,
     set_attrs,
     write_file,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._generation_history import (
+    ca_history,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import read_json
 from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
@@ -163,8 +166,11 @@ def _artifacts_from_authorities(
     artifacts = []
 
     for name, authority in authority_by_name.items():
-        for identity in authority_generations(root, name):
-            ca_stem = generation_stem(root, name, identity)
+        history = ca_history(root, name)
+        history.require_current()
+        legacy = legacy_id(root, name, history=history)
+        for identity in history.certificates:
+            ca_stem = generation_stem(name, identity, legacy)
             retained = generation_root(root, name) / identity
             for artifact_format in ("pem", "der", "txt"):
                 source = (
