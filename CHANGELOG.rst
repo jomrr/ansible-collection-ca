@@ -4,6 +4,14 @@ jomrr.ca 1.1 Release Notes
 
 .. contents:: Topics
 
+v1.1.2
+======
+
+Bugfixes
+--------
+
+- certificate and certificate_batch - make ad_object_guid optional for the mskdc profile. Omitted or empty values skip the NTDS objectGUID extension; non-empty invalid GUIDs still fail validation.
+
 v1.1.1
 ======
 

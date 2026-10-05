@@ -15,7 +15,7 @@ dependencies: {}
 documentation: https://github.com/jomrr/ansible-collection-ca
 homepage: https://github.com/jomrr/ansible-collection-ca
 issues: https://github.com/jomrr/ansible-collection-ca/issues
-version: 1.1.1
+version: 1.1.2
 readme: README.md
 repository: https://github.com/jomrr/ansible-collection-ca
 build_ignore:

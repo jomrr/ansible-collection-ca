@@ -114,3 +114,12 @@ releases:
       - crl-optional-subject.yml
       - inventory-base-url.yml
     release_date: '2026-10-03'
+  1.1.2:
+    changes:
+      bugfixes:
+        - certificate and certificate_batch - make ad_object_guid optional for the
+          mskdc profile. Omitted or empty values skip the NTDS objectGUID extension;
+          non-empty invalid GUIDs still fail validation.
+    fragments:
+      - mskdc-optional-guid.yml
+    release_date: '2026-10-05'
