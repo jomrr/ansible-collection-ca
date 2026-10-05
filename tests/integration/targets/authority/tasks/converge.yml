@@ -166,7 +166,6 @@
         key_size: 2048
         pfx_passphrase: test-export-passphrase
         krb5_realm: EXAMPLE.TEST
-        ad_object_guid: 8f2a02d1-862a-47cf-9a9b-6bda9c3bd2c5
       - name: fritzbox
         type: fritzbox
         common_name: fritzbox.example.test

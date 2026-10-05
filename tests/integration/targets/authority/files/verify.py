@@ -70,6 +70,20 @@ def verify_profiles(base: Path) -> None:
         assert cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value == (
             profile + ".example.test"
         )
+        if profile == "mskdc":
+            assert x509.ObjectIdentifier("1.3.6.1.4.1.311.25.1") not in {
+                extension.oid for extension in cert.extensions
+            }
+            assert any(
+                isinstance(name, x509.OtherName)
+                and name.type_id == x509.ObjectIdentifier("1.3.6.1.5.2.2")
+                for name in cert.extensions.get_extension_for_class(
+                    x509.SubjectAlternativeName
+                ).value
+            )
+            cert.extensions.get_extension_for_oid(
+                x509.ObjectIdentifier("1.3.6.1.4.1.311.20.2")
+            )
     for profile in ("identity", "identity_full"):
         key, exported_cert, extras = pkcs12.load_key_and_certificates(
             (base / f"certs/{profile}/{profile}.pfx").read_bytes(),

@@ -148,13 +148,11 @@ def _ad_guid_hex(value: Any) -> str:
     if GUID_HEX_RE.match(guid_hex):
         return guid_hex.upper()
 
-    raise ValueError(
-        "mskdc certificate requires ad_object_guid as canonical GUID or raw 16-byte hex"
-    )
+    raise ValueError("mskdc ad_object_guid must be a canonical GUID or raw 16-byte hex")
 
 
 def _apply_mskdc_extensions(params: dict[str, Any]) -> dict[str, Any]:
-    """Add PKINIT SAN and NTDS objectGUID extensions to module params."""
+    """Add the PKINIT SAN and optional NTDS objectGUID extension to module params."""
     result = dict(params)
     realm = str(result.pop("krb5_realm", "") or "").strip().upper()
     if not KRB5_REALM_RE.match(realm):
@@ -171,15 +169,14 @@ def _apply_mskdc_extensions(params: dict[str, Any]) -> dict[str, Any]:
         for extension in (result.get("raw_extensions") or [])
         if str(extension.get("oid")) != "1.3.6.1.4.1.311.25.1"
     ]
-    raw_extensions.append(
-        {
-            "oid": "1.3.6.1.4.1.311.25.1",
-            "value": (
-                "ASN1:FORMAT:HEX,OCTETSTRING:"
-                + _ad_guid_hex(result.pop("ad_object_guid", ""))
-            ),
-        }
-    )
+    guid = str(result.pop("ad_object_guid", "") or "").strip()
+    if guid:
+        raw_extensions.append(
+            {
+                "oid": "1.3.6.1.4.1.311.25.1",
+                "value": "ASN1:FORMAT:HEX,OCTETSTRING:" + _ad_guid_hex(guid),
+            }
+        )
     result["raw_extensions"] = raw_extensions
     return result
 

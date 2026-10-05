@@ -104,8 +104,8 @@ or replace existing certificate material.
   Default formats: `pem`, `der`, `txt`; Key Usage: `digitalSignature`,
   `keyEncipherment`; Extended Key Usage: `serverAuth`, `clientAuth`,
   `1.3.6.1.5.2.3.5`; Extra behavior: Adds DNS SAN, KRB5PrincipalName PKINIT SAN,
-  NTDS objectGUID extension, and `DomainController` template extension. Requires
-  `ad_object_guid` and `krb5_realm` or module `kerberos_realm`.
+  and `DomainController` template extension. Adds the NTDS objectGUID extension
+  only when `ad_object_guid` is set. Requires `krb5_realm` or module `kerberos_realm`.
 
 - **`fritzbox`**
   Default formats: `pem`, `der`, `txt`, `fritzbox`; Key Usage:
@@ -321,9 +321,10 @@ These keys are accepted inside `certificate`.
   Type: str; Required: no; Default: `0755`; Allowed values: octal mode string;
   Secret: no
 
-- **`ad_object_guid`**: Required for `mskdc`. Encoded as NTDS objectGUID
-  extension OID `1.3.6.1.4.1.311.25.1`.
-  Type: str; Required: conditional; Default: none; Allowed values: canonical
+- **`ad_object_guid`**: Optional for `mskdc`. When set, encoded as NTDS objectGUID
+  extension OID `1.3.6.1.4.1.311.25.1`. Omitted or empty values skip the extension;
+  non-empty invalid values are rejected.
+  Type: str; Required: no; Default: none; Allowed values: canonical
   GUID or raw 16-byte hex; Secret: no
 
 - **`krb5_realm`**: MSKDC PKINIT realm.
@@ -643,8 +644,6 @@ Issue a Samba AD domain controller certificate:
     certificate_types:
       mskdc:
         issuer: component
-        required_fields:
-          - ad_object_guid
     authorities: "{{ ca_authorities }}"
 ```
 

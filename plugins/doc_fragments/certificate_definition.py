@@ -268,7 +268,10 @@ options:
         description: PKINIT realm for C(mskdc); defaults to O(kerberos_realm).
         type: str
       ad_object_guid:
-        description: AD object GUID for C(mskdc), in canonical GUID or raw hexadecimal form.
+        description:
+          - Optional AD object GUID for C(mskdc), in canonical GUID or raw 16-byte hexadecimal form.
+          - When omitted or empty, the NTDS objectGUID extension C(1.3.6.1.4.1.311.25.1)
+            is not added. Non-empty values must be valid GUIDs.
         type: str
       fritzbox_deploy:
         description: Optional deployment settings, accepted for reusing certificate definitions.

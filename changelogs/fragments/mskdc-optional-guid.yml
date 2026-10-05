@@ -1,0 +1,4 @@
+---
+bugfixes:
+  - certificate and certificate_batch - make ad_object_guid optional for the mskdc profile.
+    Omitted or empty values skip the NTDS objectGUID extension; non-empty invalid GUIDs still fail validation.

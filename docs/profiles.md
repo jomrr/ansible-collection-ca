@@ -56,8 +56,8 @@ them against the actual public key during extension construction and omits
 - **`mskdc`**
   Formats: `pem`, `der`, `txt`; Digest: `sha384`; Key Usage: `digitalSignature`,
   `keyEncipherment`; Extended Key Usage: `serverAuth`, `clientAuth`,
-  `1.3.6.1.5.2.3.5`; Extra behavior: Adds DNS SAN, KRB5PrincipalName SAN, NTDS
-  objectGUID, and DomainController template extension.
+  `1.3.6.1.5.2.3.5`; Extra behavior: Adds DNS SAN, KRB5PrincipalName SAN,
+  optional NTDS objectGUID, and DomainController template extension.
 
 - **`fritzbox`**
   Formats: `pem`, `der`, `txt`, `fritzbox`; Digest: `sha384`; Key Usage:
@@ -72,12 +72,15 @@ The `mskdc` profile adds:
 - SAN `otherName:1.3.6.1.5.2.2;SEQUENCE:<internal-name>` for
   KRB5PrincipalName.
 - Raw extension `1.3.6.1.4.1.311.25.1` containing the AD objectGUID as an
-  OCTET STRING in directory byte order.
+  OCTET STRING in directory byte order, only when `ad_object_guid` is set.
 - Raw extension `1.3.6.1.4.1.311.20.2` containing BMPString
   `DomainController`.
 - EKU OID `1.3.6.1.5.2.3.5` for KDC Authentication.
 
-`ad_object_guid` may be canonical GUID syntax or raw 16-byte hexadecimal text.
+`ad_object_guid` is optional and may be canonical GUID syntax or raw 16-byte
+hexadecimal text. Omitted or empty values skip its extension without an error;
+non-empty invalid values are rejected. PKINIT and the other profile extensions
+remain in place.
 `krb5_realm` must match `^[A-Z0-9][A-Z0-9._-]*$`.
 
 ## Defaults And Constants

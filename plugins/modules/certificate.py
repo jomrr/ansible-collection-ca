@@ -131,8 +131,6 @@ EXAMPLES = r"""
     certificate_types:
       mskdc:
         issuer: component
-        required_fields:
-          - ad_object_guid
     authorities: "{{ ca_authorities }}"
 """
 
