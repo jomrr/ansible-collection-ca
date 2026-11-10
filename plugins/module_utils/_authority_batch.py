@@ -119,10 +119,14 @@ def prepare_authorities(params: dict[str, Any]) -> list[dict[str, Any]]:
     return prepared
 
 
-def ensure_authority_batch(params: dict[str, Any]) -> AuthorityBatchResult:
+def ensure_authority_batch(
+    params: dict[str, Any], *, check_mode: bool = False
+) -> AuthorityBatchResult:
     """Run authority, inventory and chain operations under one graph lock."""
     prepared = prepare_authorities(params)
     results: list[AuthorityResult] = []
+    identities: set[str] = set()
+    pending_chains: set[str] = set()
     if prepared:
         base_dir = params["base_dir"]
         locks = frozenset(
@@ -131,12 +135,23 @@ def ensure_authority_batch(params: dict[str, Any]) -> AuthorityBatchResult:
                 *authority_lock_paths(base_dir, (item["name"] for item in prepared)),
             ]
         )
-        with file_locks(locks):
+        with file_locks(locks, readonly=check_mode):
             for item in prepared:
-                material = ensure_authority(item, held_locks=locks)
+                material = ensure_authority(
+                    item,
+                    held_locks=locks,
+                    check_mode=check_mode,
+                    issuer_pending=item["parent"] in identities,
+                )
+                if material.get("identity_changed"):
+                    identities.add(item["name"])
+                if material.get("material_pending") or item["parent"] in pending_chains:
+                    pending_chains.add(item["name"])
                 chain = ensure_authority_chain(
                     {**item, "formats": ["pem", "der", "txt"], "mode": "0644"},
                     held_locks=locks,
+                    check_mode=check_mode,
+                    material_pending=item["name"] in pending_chains,
                 )
                 results.append(
                     AuthorityResult(

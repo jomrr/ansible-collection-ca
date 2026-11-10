@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    CertificateOperation,
     IssuerUrls,
-    Publication,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import CrlCredentials
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
@@ -85,7 +85,7 @@ def legacy_id(
             raise ValueError(f"Unknown legacy_generation for authority {name}")
         return selected
     if records is None:
-        records = issued_history(base_dir, name, history.certificates)
+        records = issued_history(base_dir, name, history.certificates, check_mode=True)
     return infer_legacy_id(name, history.certificates, records)
 
 
@@ -95,18 +95,19 @@ def generation_stem(name: str, identity: str, legacy: str) -> str:
 
 
 def issuer_urls(
-    base_dir: str,
-    publication: Publication,
+    params: CertificateOperation,
     name: str,
     subject: x509.Name,
     public_key: PublicKey,
 ) -> IssuerUrls:
     """Return AIA/CDP URLs from the actual locked signing identity."""
     identity = generation_id(subject, public_key)
-    stem = generation_stem(name, identity, legacy_id(base_dir, name) or identity)
+    stem = generation_stem(
+        name, identity, legacy_id(params.request["storage"].base_dir, name) or identity
+    )
     return IssuerUrls(
-        publication.url(f"{stem}.der", aia=True),
-        publication.url(f"{stem}.crl", aia=False),
+        params.request["publication"].url(f"{stem}.der", aia=True),
+        params.request["publication"].url(f"{stem}.crl", aia=False),
     )
 
 
@@ -115,30 +116,36 @@ def retain_generation(
     name: str,
     cert: x509.Certificate,
     attributes: FileAttributes,
-    selected: str = "",
+    *,
+    check_mode: bool = False,
 ) -> bool:
     """Retain public issuer material before replacing a CA and after issuance."""
     history = ca_history(base_dir, name)
-    legacy = legacy_id(base_dir, name, selected, history)
+    legacy = legacy_id(base_dir, name, history=history)
     history.certificates[generation_id(cert.subject, cert.public_key())] = cert
-    return store_generations(base_dir, name, history.certificates, legacy, attributes)
+    return store_generations(
+        generation_root(base_dir, name),
+        history.certificates,
+        legacy,
+        attributes,
+        check_mode=check_mode,
+    )
 
 
 def store_generations(
-    base_dir: str,
-    name: str,
+    root: Path,
     issuers: dict[str, x509.Certificate],
     legacy: str,
     attributes: FileAttributes,
+    *,
+    check_mode: bool = False,
 ) -> bool:
     """Persist the resolved legacy owner and supplied public generation snapshot."""
-    root = generation_root(base_dir, name)
     changed = write_json(
         str(root / "legacy.json"),
         {"generation_id": legacy},
-        attributes.owner,
-        attributes.group,
-        "0644",
+        FileAttributes(attributes.owner, attributes.group, "0644"),
+        check_mode=check_mode,
     )
     attributes = FileAttributes(attributes.owner, attributes.group, "0644")
     for retained_id, retained in issuers.items():
@@ -152,6 +159,7 @@ def store_generations(
                     str(root / retained_id / f"certificate.{suffix}"),
                     content,
                     attributes,
+                    check_mode=check_mode,
                 )
                 or changed
             )

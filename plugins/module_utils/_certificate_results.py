@@ -7,6 +7,7 @@ from __future__ import annotations
 from typing import NotRequired, TypedDict
 
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    CertificateOperation,
     RenewalDecision,
     RenewalPolicy,
 )
@@ -60,8 +61,46 @@ class CertificateResult(MaterialChanges, ExportChanges):
     txt_path: str
     fullchain_path: str
     fritzbox_bundle_path: str
+    identity_changed: NotRequired[bool]
+    material_pending: NotRequired[bool]
     csr_mode: NotRequired[bool]
     common_name: NotRequired[str]
     name: NotRequired[str]
     profile: NotRequired[str]
     inventory_changed: NotRequired[bool]
+
+
+def certificate_result(
+    params: CertificateOperation,
+    changes: MaterialChanges,
+    exports: ExportChanges,
+    renewal: RenewalDecision,
+) -> CertificateResult:
+    """Combine artifact changes with stable result metadata."""
+    result: CertificateResult = {
+        "directory_changed": changes["directory_changed"],
+        "archive_changed": changes["archive_changed"],
+        "key_changed": changes["key_changed"],
+        "csr_changed": changes["csr_changed"],
+        "cert_changed": changes["cert_changed"],
+        "der_changed": exports["der_changed"],
+        "txt_changed": exports["txt_changed"],
+        "chain_changed": exports["chain_changed"],
+        "pkcs12_changed": exports["pkcs12_changed"],
+        "fullchain_changed": exports["fullchain_changed"],
+        "fritzbox_bundle_changed": exports["fritzbox_bundle_changed"],
+        "pkcs12_paths": exports["pkcs12_paths"],
+        "changed": any(changes.values())
+        or any(value for name, value in exports.items() if name.endswith("_changed")),
+        "formats": params.request["exports"].formats,
+        "renewal": renewal,
+        "csr_path": params.paths["csr_path"],
+        "cert_path": params.paths["cert_path"],
+        "txt_path": params.paths["txt_path"],
+        "fullchain_path": params.paths["fullchain_path"],
+        "fritzbox_bundle_path": params.paths["fritzbox_bundle_path"],
+    }
+
+    if "generation_changed" in changes:
+        result["generation_changed"] = changes["generation_changed"]
+    return result

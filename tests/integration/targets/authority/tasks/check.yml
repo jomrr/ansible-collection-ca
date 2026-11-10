@@ -161,11 +161,11 @@
         ad_object_guid: 8f2a02d1-862a-47cf-9a9b-6bda9c3bd2c5
   check_mode: true
   register: ca_check
-- name: Verify check mode skips certificate_batch
+- name: Verify check mode predicts certificate batch
   ansible.builtin.assert:
     that:
-      - ca_check is skipped
-      - ca_check is not changed
+      - ca_check is not skipped
+      - ca_check.changed == ca_expected_batch_change
 - name: Check crl
   jomrr.ca.crl:
     base_dir: '{{ ca_test_root.path }}/pki'

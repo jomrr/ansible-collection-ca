@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, TypeGuard
+from typing import Any, TypeGuard, cast
 
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     MATERIAL_ERRORS,
@@ -26,7 +26,7 @@ try:
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
     from cryptography.hazmat.primitives.asymmetric.types import PrivateKeyTypes
-    from cryptography.x509.oid import NameOID
+    from cryptography.x509.oid import NameOID, SignatureAlgorithmOID
 except ImportError:
     pass
 
@@ -314,3 +314,25 @@ def load_existing_certificate(path: str) -> x509.Certificate | None:
         return load_certificate(path)
     except MATERIAL_ERRORS:
         return None
+
+
+def signature_algorithm_oid(
+    public_key: PublicKey, digest: str
+) -> x509.ObjectIdentifier:
+    """Derive the signing OID from the CA public key and configured digest."""
+    hash_name = digest_algorithm(digest).name.upper()
+    if isinstance(public_key, ed25519.Ed25519PublicKey):
+        return SignatureAlgorithmOID.ED25519
+    if isinstance(public_key, ed448.Ed448PublicKey):
+        return SignatureAlgorithmOID.ED448
+    for key_class, prefix in (
+        (rsa.RSAPublicKey, "RSA"),
+        (ec.EllipticCurvePublicKey, "ECDSA"),
+        (dsa.DSAPublicKey, "DSA"),
+    ):
+        if isinstance(public_key, key_class):
+            return cast(
+                x509.ObjectIdentifier,
+                getattr(SignatureAlgorithmOID, f"{prefix}_WITH_{hash_name}"),
+            )
+    raise ValueError("Unsupported CA public key for signing")

@@ -39,6 +39,21 @@ options:
     version_added: 0.1.0
 """
 
+    BATCH: ClassVar[str] = DOCUMENTATION.replace(
+        "support: none\n    description: Skipped in check mode without "
+        "changing the managed host.",
+        "support: full\n    description: Predict changes without writing files or "
+        "generating cryptographic material.",
+    ).replace(
+        "notes:\n",
+        """notes:
+- Check mode reads existing state under shared locks where lock files exist.
+  Missing locks are not created; predictions for new state are snapshots.
+- A missing issuer is treated as pending creation. Validation requiring its future
+  material or inventory is deferred until it exists. No serial numbers are reserved.
+""",
+    )
+
     CRYPTOGRAPHY: ClassVar[str] = r"""
 requirements:
 - cryptography >= 43 on the managed host

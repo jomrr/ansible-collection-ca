@@ -15,6 +15,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_args import 
     authority_list_argument,
     certificate_options,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_preview import (
+    preview_certificates,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results import (
     CertificateMetadata,
     CertificateResult,
@@ -350,7 +353,9 @@ def ensure_certificate_artifacts(
     return result
 
 
-def ensure_certificate_batch(params: dict[str, Any]) -> dict[str, Any]:
+def ensure_certificate_batch(
+    params: dict[str, Any], *, check_mode: bool = False
+) -> dict[str, Any]:
     """Ensure a list of managed certificates and compose inventory once."""
     prepared: list[tuple[int, CertificateMetadata, dict[str, Any]]] = []
     for index, certificate in enumerate(_as_list(params.get("certificates"))):
@@ -362,11 +367,15 @@ def ensure_certificate_batch(params: dict[str, Any]) -> dict[str, Any]:
 
     issuer_groups = Counter(str(model["issuer"]) for _index, model, _params in prepared)
 
-    raw_results = ensure_x509_many(
-        [x509_params for _index, _model, x509_params in prepared],
-        signed=True,
-        manage_directory=True,
-        manage_chain=True,
+    raw_results = (
+        preview_certificates([item[2] for item in prepared])
+        if check_mode
+        else ensure_x509_many(
+            [x509_params for _index, _model, x509_params in prepared],
+            signed=True,
+            manage_directory=True,
+            manage_chain=True,
+        )
     )
     results: dict[int, CertificateResult] = {}
     inventory_records: list[
@@ -376,12 +385,16 @@ def ensure_certificate_batch(params: dict[str, Any]) -> dict[str, Any]:
     for (index, model, x509_params), raw_result in zip(prepared, raw_results):
         result = _finalize_prepared_certificate_result(model, raw_result)
         _sync_model_common_name(model, result)
-        result["inventory_changed"] = False
+        result["inventory_changed"] = result.pop("material_pending", False)
+        result.pop("identity_changed", None)
         results[index] = result
-        inventory_records.append((x509_params, model, result))
+        if not result["inventory_changed"]:
+            inventory_records.append((x509_params, model, result))
         changed = changed or bool(result["changed"])
 
-    inventory_changed = update_certificates_inventory(inventory_records)
+    inventory_changed = update_certificates_inventory(
+        inventory_records, check_mode=check_mode
+    ) or any(result["inventory_changed"] for result in results.values())
     if inventory_changed:
         changed = True
 

@@ -178,4 +178,5 @@ def ensure_txt(params: CertificateOperation, cert: x509.Certificate) -> bool:
         params.paths["txt_path"],
         certificate_text(cert),
         params.request["storage"].attributes(),
+        check_mode=params.check_mode,
     )

@@ -35,10 +35,10 @@
         path: '{{ ca_batch_params.base_dir }}'
       register: ca_batch_before
 
-    - name: Verify check mode skips without writes
+    - name: Verify check mode predicts creation without writes
       ansible.builtin.assert:
         that:
-          - ca_batch_check is skipped
+          - ca_batch_check is changed
           - not ca_batch_before.stat.exists
 
     - name: Manage reversed authority graph and repeat
@@ -114,9 +114,9 @@
       check_mode: true
       register: ca_batch_check
 
-    - name: Verify converged check mode skips
+    - name: Verify converged check mode is unchanged
       ansible.builtin.assert:
-        that: ca_batch_check is skipped
+        that: ca_batch_check is not changed
   always:
     - name: Remove authority batch fixture
       ansible.builtin.file:

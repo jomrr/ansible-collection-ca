@@ -131,3 +131,11 @@ Ansible controls redaction: before core 2.22 secrets are removed from module
 results; newer cores preserve the values and mask displayed output. Their global
 secret masker ignores values shorter than its minimum length. Use sufficiently
 long passphrases or task-level `no_log: true` when short secrets must remain hidden.
+
+## Check mode
+
+Check mode predicts certificate creation, renewal, force and export repairs without
+generating keys, signing material, or writing files and inventory. Missing issuers
+are treated as pending creation; validation requiring their future material is
+deferred. Existing lock files are held shared; missing locks are not created.
+Diff mode is unsupported.

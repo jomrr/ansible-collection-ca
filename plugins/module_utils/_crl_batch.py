@@ -96,12 +96,12 @@ def prepare_crls(params: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def ensure_crl_batch(
-    params: dict[str, Any], *, warn: Callable[[str], None]
+    params: dict[str, Any], *, warn: Callable[[str], None], check_mode: bool = False
 ) -> CrlBatchResult:
     """Run independent CRL operations, releasing each authority's locks in turn."""
     results: list[AuthorityCrlResult] = []
     for values in prepare_crls(params):
-        result = ensure_authority_crls(values, warn=warn)
+        result = ensure_authority_crls(values, warn=warn, check_mode=check_mode)
         results.append({"name": values["name"], **result})
     return CrlBatchResult(
         changed=any(result["changed"] for result in results),

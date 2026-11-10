@@ -51,54 +51,84 @@ except ImportError:
 def update_authority_inventory(
     params: dict[str, Any],
     result: CertificateResult,
+    *,
+    check_mode: bool = False,
 ) -> bool:
     """Record authority fragments and compose inventory in one transaction."""
     base_dir = str(params["base_dir"]).rstrip("/")
-    with file_lock(inventory_lock_path(base_dir)):
-        changed = record_authority_inventory(params, result)
-        return _compose_inventory_if_configured_unlocked(params) or changed
+    with file_lock(inventory_lock_path(base_dir), readonly=check_mode):
+        changed = record_authority_inventory(params, result, check_mode=check_mode)
+        return (
+            _compose_inventory_if_configured_unlocked(params, check_mode=check_mode)
+            or changed
+        )
 
 
 def update_certificate_inventory(
     params: dict[str, Any],
     model: CertificateMetadata,
     result: CertificateResult,
+    *,
+    check_mode: bool = False,
 ) -> bool:
     """Record certificate fragments and compose inventory in one transaction."""
     base_dir = str(params["base_dir"]).rstrip("/")
-    with file_lock(inventory_lock_path(base_dir)):
-        changed = record_certificate_inventory(params, model, result)
-        return _compose_inventory_if_configured_unlocked(params) or changed
+    with file_lock(inventory_lock_path(base_dir), readonly=check_mode):
+        changed = record_certificate_inventory(
+            params, model, result, check_mode=check_mode
+        )
+        return (
+            _compose_inventory_if_configured_unlocked(params, check_mode=check_mode)
+            or changed
+        )
 
 
 def update_certificates_inventory(
     records: list[tuple[dict[str, Any], CertificateMetadata, CertificateResult]],
+    *,
+    check_mode: bool = False,
 ) -> bool:
     """Record multiple certificate fragments and compose inventory once."""
     if not records:
         return False
 
     base_dir = str(records[0][0]["base_dir"]).rstrip("/")
-    with file_lock(inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir), readonly=check_mode):
         changed = False
         for params, model, result in records:
-            changed = record_certificate_inventory(params, model, result) or changed
-        return _compose_inventory_if_configured_unlocked(records[0][0]) or changed
+            changed = (
+                record_certificate_inventory(
+                    params, model, result, check_mode=check_mode
+                )
+                or changed
+            )
+        return (
+            _compose_inventory_if_configured_unlocked(
+                records[0][0], check_mode=check_mode
+            )
+            or changed
+        )
 
 
-def update_crl_inventory(plan: CrlPlan, crl: x509.CertificateRevocationList) -> bool:
+def update_crl_inventory(
+    plan: CrlPlan, crl: x509.CertificateRevocationList, *, check_mode: bool = False
+) -> bool:
     """Record CRL fragments and compose inventory in one transaction."""
     request = plan.request
-    with file_lock(inventory_lock_path(request.context.base_dir)):
+    with file_lock(inventory_lock_path(request.context.base_dir), readonly=check_mode):
         changed = False
         for crl_format, path in plan.paths.items():
-            changed = record_crl_inventory(plan, crl, crl_format, path) or changed
+            changed = (
+                record_crl_inventory(plan, crl, crl_format, path, check_mode=check_mode)
+                or changed
+            )
         if request.context.ca_name:
             changed = (
                 _write_composed_inventory_unlocked(
                     base_dir=request.context.base_dir,
                     ca_name=request.context.ca_name,
                     base_url=request.context.base_url,
+                    check_mode=check_mode,
                     attrs=FileAttributes(
                         request.context.attributes.owner,
                         request.context.attributes.group,
@@ -247,11 +277,10 @@ def write_composed_inventory(
 ) -> bool:
     """Write the composed CA inventory file in an inventory transaction."""
     with file_lock(inventory_lock_path(base_dir)):
-        return _write_composed_inventory_unlocked(
-            base_dir=base_dir,
-            ca_name=ca_name,
-            base_url=base_url,
-            attrs=attrs,
+        return write_file(
+            inventory_document_path(base_dir),
+            _inventory_content(base_dir, ca_name, base_url),
+            attrs or FileAttributes(),
             force=force,
         )
 
@@ -262,30 +291,34 @@ def _write_composed_inventory_unlocked(
     ca_name: str,
     base_url: str,
     attrs: FileAttributes | None = None,
-    force: bool = False,
+    check_mode: bool = False,
 ) -> bool:
     """Write the composed CA inventory file while the state lock is held."""
-    content = (
+    return write_file(
+        inventory_document_path(base_dir),
+        _inventory_content(base_dir, ca_name, base_url),
+        attrs or FileAttributes(),
+        check_mode=check_mode,
+    )
+
+
+def _inventory_content(base_dir: str, ca_name: str, base_url: str) -> bytes:
+    """Serialize the same composed state for normal writes and predictions."""
+    return (
         json.dumps(
             _compose_inventory_unlocked(
-                base_dir=base_dir,
-                ca_name=ca_name,
-                base_url=base_url,
+                base_dir=base_dir, ca_name=ca_name, base_url=base_url
             ),
             indent=2,
             sort_keys=True,
         ).encode()
         + b"\n"
     )
-    return write_file(
-        inventory_document_path(base_dir),
-        content,
-        attrs or FileAttributes(),
-        force=force,
-    )
 
 
-def _compose_inventory_if_configured_unlocked(params: dict[str, Any]) -> bool:
+def _compose_inventory_if_configured_unlocked(
+    params: dict[str, Any], *, check_mode: bool = False
+) -> bool:
     """Compose the central CA inventory if configured while the state lock is held."""
     ca_name = str(params.get("ca_name") or "")
     if not ca_name:
@@ -295,6 +328,7 @@ def _compose_inventory_if_configured_unlocked(params: dict[str, Any]) -> bool:
         ca_name=ca_name,
         base_url=str(params.get("base_url") or ""),
         attrs=FileAttributes(params.get("owner"), params.get("group")),
+        check_mode=check_mode,
     )
 
 

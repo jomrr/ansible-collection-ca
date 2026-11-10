@@ -224,3 +224,4 @@ class CertificateOperation:
     request: CertificateRequest
     paths: CertificatePaths
     urls: IssuerUrls = field(default_factory=IssuerUrls)
+    check_mode: bool = False

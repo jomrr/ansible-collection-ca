@@ -38,8 +38,10 @@ Recorded revocations persist even after declarations are removed. Entries in
 `changed` and `inventory_changed` combine all results; `count` reports the number
 of authorities. `results` contains each authority's `name` plus the full `crl`
 result, including paths, sequence number, generations and migration conflicts.
-Migration warnings identify the affected authority. Check mode skips without
-writes; diff mode is unsupported, as with the individual module.
+Migration warnings identify the affected authority. Check mode predicts changes without signing CRLs or modifying exports, inventory,
+sequence numbers or lock files. The returned CRL number is not reserved. If the
+authority is missing, generation and path mappings are empty and selectors that
+need its future inventory are deferred. Diff mode is unsupported.
 
 ```yaml
 - name: Renew revocation lists after updating revocations

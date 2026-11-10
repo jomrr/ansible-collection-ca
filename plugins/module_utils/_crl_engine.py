@@ -43,6 +43,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._crl_state import (
     store_crl_number,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
     write_file,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._generation_history import (
@@ -96,6 +97,7 @@ def _write_crls(params: CrlPlan, crl: x509.CertificateRevocationList) -> bool:
                 crl.public_bytes(encoding),
                 params.request.context.attributes,
                 force=params.request.policy.force,
+                check_mode=params.request.check_mode,
             )
             or changed
         )
@@ -206,9 +208,12 @@ def _store_status(
                     / "status.json"
                 ),
                 state,
-                params.context.attributes.owner,
-                params.context.attributes.group,
-                "0644",
+                FileAttributes(
+                    params.context.attributes.owner,
+                    params.context.attributes.group,
+                    "0644",
+                ),
+                check_mode=params.check_mode,
             )
             or changed
         )
@@ -232,18 +237,33 @@ def _store_crls(
 ) -> CrlWriteResult:
     """Reserve the shared number, then persist status, revocations and CRL exports."""
     rebuild = any(item.changed for item in prepared)
-    number = last_crl_number(params.context.base_dir, params.context.name) + int(
-        rebuild
+    number = last_crl_number(
+        params.context.base_dir, params.context.name, check_mode=params.check_mode
+    ) + int(rebuild)
+    crls = (
+        [] if params.check_mode and rebuild else _build_crls(prepared, number, rebuild)
     )
-    crls = _build_crls(prepared, number, rebuild)
     changed, generations = _store_status(params, status)
+    if params.check_mode and rebuild:
+        for item in prepared:
+            generations[item.params.identity] = {
+                **status[item.params.identity],
+                "paths": item.params.paths,
+                "crl_number": number,
+            }
+        return {
+            "changed": True,
+            "inventory_changed": True,
+            "generations": generations,
+            "crl_number": number,
+        }
     changed = (
         store_generations(
-            params.context.base_dir,
-            params.context.name,
+            generation_root(params.context.base_dir, params.context.name),
             issuers,
             params.legacy_generation,
             params.context.attributes,
+            check_mode=params.check_mode,
         )
         or changed
     )
@@ -253,6 +273,7 @@ def _store_crls(
             params.context.name,
             number,
             params.context.attributes,
+            check_mode=params.check_mode,
         )
         or changed
         or rebuild
@@ -260,7 +281,8 @@ def _store_crls(
     inventory_changed = False
     for generation_params, crl in crls:
         inventory_changed = (
-            update_crl_inventory(generation_params, crl) or inventory_changed
+            update_crl_inventory(generation_params, crl, check_mode=params.check_mode)
+            or inventory_changed
         )
         changed = _write_crls(generation_params, crl) or changed
         identity = generation_params.identity
@@ -277,8 +299,24 @@ def _store_crls(
     }
 
 
-def ensure_crls(values: dict[str, Any]) -> CrlResult:
+def ensure_crls(values: dict[str, Any], *, check_mode: bool = False) -> CrlResult:
     """Prepare all CRLs first, then reserve numbers and persist state and exports."""
+    history = ca_history(values["base_dir"], values["name"])
+    if check_mode and history.current is None:
+        params = CrlRequest.from_input(values, [])
+        return {
+            "changed": True,
+            "inventory_changed": True,
+            "generations": {},
+            "crl_number": last_crl_number(
+                values["base_dir"], values["name"], check_mode=True
+            )
+            + 1,
+            "paths": {},
+            "formats": params.formats,
+            "legacy_generation": params.legacy_generation,
+            "migration_conflicts": [],
+        }
     params = CrlRequest.from_input(
         values,
         [
@@ -287,14 +325,19 @@ def ensure_crls(values: dict[str, Any]) -> CrlResult:
                 base_dir=values["base_dir"],
                 authority=values["name"],
                 entries=values["revoked_certificates"],
+                check_mode=check_mode,
             )
         ],
     )
-    history = ca_history(params.context.base_dir, params.context.name)
+    params.check_mode = check_mode
     current = history.require_current()
     current_id = generation_id(current.subject, current.public_key())
-    issuers = history.certificates
-    records = issued_history(params.context.base_dir, params.context.name, issuers)
+    records = issued_history(
+        params.context.base_dir,
+        params.context.name,
+        history.certificates,
+        check_mode=check_mode,
+    )
     params.legacy_generation = legacy_id(
         params.context.base_dir,
         params.context.name,
@@ -302,16 +345,18 @@ def ensure_crls(values: dict[str, Any]) -> CrlResult:
         history,
         records,
     )
-    deadlines = retirement_times(issuers, records)
+    deadlines = retirement_times(history.certificates, records)
     crl_time = now_utc(strip_microseconds=True)
     status: dict[str, GenerationStatus] = {
         identity: {
             "retire_at": timestamp_z(deadlines[identity]),
             "retired": identity != current_id and deadlines[identity] <= crl_time,
         }
-        for identity in issuers
+        for identity in history.certificates
     }
-    previous_number = last_crl_number(params.context.base_dir, params.context.name)
+    previous_number = last_crl_number(
+        params.context.base_dir, params.context.name, check_mode=check_mode
+    )
     prepared = [
         _prepare_crl(
             _generation_params(
@@ -323,10 +368,10 @@ def ensure_crls(values: dict[str, Any]) -> CrlResult:
             previous_number,
             history.key_paths.get(identity, []),
         )
-        for identity, cert in issuers.items()
+        for identity, cert in history.certificates.items()
         if not status[identity]["retired"]
     ]
-    result = _store_crls(params, issuers, prepared, status)
+    result = _store_crls(params, history.certificates, prepared, status)
     revoked = {str(entry["serial_number"]) for entry in params.revoked_certificates}
     conflicts: list[MigrationConflict] = [
         {

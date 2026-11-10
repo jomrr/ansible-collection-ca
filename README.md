@@ -31,12 +31,12 @@ ansible-galaxy collection install jomrr.ca
 | Name | idempotent | check_mode | Description |
 | ---- | ---------- | ---------- | ----------- |
 | [`jomrr.ca.authority`](plugins/modules/authority.py) | yes | no | Manage a CA authority certificate |
-| [`jomrr.ca.authority_batch`](plugins/modules/authority_batch.py) | yes | no | Manage authorities and chains in one parent-first batch |
+| [`jomrr.ca.authority_batch`](plugins/modules/authority_batch.py) | yes | yes | Manage authorities and chains in one parent-first batch |
 | [`jomrr.ca.certificate`](plugins/modules/certificate.py) | yes | no | Dispatch one managed CA collection certificate to the built-in X.509 profiles |
-| [`jomrr.ca.certificate_batch`](plugins/modules/certificate_batch.py) | yes | no | Dispatch managed CA collection certificates in one batch |
+| [`jomrr.ca.certificate_batch`](plugins/modules/certificate_batch.py) | yes | yes | Dispatch managed CA collection certificates in one batch |
 | [`jomrr.ca.chain`](plugins/modules/chain.py) | yes | no | Manage an ordered PEM certificate chain on the managed host |
 | [`jomrr.ca.crl`](plugins/modules/crl.py) | yes | no | Manage CA collection certificate revocation lists |
-| [`jomrr.ca.crl_batch`](plugins/modules/crl_batch.py) | yes | no | Manage authority CRLs in one batch |
+| [`jomrr.ca.crl_batch`](plugins/modules/crl_batch.py) | yes | yes | Manage authority CRLs in one batch |
 | [`jomrr.ca.fritzbox_deploy`](plugins/modules/fritzbox_deploy.py) | yes | no | Deploy a FritzBox PEM certificate bundle to FRITZ!OS |
 | [`jomrr.ca.publish`](plugins/modules/publish.py) | yes | no | Publish public AIA/CDP files directly on the CA host |
 | [`jomrr.ca.publish_archive`](plugins/modules/publish_archive.py) | yes | no | Create deterministic public AIA/CDP publish archives on the managed host |
@@ -66,9 +66,18 @@ Python 3.12. The `authority_map` filter runs on the controller and needs
 no additional Python libraries. No other runtime collections are required.
 
 The modules retain the source role's file layout and certificate profiles.
-Check mode skips these state-changing modules without writing files;
-diff mode is not implemented. Repeated execution is idempotent unless
+`authority_batch`, `certificate_batch` and `crl_batch` support check mode:
+they predict creation, renewal, `force` and artifact repairs without
+writing keys, certificates, CRLs, inventory, sequence numbers or locks.
+Other modules are skipped in check mode; diff mode is not implemented.
+Repeated execution is idempotent unless
 renewal is due, requested attributes differ, or `force` is set.
+
+Check mode reads existing state under shared locks where lock files exist.
+It does not create missing locks, so first-run predictions are snapshots.
+A missing issuer is reported as pending creation; validation that needs
+its future material or inventory is deferred. CRL generation paths remain
+empty until that issuer exists. Predicted CRL numbers are not reserved.
 
 ## Authority and Certificate Lifecycle
 

@@ -53,7 +53,7 @@ def validate_key_revocation(params: CertificateOperation, key: PublicKey) -> Non
     """Reject reuse of a known compromised key, regardless of name or current serial."""
     base_dir = str(params.request["storage"].base_dir)
     fingerprint = public_key_fingerprint(key)
-    with file_lock(inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir), readonly=params.check_mode):
         compromised = {
             (event["issuer"], event["serial_number_hex"])
             for event in read_collection(base_dir, "revocations")

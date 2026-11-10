@@ -21,6 +21,8 @@
   block:
     - name: Check all modules before convergence
       ansible.builtin.include_tasks: check.yml
+      vars:
+        ca_expected_batch_change: true
     - name: Inspect check mode filesystem
       ansible.builtin.stat:
         path: '{{ ca_test_root.path }}/pki'
@@ -39,6 +41,8 @@
         ca_expect_changed: false
     - name: Check all modules after convergence
       ansible.builtin.include_tasks: check.yml
+      vars:
+        ca_expected_batch_change: false
     - name: Update certificate SAN
       jomrr.ca.certificate: &id001
         base_dir: '{{ ca_test_root.path }}/pki'

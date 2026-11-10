@@ -58,8 +58,10 @@ def authority_lock_paths(base_dir: str, names: Iterable[str]) -> list[str]:
     ]
 
 
-def _remove_file(path: str) -> bool:
+def _remove_file(path: str, *, check_mode: bool = False) -> bool:
     """Remove a managed file if it exists."""
+    if check_mode:
+        return Path(path).exists() or Path(path).is_symlink()
     try:
         Path(path).unlink()
     except FileNotFoundError:
@@ -88,7 +90,11 @@ def _chain_content(certificates: list[x509.Certificate], chain_format: str) -> b
 
 
 def ensure_authority_chain(
-    params: dict[str, Any], *, held_locks: frozenset[str] = frozenset()
+    params: dict[str, Any],
+    *,
+    held_locks: frozenset[str] = frozenset(),
+    check_mode: bool = False,
+    material_pending: bool = False,
 ) -> ChainResult:
     """Maintain exports; held_locks must be owned by the calling operation."""
     formats = normalize_formats(
@@ -102,13 +108,23 @@ def ensure_authority_chain(
         ca_lock_path(params["base_dir"], "authority", "__graph__"),
         *authority_lock_paths(params["base_dir"], [params["name"]]),
     ]
-    with file_locks(path for path in locks if path not in held_locks):
-        certificates = ordered_chain(params["base_dir"], params["name"])
-        if len(certificates) == 1 and is_self_signed(certificates[0]):
+    with file_locks(
+        (path for path in locks if path not in held_locks), readonly=check_mode
+    ):
+        certificates = (
+            []
+            if material_pending
+            else ordered_chain(params["base_dir"], params["name"])
+        )
+        root_pending = material_pending and params.get("parent") == params["name"]
+        if root_pending or (len(certificates) == 1 and is_self_signed(certificates[0])):
             changed = False
             for path in paths.values():
-                changed = _remove_file(path) or changed
+                changed = _remove_file(path, check_mode=check_mode) or changed
             state = "absent"
+        elif material_pending:
+            changed = True
+            state = "present"
         else:
             changed = False
             for chain_format, path in paths.items():
@@ -119,6 +135,7 @@ def ensure_authority_chain(
                         content,
                         FileAttributes.from_params(params, "mode"),
                         force=params["force"],
+                        check_mode=check_mode,
                     )
                     or changed
                 )

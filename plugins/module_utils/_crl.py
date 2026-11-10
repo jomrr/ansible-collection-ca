@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import datetime as _dt
-from typing import Any, cast
+from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import (
     CrlPlan,
@@ -28,15 +28,13 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     timestamp_iso,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
-    digest_algorithm,
     signature_algorithm,
+    signature_algorithm_oid,
 )
 
 try:
     from ansible_collections.jomrr.ca.plugins.module_utils._types import PrivateKey
     from cryptography import x509
-    from cryptography.hazmat.primitives.asymmetric import dsa, ec, ed448, ed25519, rsa
-    from cryptography.x509.oid import SignatureAlgorithmOID
 
     REASON_FLAGS = {
         "key_compromise": x509.ReasonFlags.key_compromise,
@@ -169,29 +167,6 @@ def _same_existing_number(
     return bool(numbers) and None not in numbers and len(set(numbers)) == 1
 
 
-def _signature_algorithm_oid(
-    ca_cert: x509.Certificate, digest: str
-) -> x509.ObjectIdentifier:
-    """Derive the CRL signing OID from the CA public key and configured digest."""
-    hash_name = digest_algorithm(digest).name.upper()
-    public_key = ca_cert.public_key()
-    if isinstance(public_key, ed25519.Ed25519PublicKey):
-        return SignatureAlgorithmOID.ED25519
-    if isinstance(public_key, ed448.Ed448PublicKey):
-        return SignatureAlgorithmOID.ED448
-    for key_class, prefix in (
-        (rsa.RSAPublicKey, "RSA"),
-        (ec.EllipticCurvePublicKey, "ECDSA"),
-        (dsa.DSAPublicKey, "DSA"),
-    ):
-        if isinstance(public_key, key_class):
-            return cast(
-                x509.ObjectIdentifier,
-                getattr(SignatureAlgorithmOID, f"{prefix}_WITH_{hash_name}"),
-            )
-    raise ValueError("Unsupported CA public key for CRL signing")
-
-
 def _renewal_due(
     crl: x509.CertificateRevocationList, params: CrlPlan, now: _dt.datetime
 ) -> bool:
@@ -219,8 +194,8 @@ def needs_rebuild(
     if not _same_existing_number(existing_crls):
         return True
     current_time = now_utc()
-    desired_signature_algorithm = _signature_algorithm_oid(
-        ca_cert, params.request.policy.digest
+    desired_signature_algorithm = signature_algorithm_oid(
+        ca_cert.public_key(), params.request.policy.digest
     )
     desired_authority_key = _desired_authority_key_identifier(ca_cert)
     for crl in existing_crls.values():

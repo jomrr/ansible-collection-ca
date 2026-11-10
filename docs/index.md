@@ -112,7 +112,13 @@ section.
 Secret-looking values are masked from module error messages. Parameters marked
 as secret in the argument spec also use `no_log: true`.
 
-All public modules currently use `supports_check_mode: false`.
+`authority_batch`, `certificate_batch` and `crl_batch` support check mode.
+They predict creation, renewal, force and artifact repairs without generating
+keys or signing material, reserving numbers, or writing files. Existing lock
+files are held shared; missing locks are never created, so first-run predictions
+are snapshots. Missing issuers are treated as pending creation; checks depending
+on their future material or inventory are deferred. The other modules still skip
+check mode. Diff mode remains unsupported.
 
 ## Derived Path Layout
 

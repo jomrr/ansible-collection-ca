@@ -93,6 +93,7 @@ class CrlRequest:
     formats: list[str]
     revoked_certificates: list[Revocation]
     legacy_generation: str
+    check_mode: bool = False
 
     @classmethod
     def from_input(

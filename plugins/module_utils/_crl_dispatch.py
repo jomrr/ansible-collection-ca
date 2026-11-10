@@ -53,7 +53,7 @@ def validate_crl_policy(params: dict[str, Any]) -> None:
 
 
 def ensure_authority_crls(
-    params: dict[str, Any], *, warn: Callable[[str], None]
+    params: dict[str, Any], *, warn: Callable[[str], None], check_mode: bool = False
 ) -> CrlResult:
     """Reconcile one authority under its existing authority and CRL locks."""
     validate_crl_policy(params)
@@ -61,9 +61,10 @@ def ensure_authority_crls(
         [
             ca_lock_path(params["base_dir"], "authority", params["name"]),
             ca_lock_path(params["base_dir"], "crl", params["name"]),
-        ]
+        ],
+        readonly=check_mode,
     ):
-        result = ensure_crls(params)
+        result = ensure_crls(params, check_mode=check_mode)
     if result["migration_conflicts"]:
         warn(
             f"Authority {params['name']}: Some certificates reference legacy URLs "

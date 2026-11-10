@@ -47,13 +47,13 @@ def record_path(base_dir: str, *parts: str) -> str:
 def write_json(
     path: str,
     data: Mapping[str, object],
-    owner: Any,
-    group: Any,
-    mode: str,
+    attrs: FileAttributes,
+    *,
+    check_mode: bool = False,
 ) -> bool:
     """Write deterministic JSON state."""
     content = json.dumps(data, indent=2, sort_keys=True).encode() + b"\n"
-    return write_file(path, content, FileAttributes(owner, group, mode))
+    return write_file(path, content, attrs, check_mode=check_mode)
 
 
 def read_json(path: str) -> dict[str, Any]:

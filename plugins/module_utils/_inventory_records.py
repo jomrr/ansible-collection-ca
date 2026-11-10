@@ -15,6 +15,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results impo
     CertificateResult,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import CrlPlan
+from ansible_collections.jomrr.ca.plugins.module_utils._file import FileAttributes
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     record_path,
     write_json,
@@ -76,6 +77,8 @@ def _certificate_record_paths(
 def record_authority_inventory(
     params: dict[str, Any],
     result: CertificateResult,
+    *,
+    check_mode: bool = False,
 ) -> bool:
     """Record current authority state as an internal inventory fragment."""
     base_dir = str(params["base_dir"]).rstrip("/")
@@ -106,17 +109,15 @@ def record_authority_inventory(
             certificate["serial_number_hex"],
         ),
         record,
-        params.get("owner"),
-        params.get("group"),
-        "0644",
+        FileAttributes(params.get("owner"), params.get("group"), "0644"),
+        check_mode=check_mode,
     )
     return (
         write_json(
             record_path(base_dir, "authorities", name),
             record,
-            params.get("owner"),
-            params.get("group"),
-            "0644",
+            FileAttributes(params.get("owner"), params.get("group"), "0644"),
+            check_mode=check_mode,
         )
         or changed
     )
@@ -126,6 +127,8 @@ def record_certificate_inventory(
     params: dict[str, Any],
     model: CertificateMetadata,
     result: CertificateResult,
+    *,
+    check_mode: bool = False,
 ) -> bool:
     """Record managed certificate issuance state as inventory fragments."""
     base_dir = str(params["base_dir"]).rstrip("/")
@@ -159,17 +162,15 @@ def record_certificate_inventory(
     changed = write_json(
         record_path(base_dir, "issued_certificates", issuer, serial_hex),
         record,
-        params.get("owner"),
-        params.get("group"),
-        "0644",
+        FileAttributes(params.get("owner"), params.get("group"), "0644"),
+        check_mode=check_mode,
     )
     return (
         write_json(
             record_path(base_dir, "current_certificates", name),
             pointer,
-            params.get("owner"),
-            params.get("group"),
-            "0644",
+            FileAttributes(params.get("owner"), params.get("group"), "0644"),
+            check_mode=check_mode,
         )
         or changed
     )
@@ -180,6 +181,8 @@ def record_crl_inventory(
     crl: x509.CertificateRevocationList,
     crl_format: str,
     path: str,
+    *,
+    check_mode: bool = False,
 ) -> bool:
     """Record CRL and revocation state as internal inventory fragments."""
     base_dir = plan.request.context.base_dir.rstrip("/")
@@ -204,9 +207,12 @@ def record_crl_inventory(
     changed = write_json(
         record_path(base_dir, "crls", authority, record_name),
         record,
-        plan.request.context.attributes.owner,
-        plan.request.context.attributes.group,
-        "0644",
+        FileAttributes(
+            plan.request.context.attributes.owner,
+            plan.request.context.attributes.group,
+            "0644",
+        ),
+        check_mode=check_mode,
     )
     for entry in plan.request.revoked_certificates:
         event = entry
@@ -219,9 +225,12 @@ def record_crl_inventory(
                     event["serial_number_hex"],
                 ),
                 event,
-                plan.request.context.attributes.owner,
-                plan.request.context.attributes.group,
-                "0644",
+                FileAttributes(
+                    plan.request.context.attributes.owner,
+                    plan.request.context.attributes.group,
+                    "0644",
+                ),
+                check_mode=check_mode,
             )
             or changed
         )

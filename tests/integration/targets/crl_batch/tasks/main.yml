@@ -39,10 +39,10 @@
         path: '{{ ca_crl_params.base_dir }}'
       register: ca_crl_before
 
-    - name: Verify check mode skips without writes
+    - name: Verify check mode predicts creation without writes
       ansible.builtin.assert:
         that:
-          - ca_crl_check is skipped
+          - ca_crl_check is changed
           - not ca_crl_before.stat.exists
 
     - name: Create fixture authorities
@@ -127,9 +127,9 @@
       check_mode: true
       register: ca_crl_check
 
-    - name: Verify converged check mode skips
+    - name: Verify converged check mode is unchanged
       ansible.builtin.assert:
-        that: ca_crl_check is skipped
+        that: ca_crl_check is not changed
   always:
     - name: Remove CRL batch fixture
       ansible.builtin.file:

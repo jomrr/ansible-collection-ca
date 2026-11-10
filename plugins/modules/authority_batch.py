@@ -23,7 +23,7 @@ notes:
   batch; completed authorities remain managed.
 - An empty authority list returns unchanged without creating CA state.
 extends_documentation_fragment:
-- jomrr.ca.context
+- jomrr.ca.context.batch
 - jomrr.ca.context.ownership
 - jomrr.ca.context.publishing
 - jomrr.ca.context.cryptography
@@ -101,6 +101,7 @@ results:
 # Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.
 # pylint: disable=wrong-import-position
 from collections.abc import Callable
+from functools import partial
 from typing import cast
 
 from ansible.module_utils.basic import AnsibleModule
@@ -118,9 +119,11 @@ from ansible_collections.jomrr.ca.plugins.module_utils._module import (
 def run_module() -> None:
     """Run the authority batch through the standard Ansible lifecycle."""
     module = cast(Callable[..., AnsibleModule], AnsibleModule)(
-        argument_spec=authority_batch_argument_spec(), supports_check_mode=False
+        argument_spec=authority_batch_argument_spec(), supports_check_mode=True
     )
-    execute_certificate(module, ensure_authority_batch)
+    execute_certificate(
+        module, partial(ensure_authority_batch, check_mode=module.check_mode)
+    )
 
 
 def main() -> None:

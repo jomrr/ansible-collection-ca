@@ -12,13 +12,21 @@ import datetime as _dt
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    CertificateOperation,
     RenewalDecision,
     RenewalPolicy,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
+    certificate_not_valid_after,
+    certificate_not_valid_before,
     now_utc,
     parse_datetime,
 )
+
+try:
+    from cryptography import x509
+except ImportError:
+    pass
 
 
 def _bool(value: Any) -> bool:
@@ -150,3 +158,22 @@ def renewal_status(
         "rekey_on_renewal": policy["rekey"],
         "policy": policy,
     }
+
+
+def certificate_renewal(
+    params: CertificateOperation, existing_cert: x509.Certificate | None
+) -> RenewalDecision:
+    """Return renewal and rekey decisions for an existing certificate."""
+    if existing_cert is None:
+        return renewal_decision(
+            force=bool(params.request["force"]),
+            not_before=None,
+            not_after=None,
+            policy_value=params.request["renewal"],
+        )
+    return renewal_decision(
+        force=bool(params.request["force"]),
+        not_before=certificate_not_valid_before(existing_cert),
+        not_after=certificate_not_valid_after(existing_cert),
+        policy_value=params.request["renewal"],
+    )

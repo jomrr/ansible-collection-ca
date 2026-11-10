@@ -173,7 +173,7 @@ class AuthorityBatchTests(TestCase):
         self.assertFalse(result["changed"])
         self.assertEqual(result["results"], [])
         self.assertFalse(self.base.exists())
-        self.assertTrue(self.invoke(_ansible_check_mode=True)["skipped"])
+        self.assertTrue(self.invoke(_ansible_check_mode=True)["changed"])
         self.assertFalse(self.base.exists())
         failed = self.invoke(force="invalid-" + self.items[0]["key_passphrase"])
         self.assertTrue(failed["failed"])

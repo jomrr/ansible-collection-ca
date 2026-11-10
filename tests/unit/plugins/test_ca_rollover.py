@@ -221,7 +221,8 @@ class TestCaRollover(TestCase):
         # Disable only the new URL/retention additions while constructing old state.
         with (
             patch(
-                "ansible_collections.jomrr.ca.plugins.module_utils._x509.issuer_urls",
+                "ansible_collections.jomrr.ca.plugins.module_utils."
+                "_x509_validation.issuer_urls",
                 return_value=IssuerUrls(
                     "http://pki.example.test/aia/issuer-ca.der",
                     "http://pki.example.test/crl/issuer-ca.crl",

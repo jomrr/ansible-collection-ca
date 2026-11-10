@@ -19,6 +19,10 @@ from unittest.mock import patch
 from ansible.release import __version__
 from ansible_collections.jomrr.ca.plugins.module_utils._file import ca_lock_path
 from ansible_collections.jomrr.ca.plugins.modules import crl_batch
+from ansible_collections.jomrr.ca.tests.unit.plugins.batch_check_fixture import (
+    forbid_mutation,
+    snapshot,
+)
 from ansible_collections.jomrr.ca.tests.unit.plugins.certificate_fixture import (
     CertificateFixture,
 )
@@ -144,7 +148,7 @@ class CrlBatchTests(TestCase):
         self.assertTrue(all(item["changed"] for item in forced["results"]))
         self.assertEqual([item["crl_number"] for item in forced["results"]], [3, 2])
         self.assertFalse(self.invoke()["changed"])
-        self.assertTrue(self.invoke(_ansible_check_mode=True)["skipped"])
+        self.assertFalse(self.invoke(_ansible_check_mode=True)["changed"])
         self.assertEqual(certificates, {p: p.read_bytes() for p in certificates})
 
     def test_invalid_batch_before_writes(self) -> None:
@@ -165,7 +169,7 @@ class CrlBatchTests(TestCase):
                 self.assertTrue(self.invoke(**case)["failed"])
                 self.assertFalse((self.base / "crl").exists())
         self.assertFalse(self.invoke(authorities=[])["changed"])
-        self.assertTrue(self.invoke(_ansible_check_mode=True)["skipped"])
+        self.assertTrue(self.invoke(_ansible_check_mode=True)["changed"])
         self.assertFalse((self.base / "crl").exists())
 
     def test_rollover_and_archived_credentials(self) -> None:
@@ -180,8 +184,15 @@ class CrlBatchTests(TestCase):
             archived_key_passphrases={old_id: "test-passphrase"},
             legacy_generation=old_id,
         )
+        before = snapshot(self.base)
+        with forbid_mutation():
+            predicted = self.invoke(_ansible_check_mode=True)
+        self.assertEqual(before, snapshot(self.base))
         result = self.invoke()
         self.assertTrue(result["changed"])
+        self.assertEqual(
+            predicted["results"][0]["generations"], result["results"][0]["generations"]
+        )
         generations = result["results"][0]["generations"]
         self.assertEqual(len(generations), 2)
         self.assertTrue(all(not item["retired"] for item in generations.values()))

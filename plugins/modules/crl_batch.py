@@ -25,7 +25,7 @@ notes:
   fail before writes. An operational failure stops the batch; earlier authorities
   may already have been updated and are reconciled on the next run.
 - This is independent of M(jomrr.ca.authority_batch), allowing CRL-only task tags.
-extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership,
+extends_documentation_fragment: [jomrr.ca.context.batch, jomrr.ca.context.ownership,
   jomrr.ca.context.publishing, jomrr.ca.context.cryptography, jomrr.ca.crl_batch]
 options:
   revocations:
@@ -75,6 +75,9 @@ results:
     of M(jomrr.ca.crl), including C(changed), C(inventory_changed), C(paths),
     C(formats), C(crl_number), C(generations), C(legacy_generation) and
     C(migration_conflicts). No credentials are included.
+  - In check mode C(crl_number) is a prediction, never a reserved sequence number.
+    If the authority is missing, C(paths), C(generations) and C(migration_conflicts)
+    are empty; revocation selectors requiring its inventory are deferred.
   type: list
   elements: dict
   returned: success
@@ -101,9 +104,12 @@ from ansible_collections.jomrr.ca.plugins.module_utils._module import (
 def main() -> None:
     """Run CRL reconciliation through the shared Ansible lifecycle."""
     module = cast(Callable[..., AnsibleModule], AnsibleModule)(
-        argument_spec=crl_batch_argument_spec(), supports_check_mode=False
+        argument_spec=crl_batch_argument_spec(), supports_check_mode=True
     )
-    execute_certificate(module, partial(ensure_crl_batch, warn=module.warn))
+    execute_certificate(
+        module,
+        partial(ensure_crl_batch, warn=module.warn, check_mode=module.check_mode),
+    )
 
 
 if __name__ == "__main__":

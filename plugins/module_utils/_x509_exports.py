@@ -8,6 +8,9 @@ X.509 exports helpers."""
 
 from __future__ import annotations
 
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results import (
+    ExportChanges,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
     CertificateOperation,
 )
@@ -19,12 +22,14 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     set_attrs,
     write_file,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._text import ensure_txt
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import is_self_signed
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     cert_fingerprint,
     load_certificates,
     public_key_bytes,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import SignerMaterial
 
 try:
     from ansible_collections.jomrr.ca.plugins.module_utils._types import PrivateKey
@@ -43,6 +48,7 @@ def ensure_der(params: CertificateOperation, cert: x509.Certificate) -> bool:
         params.paths["der_path"],
         cert.public_bytes(serialization.Encoding.DER),
         params.request["storage"].attributes(),
+        check_mode=params.check_mode,
     )
 
 
@@ -62,6 +68,7 @@ def ensure_chain(
         params.paths["chain_path"],
         content,
         params.request["storage"].attributes(),
+        check_mode=params.check_mode,
     )
 
 
@@ -157,14 +164,6 @@ def ensure_pkcs12_exports(
         or params.request["subject"].common_name
         or params.request["name"]
     )
-    content = pkcs12.serialize_key_and_certificates(
-        name=friendly_name.encode(),
-        key=key,
-        cert=cert,
-        cas=extra_certs,
-        encryption_algorithm=serialization.BestAvailableEncryption(passphrase.encode()),
-    )
-
     changed = False
     for path in paths.values():
         export_changed = bool(params.request["force"]) or not _pkcs12_existing_matches(
@@ -175,11 +174,24 @@ def ensure_pkcs12_exports(
             extra_certs,
         )
         if export_changed:
+            if params.check_mode:
+                changed = True
+                continue
+            content = pkcs12.serialize_key_and_certificates(
+                name=friendly_name.encode(),
+                key=key,
+                cert=cert,
+                cas=extra_certs,
+                encryption_algorithm=serialization.BestAvailableEncryption(
+                    passphrase.encode()
+                ),
+            )
             changed = (
                 write_file(
                     path,
                     content,
                     params.request["storage"].attributes(private=True),
+                    check_mode=params.check_mode,
                     force=True,
                 )
                 or changed
@@ -191,6 +203,7 @@ def ensure_pkcs12_exports(
                     params.request["storage"].owner,
                     params.request["storage"].group,
                     params.request["storage"].key_mode,
+                    check_mode=params.check_mode,
                 )
                 or changed
             )
@@ -213,6 +226,7 @@ def ensure_fullchain_bundle(
         params.paths["fullchain_path"],
         content,
         params.request["storage"].attributes(),
+        check_mode=params.check_mode,
         force=params.request["force"],
     )
 
@@ -232,5 +246,45 @@ def ensure_fritzbox_bundle(
         params.paths["fritzbox_bundle_path"],
         content,
         params.request["storage"].attributes(private=True),
+        check_mode=params.check_mode,
         force=params.request["force"],
     )
+
+
+def ensure_exports(
+    params: CertificateOperation,
+    cert: x509.Certificate,
+    signer: SignerMaterial,
+    key: PrivateKey | None,
+    manage_chain: bool,
+) -> ExportChanges:
+    """Write the requested public and private certificate exports."""
+    changes: ExportChanges = {
+        "der_changed": ensure_der(params, cert),
+        "txt_changed": ensure_txt(params, cert),
+        "chain_changed": ensure_chain(params, signer.cert) if manage_chain else False,
+        "pkcs12_changed": False,
+        "fullchain_changed": False,
+        "pkcs12_paths": {},
+        "fritzbox_bundle_changed": False,
+    }
+    bundle_content = signer.chain_content
+    extra_certs = signer.extra_certs
+    if not params.request["authority"] and set(
+        params.request["exports"].formats
+    ).intersection({"pfx", "p12", "fullchain", "fritzbox"}):
+        bundle_content = bundle_content or chain_content(params, signer.cert)
+        if key is not None:
+            extra_certs = extra_certs or chain_certificates(params, signer.cert)
+    paths: dict[str, str] = {}
+    if key is not None:
+        changes["pkcs12_changed"], paths = ensure_pkcs12_exports(
+            params, key, cert, extra_certs
+        )
+    changes["fullchain_changed"] = ensure_fullchain_bundle(params, cert, bundle_content)
+    if key is not None:
+        changes["fritzbox_bundle_changed"] = ensure_fritzbox_bundle(
+            params, cert, bundle_content
+        )
+    changes["pkcs12_paths"] = paths
+    return changes

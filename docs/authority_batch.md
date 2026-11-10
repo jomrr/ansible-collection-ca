@@ -39,7 +39,10 @@ locking. Renewal, issuer constraints, retained generations and file permissions
 use the same engines as individual operations. A failure stops execution;
 completed authorities remain managed and are reconciled on the next run.
 
-Check mode skips the module without mutation; diff mode is unsupported. Nested
+Check mode predicts material, inventory and chain changes without writes or key
+generation. Parent changes propagate to dependent certificates and chains.
+Missing issuers are treated as pending creation; validation of their future
+constraints is deferred. Diff mode is unsupported. Nested
 credential fields are redacted by Ansible. The role also sets `no_log: true`.
 
 ## Result

@@ -31,18 +31,18 @@ from ansible_collections.jomrr.ca.plugins.module_utils._key_revocation import (
 from ansible_collections.jomrr.ca.plugins.module_utils._paths import archive_directory
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import serial_hex
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
-    certificate_not_valid_after,
     now_utc,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_compare import (
+    certificate_matches,
+    csr_matches,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
     add_extensions,
-    extensions_equal,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     as_public_key,
-    cert_public_key_bytes,
     csr_common_name,
-    csr_public_key_bytes,
     generate_private_key,
     key_matches,
     key_spec,
@@ -51,7 +51,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     load_csr_bytes,
     load_private_key,
     private_key_pem,
-    public_key_bytes,
     signature_algorithm,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
@@ -113,6 +112,7 @@ def _archive_file(
             params.request["storage"].group,
             mode,
         ),
+        check_mode=params.check_mode,
     )
 
 
@@ -151,31 +151,30 @@ def archive_existing_material(
     return changed
 
 
+def reusable_key(params: CertificateOperation, *, rekey: bool) -> PrivateKey | None:
+    """Validate a reusable key without generating or modifying any material."""
+    spec = key_spec(params.request["key"].key_type, params.request["key"].key_size)
+    if params.request["force"] or rekey:
+        return None
+    try:
+        key = load_private_key(
+            params.paths["key_path"], params.request["key"].passphrase
+        )
+    except FileNotFoundError:
+        return None
+    if not key_matches(key, spec):
+        return None
+    validate_key_revocation(params, key.public_key())
+    return key
+
+
 def ensure_key(
     params: CertificateOperation, *, rekey: bool, existing_cert: x509.Certificate | None
 ) -> tuple[PrivateKey, bool]:
     """Ensure the private key exists with the requested key properties."""
     spec = key_spec(params.request["key"].key_type, params.request["key"].key_size)
-    key = None
+    key = reusable_key(params, rekey=rekey)
     changed = False
-    if not params.request["force"] and not rekey:
-        try:
-            key = load_private_key(
-                params.paths["key_path"], params.request["key"].passphrase
-            )
-        except FileNotFoundError:
-            key = None
-        if key is not None:
-            if key_matches(key, spec):
-                validate_key_revocation(params, key.public_key())
-            else:
-                _archive_file(
-                    params,
-                    existing_cert,
-                    params.paths["key_path"],
-                    params.request["storage"].key_mode,
-                )
-                key = None
     if key is None:
         _archive_file(
             params,
@@ -216,21 +215,27 @@ def ensure_csr(
     csr_extensions: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
 ) -> tuple[x509.CertificateSigningRequest, bool]:
     """Ensure the CSR matches the requested subject, key, and extensions."""
-    builder = x509.CertificateSigningRequestBuilder().subject_name(subject)
-    builder = add_extensions(builder, csr_extensions)
-    csr = builder.sign(key, signature_algorithm(key, params.request["digest"]))
-    changed = params.request["force"]
-    if not changed:
-        try:
-            existing = load_csr(params.paths["csr_path"])
-            changed = (
-                existing.subject != subject
-                or existing.signature_algorithm_oid != csr.signature_algorithm_oid
-                or csr_public_key_bytes(existing) != public_key_bytes(key)
-                or not extensions_equal(existing.extensions, csr_extensions)
-            )
-        except MATERIAL_ERRORS:
-            changed = True
+    try:
+        existing = load_csr(params.paths["csr_path"])
+    except MATERIAL_ERRORS:
+        existing = None
+    changed = (
+        params.request["force"]
+        or existing is None
+        or not csr_matches(
+            existing,
+            CertificateSpec(key, subject, csr_extensions),
+            params.request["digest"],
+        )
+    )
+    if changed:
+        builder = x509.CertificateSigningRequestBuilder().subject_name(subject)
+        builder = add_extensions(builder, csr_extensions)
+        csr = builder.sign(key, signature_algorithm(key, params.request["digest"]))
+    else:
+        if existing is None:
+            raise ValueError("Missing CSR after comparison")
+        csr = existing
     content = (
         csr.public_bytes(serialization.Encoding.PEM)
         if changed
@@ -287,6 +292,7 @@ def ensure_external_csr(
         content,
         params.request["storage"].attributes(),
         force=params.request["force"],
+        check_mode=params.check_mode,
     )
     return csr, changed
 
@@ -313,38 +319,30 @@ def ensure_certificate(
         .not_valid_after(now + _dt.timedelta(days=int(params.request["days"])))
     )
     builder = add_extensions(builder, spec.extensions)
-    cert = builder.sign(
-        private_key=signer.key,
-        algorithm=signature_algorithm(signer.key, params.request["digest"]),
-    )
-
-    changed = params.request["force"] or renewal["renew"]
-    if not changed:
+    existing = existing_cert
+    if existing is None:
         try:
-            existing = (
-                existing_cert
-                if existing_cert is not None
-                else load_certificate(params.paths["cert_path"])
-            )
-            current_time = now_utc()
-            if certificate_not_valid_after(existing) <= current_time:
-                changed = True
-            else:
-                changed = (
-                    existing.subject != spec.subject
-                    or existing.signature_algorithm_oid != cert.signature_algorithm_oid
-                    or existing.issuer != issuer
-                    or cert_public_key_bytes(existing) != public_key_bytes(spec.key)
-                    or not extensions_equal(existing.extensions, spec.extensions)
-                )
+            existing = load_certificate(params.paths["cert_path"])
         except MATERIAL_ERRORS:
-            changed = True
+            existing = None
+    changed = (
+        params.request["force"]
+        or renewal["renew"]
+        or existing is None
+        or not certificate_matches(
+            existing, spec, issuer, as_public_key(signer.key), params.request["digest"]
+        )
+    )
 
     if changed:
         archive_existing_material(
             params,
             existing_cert,
             include_private_key=False,
+        )
+        cert = builder.sign(
+            private_key=signer.key,
+            algorithm=signature_algorithm(signer.key, params.request["digest"]),
         )
         content = cert.public_bytes(serialization.Encoding.PEM)
     else:

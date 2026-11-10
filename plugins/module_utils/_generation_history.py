@@ -175,10 +175,14 @@ def _record_issuer(
 
 
 def issued_history(
-    base_dir: str, name: str, issuers: dict[str, x509.Certificate]
+    base_dir: str,
+    name: str,
+    issuers: dict[str, x509.Certificate],
+    *,
+    check_mode: bool = False,
 ) -> list[dict[str, Any]]:
     """Read leaf, external-CA and managed subordinate-CA issuance history."""
-    with file_lock(inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir), readonly=check_mode):
         records = [
             record
             for record in read_collection(base_dir, "issued_certificates")

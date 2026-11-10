@@ -12,7 +12,7 @@ short_description: Dispatch managed CA collection certificates in one batch
 version_added: 0.1.0
 description:
 - Dispatch managed CA collection certificates in one batch.
-extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
+extends_documentation_fragment: [jomrr.ca.context.batch, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
   jomrr.ca.context.cryptography, jomrr.ca.context.dispatch_notes, jomrr.ca.certificate, jomrr.ca.certificate_definition.batch,
   jomrr.ca.certificate_definition.authorities]
 options:
@@ -69,6 +69,7 @@ results:
 # Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.
 # pylint: disable=wrong-import-position
 from collections.abc import Callable
+from functools import partial
 from typing import cast
 
 from ansible.module_utils.basic import AnsibleModule
@@ -87,10 +88,12 @@ def run_module() -> None:
     """Run the Ansible module for batched certificate profiles."""
     module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec=batch_certificate_argument_spec(),
-        supports_check_mode=False,
+        supports_check_mode=True,
     )
 
-    execute_certificate(module, ensure_certificate_batch)
+    execute_certificate(
+        module, partial(ensure_certificate_batch, check_mode=module.check_mode)
+    )
 
 
 def main() -> None:

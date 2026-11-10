@@ -112,7 +112,7 @@ class CertificateRedactionTests(unittest.TestCase):
         self.assertEqual(
             exited.exception.code, 1 if mode in {"failure", "invalid"} else 0
         )
-        if mode in {"invalid", "check"}:
+        if mode == "invalid" or (mode == "check" and not batch):
             operation.assert_not_called()
         # Since core 2.22 the raw module transport intentionally preserves secrets.
         # Controller display masking is exercised by integration; never simulate
@@ -155,9 +155,9 @@ class CertificateRedactionTests(unittest.TestCase):
                 result = self.invoke(batch=batch, mode="invalid", encoded=True)
                 self.assertTrue(result["failed"])
 
-    def test_check_mode_skip_does_not_leak_secrets(self) -> None:
+    def test_check_mode_does_not_leak_secrets(self) -> None:
         """Ansible can skip the module during construction before normal execution."""
         for batch in (False, True):
             with self.subTest(batch=batch):
                 result = self.invoke(batch=batch, mode="check")
-                self.assertTrue(result["skipped"])
+                self.assertEqual(bool(result.get("skipped")), not batch)

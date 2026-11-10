@@ -32,24 +32,28 @@ def _stored_number(path: str) -> int:
     return number
 
 
-def last_crl_number(base_dir: str, name: str) -> int:
+def last_crl_number(base_dir: str, name: str, *, check_mode: bool = False) -> int:
     """Read the authoritative sequence number independently of CRL exports."""
-    with file_lock(inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir), readonly=check_mode):
         return _stored_number(record_path(base_dir, "crl_numbers", name))
 
 
 def store_crl_number(
-    base_dir: str, name: str, number: int, attrs: FileAttributes
+    base_dir: str,
+    name: str,
+    number: int,
+    attrs: FileAttributes,
+    *,
+    check_mode: bool = False,
 ) -> bool:
     """Reserve the number before exporting its CRL; never move it backwards."""
-    with file_lock(inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir), readonly=check_mode):
         path = record_path(base_dir, "crl_numbers", name)
         if number < _stored_number(path):
             raise ValueError(f"Refusing to decrease CRL number for {name}")
         return write_json(
             path,
             {"crl_number": number},
-            attrs.owner,
-            attrs.group,
-            "0600",
+            FileAttributes(attrs.owner, attrs.group, "0600"),
+            check_mode=check_mode,
         )

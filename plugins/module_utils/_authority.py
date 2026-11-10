@@ -20,6 +20,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     with_derived_paths,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_preview import preview_x509
 
 ROOT_CA_DEFAULTS = {
     "basic_constraints": ["CA:TRUE", "pathlen:1"],
@@ -70,7 +71,11 @@ def authority_params(params: dict[str, Any]) -> tuple[dict[str, Any], bool]:
 
 
 def ensure_authority(
-    values: dict[str, Any], *, held_locks: frozenset[str] = frozenset()
+    values: dict[str, Any],
+    *,
+    held_locks: frozenset[str] = frozenset(),
+    check_mode: bool = False,
+    issuer_pending: bool = False,
 ) -> CertificateResult:
     """Issue one authority and update its inventory, reusing caller-owned locks."""
     params, signed = authority_params(values)
@@ -81,8 +86,14 @@ def ensure_authority(
         manage_directory=False,
         manage_chain=False,
     )
-    result = ensure_x509_operation(operation, signed=signed, held_locks=held_locks)
-    inventory_changed = update_authority_inventory(params, result)
+    result = (
+        preview_x509(operation, signed=signed, issuer_pending=issuer_pending)
+        if check_mode
+        else ensure_x509_operation(operation, signed=signed, held_locks=held_locks)
+    )
+    inventory_changed = result.get(
+        "material_pending", False
+    ) or update_authority_inventory(params, result, check_mode=check_mode)
     result["inventory_changed"] = inventory_changed
     result["changed"] = result["changed"] or inventory_changed
     return result

@@ -47,8 +47,12 @@ def ca_lock_path(base_dir: str, namespace: str, name: str) -> str:
 
 
 @contextmanager
-def file_lock(path: str) -> Iterator[None]:
+def file_lock(path: str, *, readonly: bool = False) -> Iterator[None]:
     """Hold an exclusive advisory lock for one managed file operation."""
+    if readonly:
+        with _read_lock(path):
+            yield
+        return
     target = Path(path)
     lock_name = target.name
     if not lock_name:
@@ -71,12 +75,36 @@ def file_lock(path: str) -> Iterator[None]:
 
 
 @contextmanager
-def file_locks(paths: Iterable[str]) -> Iterator[None]:
+def _read_lock(path: str) -> Iterator[None]:
+    """Lock an existing snapshot without creating files or changing permissions."""
+    try:
+        parent_fd = _open_parent_directory(Path(path), create=False)
+    except FileNotFoundError:
+        yield
+        return
+    try:
+        try:
+            fd = _open_no_follow(Path(path).name, os.O_RDONLY, dir_fd=parent_fd)
+        except FileNotFoundError:
+            yield
+            return
+        try:
+            fcntl.flock(fd, fcntl.LOCK_SH)
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+    finally:
+        os.close(parent_fd)
+
+
+@contextmanager
+def file_locks(paths: Iterable[str], *, readonly: bool = False) -> Iterator[None]:
     """Hold multiple exclusive advisory locks in deterministic order."""
     lock_paths = sorted({str(path) for path in paths if path})
     with ExitStack() as stack:
         for path in lock_paths:
-            stack.enter_context(file_lock(path))
+            stack.enter_context(file_lock(path, readonly=readonly))
         yield
 
 
@@ -133,7 +161,7 @@ def _open_directory_no_follow(path: str, *, dir_fd: int | None = None) -> int:
         raise
 
 
-def _open_parent_directory(path: Path) -> int:
+def _open_parent_directory(path: Path, *, create: bool = True) -> int:
     """Create and open a target parent directory without following symlinks."""
     parent = path.parent
     if parent.is_absolute():
@@ -147,10 +175,11 @@ def _open_parent_directory(path: Path) -> int:
         for part in parts:
             if part in ("", "."):
                 continue
-            try:
-                os.mkdir(part, 0o755, dir_fd=directory_fd)
-            except FileExistsError:
-                pass
+            if create:
+                try:
+                    os.mkdir(part, 0o755, dir_fd=directory_fd)
+                except FileExistsError:
+                    pass
             next_fd = _open_directory_no_follow(part, dir_fd=directory_fd)
             os.close(directory_fd)
             directory_fd = next_fd
@@ -214,8 +243,12 @@ def _set_attrs_at(parent_fd: int, name: str, owner: Any, group: Any, mode: Any) 
         os.close(fd)
 
 
-def set_attrs(path: str, owner: Any, group: Any, mode: Any) -> bool:
+def set_attrs(
+    path: str, owner: Any, group: Any, mode: Any, *, check_mode: bool = False
+) -> bool:
     """Apply owner, group, and mode to a path and report changes."""
+    if check_mode:
+        return file_needs_update(path, FileAttributes(owner, group, mode))
     fd = _open_no_follow(path, os.O_RDONLY)
     try:
         return _set_attrs_fd(fd, owner, group, mode)
@@ -296,14 +329,62 @@ class FileAttributes:
         return set_attrs(path, self.owner, self.group, self.mode)
 
 
+def file_needs_update(
+    path: str,
+    attrs: FileAttributes,
+    content: bytes | None = None,
+    *,
+    force: bool = False,
+) -> bool:
+    """Read a target and compare content/attributes without creating its parents."""
+    target = Path(path)
+    if not target.name:
+        raise ValueError(f"Refusing to write to directory path: {path}")
+    desired_uid, desired_gid = uid(attrs.owner), gid(attrs.group)
+    desired_mode = parse_mode(attrs.mode) if attrs.mode is not None else None
+    try:
+        parent_fd = _open_parent_directory(target, create=False)
+    except FileNotFoundError:
+        return True
+    try:
+        _check_final_target(parent_fd, target.name, path)
+        try:
+            fd = _open_no_follow(target.name, os.O_RDONLY, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return True
+        try:
+            state = os.fstat(fd)
+            attributes_changed = (
+                desired_uid not in (-1, state.st_uid)
+                or desired_gid not in (-1, state.st_gid)
+                or desired_mode is not None
+                and state.st_mode & 0o7777 != desired_mode
+            )
+            return (
+                force
+                or attributes_changed
+                or (
+                    content is not None
+                    and _read_file_at(parent_fd, target.name) != content
+                )
+            )
+        finally:
+            os.close(fd)
+    finally:
+        os.close(parent_fd)
+
+
 def write_file(
     path: str,
     content: bytes,
     attrs: FileAttributes,
     *,
     force: bool = False,
+    check_mode: bool = False,
 ) -> bool:
-    """Atomically write content and enforce file attributes."""
+    """Compare first; write atomically only outside check mode."""
+    if check_mode:
+        return file_needs_update(path, attrs, content, force=force)
     target = Path(path)
     target_name = target.name
     if not target_name:

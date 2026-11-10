@@ -244,9 +244,10 @@ def resolve_revocation_entries(
     base_dir: str,
     authority: str,
     entries: list[dict[str, Any]],
+    check_mode: bool = False,
 ) -> list[dict[str, Any]]:
     """Combine persistent issuer/serial revocations with newly declared entries."""
-    with file_lock(inventory_lock_path(base_dir)):
+    with file_lock(inventory_lock_path(base_dir), readonly=check_mode):
         revoked = {
             str(event["serial_number"]): event
             for event in read_collection(base_dir, "revocations")

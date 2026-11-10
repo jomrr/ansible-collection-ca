@@ -22,6 +22,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_constraints import 
 from ansible_collections.jomrr.ca.tests.integration.targets.authority.files.csr import (
     untrusted_csr,
 )
+from ansible_collections.jomrr.ca.tests.unit.plugins.batch_check_fixture import (
+    forbid_mutation,
+    snapshot,
+)
 from ansible_collections.jomrr.ca.tests.unit.plugins.certificate_fixture import (
     CertificateFixture,
 )
@@ -342,7 +346,19 @@ class IssuanceConstraintTests(unittest.TestCase):
                 "extended_key_usage": [],
             }
         )
+        before = snapshot(self.base)
+        with forbid_mutation():
+            self.assertTrue(
+                ensure_certificate_batch(params, check_mode=True)["changed"]
+            )
+        self.assertEqual(before, snapshot(self.base))
         self.assertTrue(ensure_certificate_batch(params)["changed"])
+        before = snapshot(self.base)
+        with forbid_mutation():
+            self.assertFalse(
+                ensure_certificate_batch(params, check_mode=True)["changed"]
+            )
+        self.assertEqual(before, snapshot(self.base))
         self.assertFalse(ensure_certificate_batch(params)["changed"])
         issued = x509.load_pem_x509_certificate(
             (self.base / "certs/openbao/openbao.pem").read_bytes()
