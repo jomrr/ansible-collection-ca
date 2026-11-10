@@ -123,3 +123,15 @@ releases:
     fragments:
       - mskdc-optional-guid.yml
     release_date: '2026-10-05'
+  1.2.0:
+    modules:
+      - description: Manage authorities and chains in one parent\-first batch
+        name: authority_batch
+        namespace: ''
+      - description: Manage authority CRLs in one batch
+        name: crl_batch
+        namespace: ''
+      - description: Publish public AIA/CDP files directly on the CA host
+        name: publish
+        namespace: ''
+    release_date: '2026-11-10'

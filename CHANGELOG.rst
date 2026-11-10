@@ -1,8 +1,18 @@
 ==========================
-jomrr.ca 1.1 Release Notes
+jomrr.ca 1.2 Release Notes
 ==========================
 
 .. contents:: Topics
+
+v1.2.0
+======
+
+New Modules
+-----------
+
+- authority_batch - Manage authorities and chains in one parent\-first batch
+- crl_batch - Manage authority CRLs in one batch
+- publish - Publish public AIA/CDP files directly on the CA host
 
 v1.1.2
 ======
