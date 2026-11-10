@@ -5,17 +5,17 @@
 from __future__ import annotations
 
 import copy
-import io
 import json
 import unittest
-from contextlib import redirect_stdout
 from typing import Any
 from unittest.mock import patch
 
-from ansible.module_utils import basic
 from ansible.module_utils.common.parameters import PASS_VARS
 from ansible.release import __version__
 from ansible_collections.jomrr.ca.plugins.modules import certificate, certificate_batch
+from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
+    module_transport,
+)
 
 
 class CertificateRedactionTests(unittest.TestCase):
@@ -98,19 +98,9 @@ class CertificateRedactionTests(unittest.TestCase):
             if batch
             else self.result
         )
-        output = io.StringIO()
         with (
-            # Exercise Ansible's real decoder, including its original-arguments state.
-            patch.object(
-                basic,
-                "_ANSIBLE_ARGS",
-                json.dumps({"ANSIBLE_MODULE_ARGS": inputs}).encode(),
-            ),
-            patch.object(basic, "_PARSED_MODULE_ARGS", None),
-            patch.object(basic, "_ANSIBLE_PROFILE", "legacy"),
-            patch.object(basic.AnsibleModule, "log") as log,
+            module_transport(inputs) as (output, log),
             patch.object(plugin, operation_name, return_value=result) as operation,
-            redirect_stdout(output),
             self.assertRaises(SystemExit) as exited,
         ):
             if mode == "failure":

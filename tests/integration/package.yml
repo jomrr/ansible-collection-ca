@@ -14,6 +14,8 @@
       ansible.builtin.import_tasks: targets/fritzbox_deploy/tasks/main.yml
     - name: Exercise authority and certificate lifecycle
       ansible.builtin.import_tasks: targets/authority/tasks/main.yml
+    - name: Exercise authority batch
+      ansible.builtin.import_tasks: targets/authority_batch/tasks/main.yml
     - name: Exercise direct publication
       ansible.builtin.import_tasks: targets/publish/tasks/main.yml
     - name: Exercise controller filter

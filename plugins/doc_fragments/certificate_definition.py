@@ -3,7 +3,7 @@
 """One shared nested certificate schema for single and batch documentation."""
 
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import yaml
 
@@ -91,14 +91,20 @@ def _authority_definitions(certificate_documentation: str) -> str:
             },
         }
     )
+    return authority_list_documentation(
+        options,
+        "Authority definitions used to resolve issuer credentials "
+        "and default lifetimes.",
+    )
+
+
+def authority_list_documentation(options: dict[str, Any], description: str) -> str:
+    """Wrap authority fields in the shared nested-list documentation shape."""
     return yaml.safe_dump(
         {
             "options": {
                 "authorities": {
-                    "description": (
-                        "Authority definitions used to resolve issuer credentials "
-                        "and default lifetimes."
-                    ),
+                    "description": description,
                     "type": "list",
                     "elements": "dict",
                     "required": True,

@@ -110,7 +110,7 @@ def ensure_x509(
     manage_directory: bool = False,
     manage_chain: bool = False,
 ) -> CertificateResult:
-    """Ensure X.509 key, CSR, certificate, exports, and chain artifacts."""
+    """Ensure X.509 artifacts with the requested export lifecycle."""
     params = with_derived_paths(
         values,
         authority=authority,
@@ -118,14 +118,31 @@ def ensure_x509(
         manage_directory=manage_directory,
         manage_chain=manage_chain,
     )
+    return ensure_x509_operation(
+        params,
+        signed=signed,
+        manage_directory=manage_directory,
+        manage_chain=manage_chain,
+    )
+
+
+def ensure_x509_operation(
+    params: CertificateOperation,
+    *,
+    signed: bool,
+    manage_directory: bool = False,
+    manage_chain: bool = False,
+    held_locks: frozenset[str] = frozenset(),
+) -> CertificateResult:
+    """Execute derived state; held_locks must be owned by the calling operation."""
     lock_paths = [params.paths["lock_path"]]
-    if authority:
+    if params.request["authority"]:
         lock_paths.append(
             ca_lock_path(params.request["storage"].base_dir, "authority", "__graph__")
         )
     if signed:
         lock_paths.append(params.paths["signer_lock_path"])
-    with file_locks(lock_paths):
+    with file_locks(path for path in lock_paths if path not in held_locks):
         return _ensure_x509_locked(
             params,
             signed=signed,

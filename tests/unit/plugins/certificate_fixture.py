@@ -8,6 +8,9 @@ import os
 from pathlib import Path
 from typing import Any
 
+from ansible_collections.jomrr.ca.plugins.module_utils._authority import (
+    authority_params,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine import (
     ensure_certificate_artifacts,
     single_certificate_argument_spec,
@@ -26,7 +29,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     ca_authority_argument_spec,
 )
-from ansible_collections.jomrr.ca.plugins.modules.authority import _authority_params
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -73,7 +75,7 @@ class CertificateFixture:
             group=str(os.getgid()),
         )
         values.update(overrides)
-        params, signed = _authority_params(values)
+        params, signed = authority_params(values)
         result = ensure_x509(params, signed=signed, authority=True)
         update_authority_inventory(values, result)
         return result

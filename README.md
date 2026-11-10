@@ -31,6 +31,7 @@ ansible-galaxy collection install jomrr.ca
 | Name | idempotent | check_mode | Description |
 | ---- | ---------- | ---------- | ----------- |
 | [`jomrr.ca.authority`](plugins/modules/authority.py) | yes | no | Manage a CA authority certificate |
+| [`jomrr.ca.authority_batch`](plugins/modules/authority_batch.py) | yes | no | Manage authorities and chains in one parent-first batch |
 | [`jomrr.ca.certificate`](plugins/modules/certificate.py) | yes | no | Dispatch one managed CA collection certificate to the built-in X.509 profiles |
 | [`jomrr.ca.certificate_batch`](plugins/modules/certificate_batch.py) | yes | no | Dispatch managed CA collection certificates in one batch |
 | [`jomrr.ca.chain`](plugins/modules/chain.py) | yes | no | Manage an ordered PEM certificate chain on the managed host |
@@ -68,8 +69,12 @@ renewal is due, requested attributes differ, or `force` is set.
 
 ## Authority and Certificate Lifecycle
 
-Create the root authority first, then each issuing authority. Call
-`jomrr.ca.chain` for issuing authorities before issuing leaf certificates.
+`jomrr.ca.authority_batch` creates or renews the authority graph and its
+chains in one invocation, sorting parents before children and resolving
+parent credentials from the same authority list. It shares issuance and
+chain logic with the standalone `jomrr.ca.authority` and `jomrr.ca.chain`
+modules. With the single modules, create parents before children and
+generate issuing chains before issuing leaf certificates.
 `jomrr.ca.certificate` and `jomrr.ca.certificate_batch` share profiles for
 TLS servers and clients, EAP-TLS, identity, MSKDC, FRITZ!Box and issuing CA
 certificates. To sign an external issuing CA CSR, use `type: issuing_ca`

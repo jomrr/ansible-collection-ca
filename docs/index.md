@@ -12,8 +12,11 @@ code lives in `plugins/module_utils/` and `plugins/filter/`.
 
 Call the public modules in this order:
 
-1. `jomrr.ca.authority` creates root and issuing CA certificates.
-2. `jomrr.ca.chain` derives issuing CA chain files from the generated CA certificates.
+1. `jomrr.ca.authority_batch` manages the authority graph and its chain files in
+   one invocation, sorting parents before children. For individual operations,
+   `jomrr.ca.authority` creates root and issuing CA certificates.
+2. When using individual authority operations, `jomrr.ca.chain` derives issuing
+   CA chain files from the generated CA certificates.
 3. `jomrr.ca.certificate_batch` dispatches the declarative `ca_certificates` list to
    the built-in certificate profiles and writes all requested certificate export
    formats. Certificate entries can also sign external CSRs with `csr_path` or
@@ -25,13 +28,14 @@ Call the public modules in this order:
    issuing chains and CRLs directly into a local webroot. For other hosts, use
    `jomrr.ca.publish_archive` and transfer and unpack the resulting archive.
 
-`jomrr.ca.authority`, `jomrr.ca.certificate_batch`, `jomrr.ca.certificate`, and `jomrr.ca.crl` update
-internal CA inventory fragments. When `ca_name` is set, the fragments are
+`jomrr.ca.authority_batch`, `jomrr.ca.authority`, `jomrr.ca.certificate_batch`,
+`jomrr.ca.certificate`, and `jomrr.ca.crl` update internal CA inventory fragments. When `ca_name` is set, the fragments are
 composed into `<base_dir>/inventory/ca-inventory.json`.
 
 ## Public Modules
 
 - [jomrr.ca.authority](authority.md)
+- [jomrr.ca.authority_batch](authority_batch.md)
 - [jomrr.ca.chain](chain.md)
 - [jomrr.ca.certificate](certificate.md)
 - [jomrr.ca.certificate_batch](certificate_batch.md)

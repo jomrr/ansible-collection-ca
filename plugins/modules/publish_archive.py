@@ -85,21 +85,17 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
-    OPERATION_ERRORS,
-    require_cryptography,
-)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
-    file_locks,
     parse_mode,
-    sanitize_error,
     write_file,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._module import (
+    execute_publication,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._publish import (
     Artifact,
     publish_argument_spec,
-    publish_lock_paths,
     read_artifacts,
     resolve_artifacts,
 )
@@ -141,7 +137,21 @@ def _archive_content(
     return buffer.getvalue(), sorted(contents)
 
 
-def run_module() -> None:
+def _publish_archive(params: dict[str, Any]) -> dict[str, object]:
+    """Write the deterministic archive and return its public artifact paths."""
+    content, archive_paths = _archive_content(
+        resolve_artifacts(params), params["artifact_mode"]
+    )
+    changed = write_file(
+        params["dest"],
+        content,
+        FileAttributes.from_params(params, "mode"),
+        force=params["force"],
+    )
+    return {"changed": changed, "path": params["dest"], "archive_paths": archive_paths}
+
+
+def main() -> None:
     """Run the Ansible module for deterministic public publish archives."""
     module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec={
@@ -151,33 +161,7 @@ def run_module() -> None:
         supports_check_mode=False,
     )
 
-    params = module.params
-    try:
-        if not params["artifacts"]:
-            require_cryptography(module)
-        with file_locks(publish_lock_paths(params)):
-            content, archive_paths = _archive_content(
-                resolve_artifacts(params), params["artifact_mode"]
-            )
-            changed = write_file(
-                params["dest"],
-                content,
-                FileAttributes.from_params(params, "mode"),
-                force=params["force"],
-            )
-    except OPERATION_ERRORS as exc:
-        module.fail_json(msg=sanitize_error(exc, params))
-
-    module.exit_json(
-        changed=changed,
-        path=params["dest"],
-        archive_paths=archive_paths,
-    )
-
-
-def main() -> None:
-    """Execute the module entry point."""
-    run_module()
+    execute_publication(module, _publish_archive)
 
 
 if __name__ == "__main__":

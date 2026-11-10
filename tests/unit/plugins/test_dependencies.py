@@ -18,17 +18,21 @@ class MissingCryptographyTests(unittest.TestCase):
         """A missing library fails before operations access module parameters."""
         for name in (
             "authority",
+            "authority_batch",
             "certificate",
             "certificate_batch",
             "chain",
             "crl",
             "fritzbox_deploy",
+            "publish",
+            "publish_archive",
         ):
             with self.subTest(module=name):
                 plugin = importlib.import_module(
                     f"ansible_collections.jomrr.ca.plugins.modules.{name}"
                 )
                 module = Mock()
+                module.params = {"artifacts": []}
                 module.fail_json.side_effect = SystemExit(1)
                 with (
                     patch.object(plugin, "AnsibleModule", return_value=module),

@@ -1,0 +1,124 @@
+---
+- name: Allocate authority batch fixture
+  ansible.builtin.tempfile:
+    state: directory
+  register: ca_batch_fixture
+
+- name: Exercise authority batch
+  vars:
+    ca_batch_params: &batch_params
+      base_dir: '{{ ca_batch_fixture.path }}/pki'
+      ca_name: batch
+      subject: {country: DE, organization: Batch}
+      renewal: {renew_before_days: 0}
+      authorities:
+        - name: issuer
+          parent: root
+          common_name: Batch Issuer
+          days: 365
+          key_type: P-256
+          key_passphrase: batch-issuer-test-passphrase
+        - name: root
+          parent: root
+          common_name: Batch Root
+          days: 3650
+          key_type: P-256
+          key_passphrase: batch-root-test-passphrase
+  block:
+    - name: Check authority batch before convergence
+      jomrr.ca.authority_batch: *batch_params
+      check_mode: true
+      register: ca_batch_check
+
+    - name: Inspect check mode CA state
+      ansible.builtin.stat:
+        path: '{{ ca_batch_params.base_dir }}'
+      register: ca_batch_before
+
+    - name: Verify check mode skips without writes
+      ansible.builtin.assert:
+        that:
+          - ca_batch_check is skipped
+          - not ca_batch_before.stat.exists
+
+    - name: Manage reversed authority graph and repeat
+      jomrr.ca.authority_batch: *batch_params
+      loop: [first, repeat]
+      register: ca_batch_runs
+
+    - name: Verify batch order and idempotence
+      ansible.builtin.assert:
+        that:
+          - ca_batch_runs.results[0].changed
+          - not ca_batch_runs.results[1].changed
+          - ca_batch_runs.results[0].count == 2
+          - ca_batch_runs.results[0].results | map(attribute='name') | list == ['root', 'issuer']
+          - "'batch-root-test-passphrase' not in (ca_batch_runs | to_json)"
+          - "'batch-issuer-test-passphrase' not in (ca_batch_runs | to_json)"
+
+    - name: Inspect registered authority paths
+      ansible.builtin.stat:
+        path: '{{ item.cert_path }}'
+      loop: '{{ ca_batch_runs.results[0].results }}'
+      loop_control:
+        label: '{{ item.name }}'
+      register: ca_batch_certificates
+
+    - name: Verify registered paths identify files
+      ansible.builtin.assert:
+        that: item.stat.isreg
+      loop: '{{ ca_batch_certificates.results }}'
+      loop_control:
+        label: '{{ item.item.name }}'
+
+    - name: Verify the issuing certificate signature
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - verify
+          - -CAfile
+          - '{{ ca_batch_params.base_dir }}/ca/root-ca.pem'
+          - '{{ ca_batch_params.base_dir }}/ca/issuer-ca.pem'
+      changed_when: false
+
+    - name: Reconcile batch authority through its single module
+      jomrr.ca.authority:
+        base_dir: '{{ ca_batch_params.base_dir }}'
+        ca_name: batch
+        name: issuer
+        parent: root
+        common_name: Batch Issuer
+        days: 365
+        key_type: P-256
+        key_passphrase: batch-issuer-test-passphrase
+        parent_key_passphrase: batch-root-test-passphrase
+        subject: {country: DE, organization: Batch}
+        renewal: {renew_before_days: 0}
+      register: ca_batch_single
+
+    - name: Reconcile batch chains through their single module
+      jomrr.ca.chain:
+        base_dir: '{{ ca_batch_params.base_dir }}'
+        name: '{{ item }}'
+      loop: [root, issuer]
+      register: ca_batch_chains
+
+    - name: Verify single modules see converged batch state
+      ansible.builtin.assert:
+        that:
+          - not ca_batch_single.changed
+          - not ca_batch_chains.changed
+
+    - name: Check authority batch after convergence
+      jomrr.ca.authority_batch: *batch_params
+      check_mode: true
+      register: ca_batch_check
+
+    - name: Verify converged check mode skips
+      ansible.builtin.assert:
+        that: ca_batch_check is skipped
+  always:
+    - name: Remove authority batch fixture
+      ansible.builtin.file:
+        path: '{{ ca_batch_fixture.path }}'
+        state: absent

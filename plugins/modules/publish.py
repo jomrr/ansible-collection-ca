@@ -77,22 +77,18 @@ published_paths:
 # pylint: disable=wrong-import-position
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
-    OPERATION_ERRORS,
-    require_cryptography,
-)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
-    file_locks,
-    sanitize_error,
     write_file,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._module import (
+    execute_publication,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._publish import (
     publish_argument_spec,
-    publish_lock_paths,
     read_artifacts,
     resolve_artifacts,
 )
@@ -100,40 +96,32 @@ from ansible_collections.jomrr.ca.plugins.module_utils._publish import (
 # pylint: enable=wrong-import-position
 
 
-def run_module() -> None:
+def _publish_files(params: dict[str, Any]) -> dict[str, object]:
+    """Write all selected public artifacts before returning their change state."""
+    contents = read_artifacts(resolve_artifacts(params))
+    attrs = FileAttributes.from_params(params, "mode")
+    changed = False
+    for path, content in contents.items():
+        changed = (
+            write_file(
+                str(Path(params["dest"]) / path), content, attrs, force=params["force"]
+            )
+            or changed
+        )
+    return {
+        "changed": changed,
+        "path": params["dest"],
+        "published_paths": sorted(contents),
+    }
+
+
+def main() -> None:
     """Publish the selected public files in one managed-host operation."""
     module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec=publish_argument_spec("0644"),
         supports_check_mode=False,
     )
-    params = module.params
-    try:
-        if not params["artifacts"]:
-            require_cryptography(module)
-        with file_locks(publish_lock_paths(params)):
-            contents = read_artifacts(resolve_artifacts(params))
-            attrs = FileAttributes.from_params(params, "mode")
-            changed = False
-            for path, content in contents.items():
-                changed = (
-                    write_file(
-                        str(Path(params["dest"]) / path),
-                        content,
-                        attrs,
-                        force=params["force"],
-                    )
-                    or changed
-                )
-    except OPERATION_ERRORS as exc:
-        module.fail_json(msg=sanitize_error(exc, params))
-    module.exit_json(
-        changed=changed, path=params["dest"], published_paths=sorted(contents)
-    )
-
-
-def main() -> None:
-    """Execute the module entry point."""
-    run_module()
+    execute_publication(module, _publish_files)
 
 
 if __name__ == "__main__":
