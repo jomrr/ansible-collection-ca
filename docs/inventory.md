@@ -39,7 +39,8 @@ users to call a separate inventory module.
   revocations with persistent name bindings.
 
 - **`compose_inventory(base_dir, ca_name, base_url)`**
-  Purpose: Builds the complete inventory dictionary from fragments.
+  Purpose: Reads the complete inventory dictionary from fragments and adds current
+  validity and renewal status without writing state.
 
 - **`write_composed_inventory(base_dir, ca_name, base_url, owner, group,
   mode="0644", force=False)`**
@@ -99,7 +100,19 @@ The composed inventory contains:
 - `revocations`
 - `crls`
 
-Issued certificate records include a computed `status`:
+Stored JSON contains stable certificate metadata, renewal policy, current pointers
+and explicit revocation events. It does not persist `status` or `renewal_status`,
+including `days_remaining`, `warning` and `renewal_due`. Passage of time alone
+therefore never rewrites the inventory. Genuine renewals and revocations still do.
+
+For a current view, use `compose_inventory(...)`, or pass already loaded JSON to
+`_inventory_summary.inventory_summary(document, now=...)`. These internal helpers
+return copied records with computed fields; the input document and files remain
+unchanged. Existing fragments may contain legacy cached status: composition
+ignores it, and normal record updates remove it without rewriting archived history.
+Consumers that previously read status from the JSON must calculate it at read time.
+
+In this read view, issued certificate records include a computed `status`:
 
 - `valid`
 - `not_yet_valid`
@@ -160,8 +173,8 @@ an omitted revocation date preserves the first recorded time.
 
 The inventory does not store private keys, passphrases, PKCS#12 passphrases, or
 FRITZ!OS credentials. It stores certificate metadata, public fingerprints,
-serial numbers, validity timestamps, selected extensions, renewal policy and
-status, and generated paths.
+serial numbers, validity timestamps, selected extensions, renewal policy
+and generated paths; time-dependent status is computed only in read views.
 
 All inventory reads and writes that compose or mutate state use a shared
 inventory state lock. Certificate issuance therefore updates the issued record,

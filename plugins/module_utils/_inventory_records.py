@@ -34,7 +34,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._renewal import (
     renewal_policy,
-    renewal_status,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._time import timestamp_z
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
@@ -97,7 +96,6 @@ def record_authority_inventory(
         "self_signed": self_signed,
         "days": params.get("days"),
         "renewal": renewal_policy(params.get("renewal")),
-        "renewal_status": renewal_status(certificate, params.get("renewal")),
         "certificate": certificate,
         "paths": paths,
     }

@@ -27,19 +27,14 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory_records import
     record_certificate_inventory,
     record_crl_inventory,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._inventory_revocation import (
-    revocation_map,
-)
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import (
     inventory_document_path,
     inventory_lock_path,
     read_collection,
     read_json,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._renewal import renewal_status
-from ansible_collections.jomrr.ca.plugins.module_utils._time import (
-    now_utc,
-    parse_datetime,
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_summary import (
+    inventory_summary,
 )
 
 try:
@@ -133,44 +128,24 @@ def update_crl_inventory(
         return changed
 
 
-def _status(
-    record: dict[str, Any],
-    revocations: dict[tuple[str, str], dict[str, Any]],
-) -> dict[str, Any]:
-    """Return status for an issued certificate record."""
-    issuer = str(record["issuer"])
-    serial_hex = str(record["certificate"]["serial_number_hex"])
-    revoked = revocations.get((issuer, serial_hex))
-    if revoked is not None:
-        return {"state": "revoked", "revocation": revoked}
-    now = now_utc()
-    not_before = parse_datetime(record["certificate"]["not_valid_before"])
-    not_after = parse_datetime(record["certificate"]["not_valid_after"])
-    if not_before is None or not_after is None:
-        raise ValueError("certificate record must contain validity timestamps")
-    if not_before > now:
-        return {"state": "not_yet_valid"}
-    if not_after <= now:
-        return {"state": "expired"}
-    return {"state": "valid"}
+def _stable_record(record: dict[str, Any]) -> dict[str, Any]:
+    """Ignore cached time projections in legacy fragments without rewriting history."""
+    return {
+        key: value
+        for key, value in record.items()
+        if key not in {"status", "renewal_status"}
+    }
 
 
-def _with_status(
-    record: dict[str, Any],
-    current_pointers: dict[str, dict[str, Any]],
-    revocations: dict[tuple[str, str], dict[str, Any]],
+def _with_current(
+    record: dict[str, Any], current_pointers: dict[str, dict[str, Any]]
 ) -> dict[str, Any]:
-    """Return an issued certificate with status and current flag."""
-    result = dict(record)
+    """Add the stable current-generation flag to an issued certificate record."""
+    result = _stable_record(record)
     pointer = current_pointers.get(str(record["name"]), {})
     result["current"] = pointer.get("issuer") == record.get("issuer") and pointer.get(
         "serial_number_hex"
     ) == record.get("certificate", {}).get("serial_number_hex")
-    result["status"] = _status(record, revocations)
-    result["renewal_status"] = renewal_status(
-        record["certificate"],
-        record.get("renewal"),
-    )
     return result
 
 
@@ -191,7 +166,7 @@ def _compose_inventory_unlocked(
 ) -> dict[str, Any]:
     """Compose inventory JSON while the state lock is held."""
     authorities = sorted(
-        read_collection(base_dir, "authorities"),
+        (_stable_record(record) for record in read_collection(base_dir, "authorities")),
         key=lambda record: str(record.get("name", "")),
     )
     current_pointers = {
@@ -205,9 +180,8 @@ def _compose_inventory_unlocked(
             str(record.get("serial_number_hex", "")),
         ),
     )
-    revocation_by_serial = revocation_map(revocations)
     issued = [
-        _with_status(record, current_pointers, revocation_by_serial)
+        _with_current(record, current_pointers)
         for record in read_collection(base_dir, "issued_certificates")
     ]
     issued = sorted(
@@ -226,7 +200,10 @@ def _compose_inventory_unlocked(
         ),
     )
     authority_certificates = sorted(
-        read_collection(base_dir, "authority_certificates"),
+        (
+            _stable_record(record)
+            for record in read_collection(base_dir, "authority_certificates")
+        ),
         key=lambda record: (
             str(record.get("name", "")),
             str(record.get("certificate", {}).get("serial_number_hex", "")),
@@ -252,12 +229,14 @@ def compose_inventory(
     ca_name: str,
     base_url: str,
 ) -> dict[str, Any]:
-    """Compose inventory JSON from internal state fragments."""
-    with file_lock(inventory_lock_path(base_dir)):
-        return _compose_inventory_unlocked(
-            base_dir=base_dir,
-            ca_name=ca_name,
-            base_url=base_url,
+    """Read inventory with current time projections without writing any CA state."""
+    with file_lock(inventory_lock_path(base_dir), readonly=True):
+        return inventory_summary(
+            _compose_inventory_unlocked(
+                base_dir=base_dir,
+                ca_name=ca_name,
+                base_url=base_url,
+            )
         )
 
 

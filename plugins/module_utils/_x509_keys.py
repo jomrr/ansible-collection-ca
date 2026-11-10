@@ -176,13 +176,13 @@ def signature_algorithm(
 def load_private_key(
     path: str, passphrase: str | None, *, base_dir: str = ""
 ) -> PrivateKeyTypes:
-    """Skip RSA validation only for unchanged, collection-generated managed keys."""
+    """Skip RSA validation for unchanged generated or fully validated managed keys."""
     content = read_file(path)
     receipt = key_receipt(base_dir, path, content)
     key = serialization.load_pem_private_key(
         content,
         password=passphrase.encode() if passphrase else None,
-        unsafe_skip_rsa_key_validation=receipt is not None and receipt.generated,
+        unsafe_skip_rsa_key_validation=receipt is not None,
     )
     return key
 

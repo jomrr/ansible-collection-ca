@@ -15,6 +15,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
     compose_inventory_if_configured,
     write_composed_inventory,
 )
+from ansible_collections.jomrr.ca.tests.unit.plugins.certificate_fixture import (
+    CertificateFixture,
+)
 
 
 class InventoryTests(TestCase):
@@ -50,6 +53,42 @@ class InventoryTests(TestCase):
                     compose_inventory(**params, base_url="")["base_url"], url
                 )
                 self.assertEqual(path.read_bytes(), before)
+
+    def test_legacy_status_is_projected_without_rewriting_history(self) -> None:
+        """Ignore stale cached values in archived records when composing stable JSON."""
+        with TemporaryDirectory() as directory:
+            base = Path(directory)
+            CertificateFixture(base)
+            fragment = next(
+                (base / "inventory/state/authority_certificates/root").glob("*.json")
+            )
+            old = json.loads(fragment.read_text())
+            old["renewal_status"] = {"days_remaining": -100, "state": "expired"}
+            fragment.write_text(json.dumps(old))
+            original = fragment.read_bytes()
+            values = {"base_dir": directory, "ca_name": "test", "base_url": ""}
+            for changed in (True, False):
+                self.assertEqual(
+                    write_composed_inventory(
+                        base_dir=directory, ca_name="test", base_url=""
+                    ),
+                    changed,
+                )
+            stored = json.loads((base / "inventory/ca-inventory.json").read_text())
+            self.assertTrue(
+                all(
+                    "renewal_status" not in record
+                    for record in stored["authority_certificates"]
+                )
+            )
+            view = compose_inventory(**values)
+            self.assertTrue(
+                all(
+                    record["renewal_status"]["days_remaining"] > 0
+                    for record in view["authority_certificates"]
+                )
+            )
+            self.assertEqual(fragment.read_bytes(), original)
 
     def test_invalid_or_unreadable_inventory_is_not_treated_as_absent(self) -> None:
         """A failed metadata read must not silently replace the inventory."""

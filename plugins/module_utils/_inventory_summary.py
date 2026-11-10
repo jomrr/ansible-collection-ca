@@ -11,9 +11,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_revocation import (
+    revocation_map,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._key_usage import (
     key_usage_names,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._renewal import renewal_status
 from ansible_collections.jomrr.ca.plugins.module_utils._serial import (
     colon_hex,
     serial_hex,
@@ -22,7 +26,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._text import general_name
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
     certificate_not_valid_before,
+    now_utc,
     object_datetime,
+    parse_datetime,
     timestamp_z,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
@@ -217,3 +223,55 @@ def revoked_from_crl(crl: x509.CertificateRevocationList) -> list[dict[str, Any]
             pass
         revoked.append(record)
     return sorted(revoked, key=lambda entry: entry["serial_number_hex"])
+
+
+def _certificate_status(
+    record: dict[str, Any],
+    revocations: dict[tuple[str, str], dict[str, Any]],
+    now: datetime,
+) -> dict[str, Any]:
+    """Return status for an issued certificate record."""
+    issuer = str(record["issuer"])
+    serial = str(record["certificate"]["serial_number_hex"])
+    revoked = revocations.get((issuer, serial))
+    if revoked is not None:
+        return {"state": "revoked", "revocation": revoked}
+    not_before = parse_datetime(record["certificate"]["not_valid_before"])
+    not_after = parse_datetime(record["certificate"]["not_valid_after"])
+    if not_before is None or not_after is None:
+        raise ValueError("certificate record must contain validity timestamps")
+    if not_before > now:
+        return {"state": "not_yet_valid"}
+    if not_after <= now:
+        return {"state": "expired"}
+    return {"state": "valid"}
+
+
+def inventory_summary(
+    inventory: dict[str, Any], *, now: datetime | None = None
+) -> dict[str, Any]:
+    """Add current validity and renewal projections to a copy of stored inventory."""
+    current_time = now or now_utc()
+    revocations = revocation_map(inventory["revocations"])
+    result = dict(inventory)
+    for collection in (
+        "authorities",
+        "authority_certificates",
+        "certificates",
+        "issued_certificates",
+    ):
+        records = []
+        for record in inventory[collection]:
+            projected = {
+                **record,
+                "renewal_status": renewal_status(
+                    record["certificate"], record.get("renewal"), now=current_time
+                ),
+            }
+            if collection in {"certificates", "issued_certificates"}:
+                projected["status"] = _certificate_status(
+                    record, revocations, current_time
+                )
+            records.append(projected)
+        result[collection] = records
+    return result

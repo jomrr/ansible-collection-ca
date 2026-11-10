@@ -15,7 +15,16 @@ from typing import Any
 from unittest import TestCase
 from unittest.mock import patch
 
-from ansible_collections.jomrr.ca.plugins.module_utils._time import now_utc
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
+    compose_inventory,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._inventory_summary import (
+    inventory_summary,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._time import (
+    now_utc,
+    parse_datetime,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     load_private_key,
     private_key_pem,
@@ -144,8 +153,44 @@ class BatchCheckModeTests(TestCase):
                 self.assertTrue(self.predict(name, force=True)["changed"])
                 self.assertFalse(self.invoke(name)["changed"])
 
+    def test_time_does_not_change_stored_inventory(self) -> None:
+        """Next-day runs preserve stored state while read projections advance."""
+        self.converge()
+        before = snapshot(self.base)
+        document = json.loads((self.base / "inventory/ca-inventory.json").read_text())
+        tomorrow = now_utc() + timedelta(days=1, minutes=1)
+        prefix = "ansible_collections.jomrr.ca.plugins.module_utils."
+        with (
+            patch(prefix + "_renewal.now_utc", return_value=tomorrow),
+            patch(prefix + "_crl_engine.now_utc", return_value=tomorrow),
+            patch(prefix + "_inventory_summary.now_utc", return_value=tomorrow),
+        ):
+            for name in MODULES:
+                self.assertFalse(self.predict(name)["changed"], name)
+                self.assertFalse(self.invoke(name)["changed"], name)
+            view = compose_inventory(
+                base_dir=str(self.base), ca_name="check", base_url=""
+            )
+        self.assertEqual(before, snapshot(self.base))
+        for field in ("renewal_status", "status"):
+            self.assertNotIn(f'"{field}":', json.dumps(document))
+        first = inventory_summary(document)
+        for older, newer in zip(first["certificates"], view["certificates"]):
+            self.assertEqual(
+                older["renewal_status"]["days_remaining"] - 1,
+                newer["renewal_status"]["days_remaining"],
+            )
+        expires = parse_datetime(
+            document["certificates"][0]["certificate"]["not_valid_after"]
+        )
+        assert expires is not None
+        expired = inventory_summary(document, now=expires + timedelta(seconds=1))
+        self.assertEqual(expired["certificates"][0]["status"]["state"], "expired")
+        self.assertTrue(expired["certificates"][0]["renewal_status"]["renewal_due"])
+        self.assertEqual(before, snapshot(self.base))
+
     def test_generated_rsa_and_foreign_key_validation(self) -> None:
-        """Skip validation only with generated provenance inside the CA directory."""
+        """Skip RSA validation only for previously verified managed bytes."""
         for item in self.params["authorities"]:
             item.update(key_type="RSA", key_size=2048)
         self.converge()
@@ -197,6 +242,15 @@ class BatchCheckModeTests(TestCase):
         ):
             self.assertFalse(self.predict("authority")["changed"])
             self.assertFalse(self.invoke("authority")["changed"])
+        with patch.object(serialization, "load_pem_private_key", wraps=loader) as keys:
+            self.assertNotIn("failed", self.invoke("crl", force=True))
+        self.assertEqual(keys.call_count, 2)
+        self.assertTrue(
+            all(
+                call.kwargs["unsafe_skip_rsa_key_validation"]
+                for call in keys.call_args_list
+            )
+        )
         source.write_bytes(b"corrupted private key")
         with patch.object(serialization, "load_pem_private_key", wraps=loader) as keys:
             self.assertTrue(self.invoke("authority")["failed"])

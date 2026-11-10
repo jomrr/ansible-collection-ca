@@ -80,6 +80,9 @@ It does not create missing locks, so first-run predictions are snapshots.
 A missing issuer is reported as pending creation; validation that needs
 its future material or inventory is deferred. CRL generation paths remain
 empty until that issuer exists. Predicted CRL numbers are not reserved.
+Stored inventory contains stable metadata and policies. Time-dependent
+validity, remaining days and renewal status are calculated in read views,
+so a new day alone does not change the inventory or a batch result.
 
 ## Authority and Certificate Lifecycle
 
@@ -115,8 +118,9 @@ Certificate and CRL comparisons use public material; issuer keys are
 decrypted only when signing is needed. Batch modules share signer material
 per issuer. Private-file fingerprints in the inventory allow unchanged
 CA runs without key decryption after a normal run has recorded existing
-keys. RSA validation is skipped only for unchanged, collection-generated
-keys inside `base_dir`; foreign keys retain validation. See
+keys. RSA validation is skipped for unchanged keys inside `base_dir` with
+a receipt from generation or full validation. Unknown keys, changed bytes
+and keys outside `base_dir` retain validation. See
 [lazy private keys](docs/x509.md#lazy-private-keys).
 
 Keep issuer passphrases and optional PKCS#12 passwords in Ansible Vault.
