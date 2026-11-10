@@ -4,6 +4,16 @@ jomrr.ca 1.2 Release Notes
 
 .. contents:: Topics
 
+v1.2.1
+======
+
+Minor Changes
+-------------
+
+- Cache public bindings for managed private files and skip RSA validation only for unchanged collection-generated keys inside the CA directory.
+- Defer certificate and CRL private-key loading until signing, and share authority signer material across siblings.
+- publish now supports check mode and manages webroot, aia and crl directories with the new directory_mode option.
+
 v1.2.0
 ======
 

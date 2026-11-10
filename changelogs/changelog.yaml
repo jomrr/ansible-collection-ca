@@ -135,3 +135,15 @@ releases:
         name: publish
         namespace: ''
     release_date: '2026-11-10'
+  1.2.1:
+    changes:
+      minor_changes:
+        - Cache public bindings for managed private files and skip RSA validation
+          only for unchanged collection-generated keys inside the CA directory.
+        - Defer certificate and CRL private-key loading until signing, and share authority
+          signer material across siblings.
+        - publish now supports check mode and manages webroot, aia and crl directories
+          with the new directory_mode option.
+    fragments:
+      - lazy-keys-publish.yml
+    release_date: '2026-11-10'
