@@ -10,6 +10,17 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 from ansible.module_utils import basic
+from ansible.release import __version__
+
+
+def module_diagnostics(output: io.StringIO, log: Mock) -> str:
+    """Return diagnostics whose secrets must be masked by the module runtime."""
+    diagnostics = str(log.call_args_list)
+    # Core 2.22+ preserves secrets in the transport for controller-side masking.
+    # Integration tests exercise that output; do not simulate masking here.
+    if tuple(map(int, __version__.split(".")[:2])) < (2, 22):
+        diagnostics += output.getvalue()
+    return diagnostics
 
 
 @contextmanager

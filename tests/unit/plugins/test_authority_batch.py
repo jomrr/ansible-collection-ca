@@ -20,6 +20,7 @@ from unittest.mock import patch
 from ansible_collections.jomrr.ca.plugins.module_utils._file import ca_lock_path
 from ansible_collections.jomrr.ca.plugins.modules import authority_batch
 from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
+    module_diagnostics,
     module_transport,
 )
 from cryptography import x509
@@ -73,7 +74,7 @@ class AuthorityBatchTests(TestCase):
             self.assertRaises(SystemExit),
         ):
             authority_batch.main()
-        emitted = output.getvalue() + str(log.call_args_list)
+        emitted = module_diagnostics(output, log)
         for item in self.items:
             self.assertNotIn(item["key_passphrase"], emitted)
         result: dict[str, Any] = json.loads(output.getvalue())

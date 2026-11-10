@@ -11,9 +11,9 @@ from typing import Any
 from unittest.mock import patch
 
 from ansible.module_utils.common.parameters import PASS_VARS
-from ansible.release import __version__
 from ansible_collections.jomrr.ca.plugins.modules import certificate, certificate_batch
 from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
+    module_diagnostics,
     module_transport,
 )
 
@@ -114,13 +114,8 @@ class CertificateRedactionTests(unittest.TestCase):
         )
         if mode == "invalid" or (mode == "check" and not batch):
             operation.assert_not_called()
-        # Since core 2.22 the raw module transport intentionally preserves secrets.
-        # Controller display masking is exercised by integration; never simulate
-        # it by scrubbing the captured transport in this unit test.
         for secret in self.secrets:
-            if tuple(map(int, __version__.split(".")[:2])) < (2, 22):
-                self.assertNotIn(secret, output.getvalue())
-            self.assertNotIn(secret, str(log.call_args_list))
+            self.assertNotIn(secret, module_diagnostics(output, log))
         decoded: dict[str, Any] = json.loads(output.getvalue())
         return decoded
 

@@ -15,7 +15,6 @@ from typing import Any
 from unittest import TestCase
 from unittest.mock import patch
 
-from ansible.release import __version__
 from ansible_collections.jomrr.ca.plugins.module_utils._time import now_utc
 from ansible_collections.jomrr.ca.plugins.modules import (
     authority_batch,
@@ -27,6 +26,7 @@ from ansible_collections.jomrr.ca.tests.unit.plugins.batch_check_fixture import 
     snapshot,
 )
 from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
+    module_diagnostics,
     module_transport,
 )
 
@@ -87,9 +87,7 @@ class BatchCheckModeTests(TestCase):
         inputs.update(overrides, _ansible_check_mode=check)
         with module_transport(inputs) as (output, log), self.assertRaises(SystemExit):
             MODULES[name].main()
-        emitted = str(log.call_args_list)
-        if tuple(map(int, __version__.split(".")[:2])) < (2, 22):
-            emitted += output.getvalue()
+        emitted = module_diagnostics(output, log)
         for secret in ("check-test-secret", "check-leaf-secret", "check-pfx-secret"):
             self.assertNotIn(secret, emitted)
         result: dict[str, Any] = json.loads(output.getvalue())
