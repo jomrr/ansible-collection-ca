@@ -436,6 +436,44 @@ def write_file(
         os.close(parent_fd)
 
 
+def ensure_directory(
+    path: str, attrs: FileAttributes, *, check_mode: bool = False
+) -> bool:
+    """Create or compare a directory through file descriptors, rejecting symlinks."""
+    target = Path(path)
+    name = target.name or "."
+    try:
+        parent_fd = _open_parent_directory(target, create=not check_mode)
+    except FileNotFoundError:
+        return True
+    try:
+        created = False
+        if not check_mode:
+            try:
+                os.mkdir(name, parse_mode(attrs.mode), dir_fd=parent_fd)
+                created = True
+            except FileExistsError:
+                pass
+        try:
+            directory_fd = _open_directory_no_follow(name, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return True
+        try:
+            if check_mode:
+                state = os.fstat(directory_fd)
+                return (
+                    uid(attrs.owner) not in (-1, state.st_uid)
+                    or gid(attrs.group) not in (-1, state.st_gid)
+                    or state.st_mode & 0o7777 != parse_mode(attrs.mode)
+                )
+            changed = _set_attrs_fd(directory_fd, attrs.owner, attrs.group, attrs.mode)
+            return created or changed
+        finally:
+            os.close(directory_fd)
+    finally:
+        os.close(parent_fd)
+
+
 def file_argument_spec() -> dict[str, dict[str, Any]]:
     """Common ownership, public file mode and overwrite options."""
     return {

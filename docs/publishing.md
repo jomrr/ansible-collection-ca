@@ -17,6 +17,8 @@ equals `inventory_hostname`. It uses the target's `become` and `become_user`
 settings. Other targets receive archives through the controller, shared by
 remote file mode. The collection itself does not orchestrate remote transfers.
 
-Manage directory ownership and permissions before publication. Configure an HTTP
+Direct publication manages destination directories with `directory_mode`, `owner`
+and `group`. For archive extraction, manage these directories on the destination
+host. Configure an HTTP
 server separately to serve the `aia` and `crl` paths at the URLs embedded in the
 certificates.

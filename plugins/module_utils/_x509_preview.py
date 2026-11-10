@@ -25,6 +25,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
+    ensure_directory,
     file_needs_update,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._renewal import (
@@ -38,6 +39,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_exports import (
     ensure_exports,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    as_public_key,
     load_csr,
     load_existing_certificate,
     public_key_bytes,
@@ -45,6 +47,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
     archive_existing_material,
     ensure_external_csr,
+    key_receipt_change,
     reusable_key,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
@@ -57,7 +60,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_validation import (
 )
 
 try:
-    from ansible_collections.jomrr.ca.plugins.module_utils._types import PrivateKey
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import (
+        PrivateKey,
+        PublicKey,
+    )
     from cryptography import x509
     from cryptography.x509.oid import NameOID
 except ImportError:
@@ -69,7 +75,7 @@ class PreviewMaterial:
     """Observed material and the desired spec, absent when a new key is needed."""
 
     existing: x509.Certificate | None
-    key: PrivateKey | None
+    key: PrivateKey | PublicKey | None
     csr: x509.CertificateSigningRequest | None
     spec: CertificateSpec | None
     renewal: RenewalDecision
@@ -83,11 +89,15 @@ def _material(params: CertificateOperation, request: SigningRequest) -> PreviewM
     signer = request.signer
     if csr is not None:
         renewal["rekey"] = False
-    key = None if csr is not None else reusable_key(params, rekey=renewal["rekey"])
+    key = (
+        None
+        if csr is not None
+        else reusable_key(params, rekey=renewal["rekey"], existing_cert=existing)
+    )
     public = (
         csr.public_key()
         if csr is not None
-        else key.public_key()
+        else as_public_key(key)
         if key is not None
         else None
     )
@@ -179,13 +189,15 @@ def preview_x509(
     storage = params.request["storage"]
     changes: MaterialChanges = {
         "directory_changed": manage_directory
-        and file_needs_update(
+        and ensure_directory(
             params.paths["directory_path"],
             FileAttributes(storage.owner, storage.group, storage.directory_mode),
+            check_mode=True,
         ),
         "key_changed": material.csr is None
         and (
             material.key is None
+            or key_receipt_change(params, material.key)
             or file_needs_update(
                 params.paths["key_path"],
                 storage.attributes(private=True),

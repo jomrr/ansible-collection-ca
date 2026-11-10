@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import datetime as _dt
 from pathlib import Path
-from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
     CertificateOperation,
@@ -24,6 +23,11 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     read_file,
     set_attrs,
     write_file,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._key_receipt import (
+    KeyReceipt,
+    key_receipt,
+    store_key_receipt,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._key_revocation import (
     validate_key_revocation,
@@ -49,8 +53,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     load_certificate,
     load_csr,
     load_csr_bytes,
-    load_private_key,
+    load_signing_key,
     private_key_pem,
+    public_key_bytes,
+    public_key_fingerprint,
     signature_algorithm,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
@@ -59,19 +65,14 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
 )
 
 try:
-    from ansible_collections.jomrr.ca.plugins.module_utils._types import PrivateKey
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import (
+        PrivateKey,
+        PublicKey,
+    )
     from cryptography import x509
     from cryptography.hazmat.primitives import serialization
 except ImportError:
     pass
-
-
-def ensure_directory(path: str | None, owner: Any, group: Any, mode: Any) -> bool:
-    """Create a directory and enforce requested attributes."""
-    if not path:
-        return False
-    Path(path).mkdir(parents=True, exist_ok=True)
-    return set_attrs(path, owner, group, mode)
 
 
 def _archive_dir(params: CertificateOperation, cert: x509.Certificate) -> str:
@@ -151,66 +152,102 @@ def archive_existing_material(
     return changed
 
 
-def reusable_key(params: CertificateOperation, *, rekey: bool) -> PrivateKey | None:
-    """Validate a reusable key without generating or modifying any material."""
+def reusable_key(
+    params: CertificateOperation,
+    *,
+    rekey: bool,
+    existing_cert: x509.Certificate | None,
+) -> PrivateKey | PublicKey | None:
+    """Use the certificate public key when it is bound to the exact private file."""
     spec = key_spec(params.request["key"].key_type, params.request["key"].key_size)
     if params.request["force"] or rekey:
         return None
+    path = params.paths["key_path"]
+    storage = params.request["storage"]
     try:
-        key = load_private_key(
-            params.paths["key_path"], params.request["key"].passphrase
-        )
+        content = read_file(path)
     except FileNotFoundError:
         return None
+    receipt = key_receipt(storage.base_dir, path, content)
+    key: PrivateKey | PublicKey
+    if (
+        receipt is not None
+        and existing_cert is not None
+        and receipt.public_key_sha256
+        == public_key_fingerprint(existing_cert.public_key())
+    ):
+        key = existing_cert.public_key()
+    else:
+        key = load_signing_key(
+            path, params.request["key"].passphrase, base_dir=storage.base_dir
+        )
     if not key_matches(key, spec):
         return None
-    validate_key_revocation(params, key.public_key())
+    validate_key_revocation(params, as_public_key(key))
     return key
+
+
+def private_key_for(
+    params: CertificateOperation, key: PrivateKey | PublicKey
+) -> PrivateKey:
+    """Materialize an observed key only for a CSR, signature or private export."""
+    if isinstance(key, PrivateKey):
+        return key
+    private = load_signing_key(
+        params.paths["key_path"],
+        params.request["key"].passphrase,
+        base_dir=params.request["storage"].base_dir,
+    )
+    if public_key_bytes(private) != public_key_bytes(key):
+        raise ValueError("Private key no longer matches the observed public key")
+    return private
 
 
 def ensure_key(
     params: CertificateOperation, *, rekey: bool, existing_cert: x509.Certificate | None
-) -> tuple[PrivateKey, bool]:
-    """Ensure the private key exists with the requested key properties."""
+) -> tuple[PrivateKey | PublicKey, bool]:
+    """Maintain key attributes and provenance, decrypting only unknown material."""
     spec = key_spec(params.request["key"].key_type, params.request["key"].key_size)
-    key = reusable_key(params, rekey=rekey)
-    changed = False
+    key = reusable_key(params, rekey=rekey, existing_cert=existing_cert)
+    generated = key is None
+    path = params.paths["key_path"]
+    storage = params.request["storage"]
     if key is None:
-        _archive_file(
-            params,
-            existing_cert,
-            params.paths["key_path"],
-            params.request["storage"].key_mode,
-        )
+        _archive_file(params, existing_cert, path, storage.key_mode)
         key = generate_private_key(spec)
-        changed = True
         content = private_key_pem(key, params.request["key"].passphrase)
-        changed = (
-            write_file(
-                params.paths["key_path"],
-                content,
-                params.request["storage"].attributes(private=True),
-            )
-            or changed
-        )
+        changed = write_file(path, content, storage.attributes(private=True))
     else:
-        changed = (
-            set_attrs(
-                params.paths["key_path"],
-                params.request["storage"].owner,
-                params.request["storage"].group,
-                params.request["storage"].key_mode,
-            )
-            or changed
-        )
-    if not key_matches(key, spec):
-        raise ValueError("Private key does not match the requested specification")
-    return key, changed
+        changed = set_attrs(path, storage.owner, storage.group, storage.key_mode)
+    return key, key_receipt_change(params, key, generated=generated) or changed
+
+
+def key_receipt_change(
+    params: CertificateOperation,
+    key: PrivateKey | PublicKey,
+    *,
+    generated: bool = False,
+) -> bool:
+    """Persist or predict the public binding with identical check-mode semantics."""
+    storage = params.request["storage"]
+    path = params.paths["key_path"]
+    content = read_file(path)
+    previous = key_receipt(storage.base_dir, path, content)
+    return store_key_receipt(
+        path,
+        content,
+        KeyReceipt(
+            public_key_fingerprint(key),
+            generated or bool(previous and previous.generated),
+        ),
+        storage,
+        check_mode=params.check_mode,
+    )
 
 
 def ensure_csr(
     params: CertificateOperation,
-    key: PrivateKey,
+    key: PrivateKey | PublicKey,
     subject: x509.Name,
     csr_extensions: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]],
 ) -> tuple[x509.CertificateSigningRequest, bool]:
@@ -223,6 +260,7 @@ def ensure_csr(
         params, existing, CertificateSpec(key, subject, csr_extensions)
     )
     if changed:
+        key = private_key_for(params, key)
         builder = x509.CertificateSigningRequestBuilder().subject_name(subject)
         builder = add_extensions(builder, csr_extensions)
         csr = builder.sign(key, signature_algorithm(key, params.request["digest"]))
@@ -299,20 +337,6 @@ def ensure_certificate(
     existing_cert: x509.Certificate | None,
 ) -> tuple[x509.Certificate, bool]:
     """Ensure the certificate matches the requested issuer and profile."""
-    if signer.key is None:
-        raise ValueError("Certificate signing requires a private key")
-    issuer = signer.cert.subject if signer.cert is not None else spec.subject
-    now = now_utc(strip_microseconds=True)
-    builder = (
-        x509.CertificateBuilder()
-        .subject_name(spec.subject)
-        .issuer_name(issuer)
-        .public_key(as_public_key(spec.key))
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - _dt.timedelta(minutes=1))
-        .not_valid_after(now + _dt.timedelta(days=int(params.request["days"])))
-    )
-    builder = add_extensions(builder, spec.extensions)
     existing = existing_cert
     if existing is None:
         try:
@@ -327,6 +351,32 @@ def ensure_certificate(
             existing_cert,
             include_private_key=False,
         )
+        if signer.key is None:
+            signed = bool(params.paths["signer_key_path"])
+            signer.key = (
+                load_signing_key(
+                    params.paths["signer_key_path"],
+                    params.request["issuer"].passphrase,
+                    base_dir=params.request["storage"].base_dir,
+                )
+                if signed
+                else private_key_for(params, spec.key)
+            )
+            expected = signer.cert.public_key() if signer.cert is not None else spec.key
+            if public_key_bytes(signer.key) != public_key_bytes(expected):
+                raise ValueError("Signing key does not match the issuer certificate")
+        issuer = signer.cert.subject if signer.cert is not None else spec.subject
+        now = now_utc(strip_microseconds=True)
+        builder = (
+            x509.CertificateBuilder()
+            .subject_name(spec.subject)
+            .issuer_name(issuer)
+            .public_key(as_public_key(spec.key))
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now - _dt.timedelta(minutes=1))
+            .not_valid_after(now + _dt.timedelta(days=int(params.request["days"])))
+        )
+        builder = add_extensions(builder, spec.extensions)
         cert = builder.sign(
             private_key=signer.key,
             algorithm=signature_algorithm(signer.key, params.request["digest"]),

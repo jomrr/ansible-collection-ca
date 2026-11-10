@@ -21,7 +21,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     load_certificate,
-    load_signing_key,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
     validated_external_csr,
@@ -101,10 +100,6 @@ def prepare_signing_request(
             issuer_pending = True
     if signed and not issuer_pending:
         csr = validate_signing_request(params, signer)
-        if signer.key is None:
-            signer.key = load_signing_key(
-                params.paths["signer_key_path"], params.request["issuer"].passphrase
-            )
     else:
         csr = validated_external_csr(params) if params.request["csr"].external else None
     return SigningRequest(signer, csr, issuer_pending)

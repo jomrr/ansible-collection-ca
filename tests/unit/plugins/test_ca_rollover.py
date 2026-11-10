@@ -26,10 +26,14 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_engine import ensure_crls
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import (
+    CrlContext,
     CrlCredentials,
     CrlResult,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._file import read_file
+from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
+    read_file,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._generation_history import (
     ca_history,
     generation_id,
@@ -357,7 +361,7 @@ class TestCaRollover(TestCase):
         def selected() -> object:
             history = ca_history(str(self.base), "issuer")
             return generation_key(
-                "issuer",
+                CrlContext(str(self.base), "issuer", "", "", FileAttributes()),
                 identity,
                 cert,
                 credentials,

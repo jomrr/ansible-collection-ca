@@ -21,6 +21,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     with_derived_paths,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_preview import preview_x509
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import SignerMaterial
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_validation import (
     prepare_signing_request,
 )
@@ -79,6 +80,7 @@ def ensure_authority(
     held_locks: frozenset[str] = frozenset(),
     check_mode: bool = False,
     issuer_pending: bool = False,
+    signer: SignerMaterial | None = None,
 ) -> CertificateResult:
     """Issue one authority and update its inventory, reusing caller-owned locks."""
     params, signed = authority_params(values)
@@ -94,10 +96,12 @@ def ensure_authority(
         preview_x509(
             operation,
             signed=signed,
-            request=prepare_signing_request(operation, issuer_pending=issuer_pending),
+            request=prepare_signing_request(
+                operation, signer, issuer_pending=issuer_pending
+            ),
         )
         if check_mode
-        else ensure_x509_operation(operation, signed=signed, held_locks=held_locks)
+        else ensure_x509_operation(operation, held_locks=held_locks, signer=signer)
     )
     inventory_changed = result.get(
         "material_pending", False

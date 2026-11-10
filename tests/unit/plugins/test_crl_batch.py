@@ -197,6 +197,7 @@ class CrlBatchTests(TestCase):
         self.assertTrue(all(item["crl_number"] == 2 for item in generations.values()))
         self.assertFalse(self.invoke()["changed"])
         self.authorities[0]["archived_key_passphrases"][old_id] = "wrong-crl-secret"
-        self.assertTrue(self.invoke()["failed"])
+        self.assertFalse(self.invoke()["changed"])
+        self.assertTrue(self.invoke(force=True)["failed"])
         self.authorities[0]["archived_key_passphrases"][old_id] = "test-passphrase"
         self.assertFalse(self.invoke()["changed"])

@@ -22,7 +22,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import
     CertificateOperation,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
+    FileAttributes,
     ca_lock_path,
+    ensure_directory,
     file_locks,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._renewal import (
@@ -34,15 +36,14 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_exports import (
     ensure_exports,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    as_public_key,
     load_certificate,
     load_existing_certificate,
-    load_signing_key,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
     archive_existing_material,
     ensure_certificate,
     ensure_csr,
-    ensure_directory,
     ensure_external_csr,
     ensure_key,
 )
@@ -84,7 +85,6 @@ def ensure_x509(
     )
     return ensure_x509_operation(
         params,
-        signed=signed,
         manage_directory=manage_directory,
         manage_chain=manage_chain,
     )
@@ -93,12 +93,13 @@ def ensure_x509(
 def ensure_x509_operation(
     params: CertificateOperation,
     *,
-    signed: bool,
     manage_directory: bool = False,
     manage_chain: bool = False,
     held_locks: frozenset[str] = frozenset(),
+    signer: SignerMaterial | None = None,
 ) -> CertificateResult:
     """Execute derived state; held_locks must be owned by the calling operation."""
+    signed = bool(params.paths["signer_cert_path"])
     lock_paths = [params.paths["lock_path"]]
     if params.request["authority"]:
         lock_paths.append(
@@ -112,6 +113,7 @@ def ensure_x509_operation(
             signed=signed,
             manage_directory=manage_directory,
             manage_chain=manage_chain,
+            request=prepare_signing_request(params, signer),
         )
 
 
@@ -207,9 +209,11 @@ def _directory_change(params: CertificateOperation, manage_directory: bool) -> b
         manage_directory
         and ensure_directory(
             params.paths["directory_path"],
-            params.request["storage"].owner,
-            params.request["storage"].group,
-            params.request["storage"].directory_mode,
+            FileAttributes(
+                params.request["storage"].owner,
+                params.request["storage"].group,
+                params.request["storage"].directory_mode,
+            ),
         )
     )
 
@@ -242,10 +246,6 @@ def _ensure_x509_from_csr_locked(
     renewal = certificate_renewal(params, existing_cert)
     renewal["rekey"] = False
     csr, changes["csr_changed"] = ensure_external_csr(params, csr)
-    if signer.key is None:
-        signer.key = load_signing_key(
-            params.paths["signer_key_path"], params.request["issuer"].passphrase
-        )
     if signer.cert is None:
         signer.cert = load_certificate(params.paths["signer_cert_path"])
     spec = certificate_spec(params, csr.public_key(), signer.cert.public_key())
@@ -316,18 +316,10 @@ def _ensure_x509_locked(
     key, changes["key_changed"] = ensure_key(
         params, rekey=renewal["rekey"], existing_cert=existing_cert
     )
-    if signer.key is None:
-        signer.key = (
-            load_signing_key(
-                params.paths["signer_key_path"], params.request["issuer"].passphrase
-            )
-            if signed
-            else key
-        )
     spec = certificate_spec(
         params,
-        key.public_key(),
-        signer.cert.public_key() if signer.cert is not None else key.public_key(),
+        as_public_key(key),
+        signer.cert.public_key() if signer.cert is not None else as_public_key(key),
     )
     if spec is None:
         raise ValueError("Missing public key for certificate signing")

@@ -29,10 +29,16 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     load_certificates,
     public_key_bytes,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
+    private_key_for,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import SignerMaterial
 
 try:
-    from ansible_collections.jomrr.ca.plugins.module_utils._types import PrivateKey
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import (
+        PrivateKey,
+        PublicKey,
+    )
     from cryptography import x509
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.serialization import pkcs12
@@ -105,7 +111,7 @@ def chain_certificates(
 def _pkcs12_existing_matches(
     path: str,
     passphrase: str | None,
-    key: PrivateKey,
+    key: PrivateKey | PublicKey,
     cert: x509.Certificate,
     extra_certs: list[x509.Certificate],
 ) -> bool:
@@ -134,7 +140,7 @@ def _pkcs12_existing_matches(
 
 def ensure_pkcs12_exports(
     params: CertificateOperation,
-    key: PrivateKey,
+    key: PrivateKey | PublicKey,
     cert: x509.Certificate,
     extra_certs: list[x509.Certificate],
 ) -> tuple[bool, dict[str, str]]:
@@ -164,6 +170,7 @@ def ensure_pkcs12_exports(
             if params.check_mode:
                 changed = True
                 continue
+            key = private_key_for(params, key)
             content = pkcs12.serialize_key_and_certificates(
                 name=friendly_name.encode(),
                 key=key,
@@ -242,7 +249,7 @@ def ensure_exports(
     params: CertificateOperation,
     cert: x509.Certificate,
     signer: SignerMaterial,
-    key: PrivateKey | None,
+    key: PrivateKey | PublicKey | None,
     manage_chain: bool,
 ) -> ExportChanges:
     """Write the requested public and private certificate exports."""

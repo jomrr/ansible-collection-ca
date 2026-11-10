@@ -376,7 +376,7 @@ class IssuanceConstraintTests(unittest.TestCase):
                     ensure_certificate_batch(params, check_mode=check)["changed"],
                     changed,
                 )
-                self.assertEqual(keys.call_count, 1)
+                self.assertEqual(keys.call_count, int(changed and not check))
                 self.assertEqual(requests.call_count, len(params["certificates"]))
             if check:
                 self.assertEqual(before, snapshot(self.base))

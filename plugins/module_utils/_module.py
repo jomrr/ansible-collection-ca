@@ -39,7 +39,7 @@ def execute_publication(
     def publish(params: dict[str, Any]) -> Mapping[str, object]:
         if not params["artifacts"]:
             require_cryptography(module)
-        with file_locks(publish_lock_paths(params)):
+        with file_locks(publish_lock_paths(params), readonly=module.check_mode):
             return operation(params)
 
     _execute(module, publish)

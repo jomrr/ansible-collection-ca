@@ -16,7 +16,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import
     CertificateOperation,
     IssuerUrls,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import CrlCredentials
+from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import (
+    CrlContext,
+    CrlCredentials,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
     safe_path_component,
@@ -193,13 +196,14 @@ def _generation_key_path(name: str, identity: str, paths: list[str]) -> str:
 
 
 def generation_key(
-    name: str,
+    context: CrlContext,
     identity: str,
     cert: x509.Certificate,
     credentials: CrlCredentials,
     key_paths: list[str],
 ) -> PrivateKey:
     """Resolve the public identity first, decrypt exactly one key, then verify it."""
+    name = context.name
     if generation_id(cert.subject, cert.public_key()) != identity:
         raise ValueError(
             f"Certificate identity mismatch for authority {name}, generation {identity}"
@@ -207,7 +211,9 @@ def generation_key(
     path = _generation_key_path(name, identity, key_paths)
     try:
         key = load_signing_key(
-            path, credentials.archived.get(identity, credentials.current)
+            path,
+            credentials.archived.get(identity, credentials.current),
+            base_dir=context.base_dir,
         )
     except (ValueError, TypeError) as exc:
         # The backend cannot reliably distinguish bad passwords from corrupt bytes.

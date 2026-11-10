@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from graphlib import CycleError, TopologicalSorter
 from typing import Any, TypedDict
 
@@ -31,6 +32,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._validation import (
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     ca_authority_argument_spec,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import SignerMaterial
 
 
 class AuthorityResult(TypedDict):
@@ -127,6 +129,7 @@ def ensure_authority_batch(
     results: list[AuthorityResult] = []
     identities: set[str] = set()
     pending_chains: set[str] = set()
+    signers: dict[str, SignerMaterial] = defaultdict(SignerMaterial)
     if prepared:
         base_dir = params["base_dir"]
         locks = frozenset(
@@ -142,6 +145,7 @@ def ensure_authority_batch(
                     held_locks=locks,
                     check_mode=check_mode,
                     issuer_pending=item["parent"] in identities,
+                    signer=signers[item["parent"]],
                 )
                 if material.get("identity_changed"):
                     identities.add(item["name"])

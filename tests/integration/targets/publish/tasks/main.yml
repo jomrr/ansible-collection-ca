@@ -10,6 +10,7 @@
       base_dir: '{{ ca_publish_fixture.path }}/ca'
       dest: '{{ ca_publish_fixture.path }}/webroot'
       mode: '0640'
+      directory_mode: '0750'
       artifacts:
         - src: '{{ ca_publish_fixture.path }}/certificate'
           file: root-ca.pem
@@ -18,6 +19,13 @@
           file: root-ca.crl
           area: cdp
   block:
+    - name: Create public source fixtures
+      ansible.builtin.copy:
+        content: 'public {{ item }} version one'
+        dest: '{{ ca_publish_fixture.path }}/{{ item }}'
+        mode: '0600'
+      loop: [certificate, crl]
+
     - name: Check publication before convergence
       jomrr.ca.publish: *publish_params
       check_mode: true
@@ -28,18 +36,11 @@
         path: '{{ ca_publish_params.dest }}'
       register: ca_publish_before
 
-    - name: Verify publication check mode skips without writes
+    - name: Verify publication check mode predicts without writes
       ansible.builtin.assert:
         that:
-          - ca_publish_check is skipped
+          - ca_publish_check is changed
           - not ca_publish_before.stat.exists
-
-    - name: Create public source fixtures
-      ansible.builtin.copy:
-        content: 'public {{ item }} version one'
-        dest: '{{ ca_publish_fixture.path }}/{{ item }}'
-        mode: '0600'
-      loop: [certificate, crl]
 
     - name: Publish and repeat with identical inputs
       jomrr.ca.publish: *publish_params
@@ -58,9 +59,9 @@
       check_mode: true
       register: ca_publish_check
 
-    - name: Verify check mode skips after convergence
+    - name: Verify check mode is unchanged after convergence
       ansible.builtin.assert:
-        that: ca_publish_check is skipped
+        that: ca_publish_check is not changed
 
     - name: Alter a published certificate
       ansible.builtin.copy:
@@ -78,6 +79,22 @@
         content: unrelated
         dest: '{{ ca_publish_params.dest }}/index.html'
         mode: '0644'
+
+    - name: Predict repairs before writing
+      jomrr.ca.publish: *publish_params
+      check_mode: true
+      register: ca_publish_check
+
+    - name: Inspect predicted missing CRL
+      ansible.builtin.stat:
+        path: '{{ ca_publish_params.dest }}/crl/root-ca.crl'
+      register: ca_publish_missing_crl
+
+    - name: Verify prediction leaves missing files absent
+      ansible.builtin.assert:
+        that:
+          - ca_publish_check is changed
+          - not ca_publish_missing_crl.stat.exists
 
     - name: Restore published files and repeat
       jomrr.ca.publish: *publish_params
@@ -107,6 +124,38 @@
           - ca_publish_files.results[0].stat.mode == '0640'
           - ca_publish_files.results[1].stat.mode == '0640'
           - ca_publish_files.results[2].stat.checksum == ('unrelated' | hash('sha1'))
+
+    - name: Inspect managed directory modes
+      ansible.builtin.stat:
+        path: '{{ ca_publish_params.dest }}/{{ item }}'
+      loop: ['', aia, crl]
+      register: ca_publish_directories
+
+    - name: Verify all directory modes
+      ansible.builtin.assert:
+        that: item.stat.mode == '0750'
+      loop: '{{ ca_publish_directories.results }}'
+
+    - name: Alter directory permissions
+      ansible.builtin.file:
+        path: '{{ ca_publish_params.dest }}/aia'
+        mode: '0700'
+
+    - name: Predict directory repair
+      jomrr.ca.publish: *publish_params
+      check_mode: true
+      register: ca_publish_directory_check
+
+    - name: Inspect directory after prediction
+      ansible.builtin.stat:
+        path: '{{ ca_publish_params.dest }}/aia'
+      register: ca_publish_directory_before
+
+    - name: Verify directory prediction is read only
+      ansible.builtin.assert:
+        that:
+          - ca_publish_directory_check is changed
+          - ca_publish_directory_before.stat.mode == '0700'
 
     - name: Alter only the certificate permissions
       ansible.builtin.file:

@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Any, TypeGuard, cast
+from typing import Any, cast
 
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     MATERIAL_ERRORS,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import read_file
+from ansible_collections.jomrr.ca.plugins.module_utils._key_receipt import key_receipt
 
 try:
     from ansible_collections.jomrr.ca.plugins.module_utils._types import (
@@ -132,19 +133,20 @@ def key_spec(key_type_value: str, key_size: int) -> dict[str, Any]:
     return {"type": key_type}
 
 
-def key_matches(key: PrivateKeyTypes, spec: dict[str, Any]) -> TypeGuard[PrivateKey]:
-    """Return whether an existing private key matches the requested spec."""
+def key_matches(key: PrivateKey | PublicKey, spec: dict[str, Any]) -> bool:
+    """Compare public key properties without decrypting a private key."""
+    key = as_public_key(key)
     if spec["type"] == "RSA":
-        return isinstance(key, rsa.RSAPrivateKey) and key.key_size == spec["size"]
+        return isinstance(key, rsa.RSAPublicKey) and key.key_size == spec["size"]
     if spec["type"] == "ECDSA":
         return (
-            isinstance(key, ec.EllipticCurvePrivateKey)
+            isinstance(key, ec.EllipticCurvePublicKey)
             and key.curve.name == spec["curve"].name
         )
     if spec["type"] == "ED25519":
-        return isinstance(key, ed25519.Ed25519PrivateKey)
+        return isinstance(key, ed25519.Ed25519PublicKey)
     if spec["type"] == "ED448":
-        return isinstance(key, ed448.Ed448PrivateKey)
+        return isinstance(key, ed448.Ed448PublicKey)
     return False
 
 
@@ -171,18 +173,25 @@ def signature_algorithm(
     return algorithm
 
 
-def load_private_key(path: str, passphrase: str | None) -> PrivateKeyTypes:
-    """Load a PEM private key from disk."""
+def load_private_key(
+    path: str, passphrase: str | None, *, base_dir: str = ""
+) -> PrivateKeyTypes:
+    """Skip RSA validation only for unchanged, collection-generated managed keys."""
+    content = read_file(path)
+    receipt = key_receipt(base_dir, path, content)
     key = serialization.load_pem_private_key(
-        read_file(path),
+        content,
         password=passphrase.encode() if passphrase else None,
+        unsafe_skip_rsa_key_validation=receipt is not None and receipt.generated,
     )
     return key
 
 
-def load_signing_key(path: str, passphrase: str | None) -> PrivateKey:
+def load_signing_key(
+    path: str, passphrase: str | None, *, base_dir: str = ""
+) -> PrivateKey:
     """Load a key accepted by certificate and CRL signature builders."""
-    key = load_private_key(path, passphrase)
+    key = load_private_key(path, passphrase, base_dir=base_dir)
     if not isinstance(
         key,
         (

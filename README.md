@@ -38,7 +38,7 @@ ansible-galaxy collection install jomrr.ca
 | [`jomrr.ca.crl`](plugins/modules/crl.py) | yes | no | Manage CA collection certificate revocation lists |
 | [`jomrr.ca.crl_batch`](plugins/modules/crl_batch.py) | yes | yes | Manage authority CRLs in one batch |
 | [`jomrr.ca.fritzbox_deploy`](plugins/modules/fritzbox_deploy.py) | yes | no | Deploy a FritzBox PEM certificate bundle to FRITZ!OS |
-| [`jomrr.ca.publish`](plugins/modules/publish.py) | yes | no | Publish public AIA/CDP files directly on the CA host |
+| [`jomrr.ca.publish`](plugins/modules/publish.py) | yes | yes | Publish public AIA/CDP files directly on the CA host |
 | [`jomrr.ca.publish_archive`](plugins/modules/publish_archive.py) | yes | no | Create deterministic public AIA/CDP publish archives on the managed host |
 
 ### Documentation Fragments
@@ -69,6 +69,8 @@ The modules retain the source role's file layout and certificate profiles.
 `authority_batch`, `certificate_batch` and `crl_batch` support check mode:
 they predict creation, renewal, `force` and artifact repairs without
 writing keys, certificates, CRLs, inventory, sequence numbers or locks.
+`publish` predicts directory, content and permission changes without
+writes; its source artifacts must already exist.
 Other modules are skipped in check mode; diff mode is not implemented.
 Repeated execution is idempotent unless
 renewal is due, requested attributes differ, or `force` is set.
@@ -106,6 +108,16 @@ their declarations. It shares the generation and revocation engine with
 directly into a webroot on the CA host. `jomrr.ca.publish_archive` builds
 a deterministic archive for transfer to other hosts. Both select the same
 retained issuer generations. Transfer and web serving are separate tasks.
+Direct publication manages the webroot, `aia` and `crl` directories with
+`owner`, `group` and `directory_mode` (default `0755`).
+
+Certificate and CRL comparisons use public material; issuer keys are
+decrypted only when signing is needed. Batch modules share signer material
+per issuer. Private-file fingerprints in the inventory allow unchanged
+CA runs without key decryption after a normal run has recorded existing
+keys. RSA validation is skipped only for unchanged, collection-generated
+keys inside `base_dir`; foreign keys retain validation. See
+[lazy private keys](docs/x509.md#lazy-private-keys).
 
 Keep issuer passphrases and optional PKCS#12 passwords in Ansible Vault.
 Renewal and revocation state lives below `base_dir`; preserve this state

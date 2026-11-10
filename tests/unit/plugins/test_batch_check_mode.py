@@ -16,6 +16,10 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from ansible_collections.jomrr.ca.plugins.module_utils._time import now_utc
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    load_private_key,
+    private_key_pem,
+)
 from ansible_collections.jomrr.ca.plugins.modules import (
     authority_batch,
     certificate_batch,
@@ -29,6 +33,8 @@ from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
     module_diagnostics,
     module_transport,
 )
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 
 MODULES = {
     "authority": authority_batch,
@@ -123,12 +129,78 @@ class BatchCheckModeTests(TestCase):
                 self.assertFalse(self.predict(name, **empty)["changed"])
         self.converge()
         for name in MODULES:
-            with self.subTest(name=name):
+            with (
+                self.subTest(name=name),
+                patch(
+                    "cryptography.hazmat.primitives.serialization.load_pem_private_key",
+                    side_effect=AssertionError(
+                        "Unchanged CA must not decrypt private keys"
+                    ),
+                ),
+            ):
                 result = self.predict(name)
                 self.assertNotIn("failed", result, result)
                 self.assertFalse(result["changed"], result)
                 self.assertTrue(self.predict(name, force=True)["changed"])
                 self.assertFalse(self.invoke(name)["changed"])
+
+    def test_generated_rsa_and_foreign_key_validation(self) -> None:
+        """Skip validation only with generated provenance inside the CA directory."""
+        for item in self.params["authorities"]:
+            item.update(key_type="RSA", key_size=2048)
+        self.converge()
+        loader = serialization.load_pem_private_key
+        with patch.object(serialization, "load_pem_private_key", wraps=loader) as keys:
+            result = self.invoke("crl", force=True)
+        self.assertNotIn("failed", result, result)
+        self.assertEqual(keys.call_count, 2)
+        self.assertTrue(
+            all(
+                call.kwargs["unsafe_skip_rsa_key_validation"]
+                for call in keys.call_args_list
+            )
+        )
+        source = self.base / "private/issuer-ca.key"
+        outside = self.root / "outside.key"
+        outside.write_bytes(source.read_bytes())
+        foreign = self.base / "private/foreign.key"
+        foreign.write_bytes(
+            private_key_pem(rsa.generate_private_key(65537, 2048), "foreign-test")
+        )
+        for path, passphrase in (
+            (outside, "check-test-secret"),
+            (foreign, "foreign-test"),
+        ):
+            with patch.object(
+                serialization, "load_pem_private_key", wraps=loader
+            ) as keys:
+                load_private_key(str(path), passphrase, base_dir=str(self.base))
+            self.assertFalse(keys.call_args.kwargs["unsafe_skip_rsa_key_validation"])
+        shutil.rmtree(self.base / "inventory/state/keys")
+        self.assertTrue(self.predict("authority")["changed"])
+        self.assertFalse((self.base / "inventory/state/keys").exists())
+        with patch.object(serialization, "load_pem_private_key", wraps=loader) as keys:
+            migrated = self.invoke("authority")
+        self.assertNotIn("failed", migrated, migrated)
+        self.assertTrue(migrated["changed"])
+        self.assertEqual(keys.call_count, 2)
+        self.assertTrue(
+            all(
+                not call.kwargs["unsafe_skip_rsa_key_validation"]
+                for call in keys.call_args_list
+            )
+        )
+        with patch.object(
+            serialization,
+            "load_pem_private_key",
+            side_effect=AssertionError("Unexpected decryption"),
+        ):
+            self.assertFalse(self.predict("authority")["changed"])
+            self.assertFalse(self.invoke("authority")["changed"])
+        source.write_bytes(b"corrupted private key")
+        with patch.object(serialization, "load_pem_private_key", wraps=loader) as keys:
+            self.assertTrue(self.invoke("authority")["failed"])
+        self.assertFalse(keys.call_args.kwargs["unsafe_skip_rsa_key_validation"])
 
     def test_file_repairs_and_revocations(self) -> None:
         """Detect missing exports, changed bytes, file modes and new revocations."""
@@ -209,12 +281,20 @@ class BatchCheckModeTests(TestCase):
         authorities = copy.deepcopy(self.params["authorities"])
         authorities[0]["key_passphrase"] = "wrong-check-secret"
         for name in MODULES:
-            self.assertTrue(self.predict(name, authorities=authorities)["failed"])
+            self.assertFalse(self.predict(name, authorities=authorities)["changed"])
+            self.assertTrue(
+                self.predict(name, authorities=authorities, force=True)["changed"]
+            )
+        self.assertTrue(
+            self.invoke("crl", authorities=authorities, force=True)["failed"]
+        )
         key = self.base / "private/issuer-ca.key"
         key.unlink()
         self.assertTrue(self.predict("authority")["changed"])
-        self.assertTrue(self.predict("certificate")["failed"])
-        self.assertTrue(self.predict("crl")["failed"])
+        self.assertFalse(self.predict("certificate")["changed"])
+        self.assertFalse(self.predict("crl")["changed"])
+        self.assertTrue(self.invoke("certificate", force=True)["failed"])
+        self.assertTrue(self.invoke("crl", force=True)["failed"])
         self.invoke("authority")
         target = self.base / "ca/issuer-ca.der"
         target.unlink()

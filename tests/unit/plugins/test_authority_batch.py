@@ -18,6 +18,9 @@ from unittest import TestCase
 from unittest.mock import patch
 
 from ansible_collections.jomrr.ca.plugins.module_utils._file import ca_lock_path
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    load_private_key,
+)
 from ansible_collections.jomrr.ca.plugins.modules import authority_batch
 from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
     module_diagnostics,
@@ -126,9 +129,28 @@ class AuthorityBatchTests(TestCase):
         self.assertFalse(self.invoke()["changed"])
         original_root = (self.base / "ca/root-ca.pem").read_bytes()
         self.items[-1]["key_passphrase"] = "wrong-root-batch-secret"
+        self.assertFalse(self.invoke()["changed"])
+        self.items[0]["common_name"] = "updated child"
+        self.items[1]["common_name"] = "updated issuer"
         failed = self.invoke()
         self.assertTrue(failed["failed"])
         self.assertEqual((self.base / "ca/root-ca.pem").read_bytes(), original_root)
+
+    def test_signer_is_shared_by_siblings(self) -> None:
+        """Two renewed siblings decrypt their common issuer only once."""
+        self.assertTrue(self.invoke()["changed"])
+        for item in self.items[1:3]:
+            item["renewal"] = {"renew_before_days": 366}
+        with patch(
+            "ansible_collections.jomrr.ca.plugins.module_utils."
+            "_x509_keys.load_private_key",
+            wraps=load_private_key,
+        ) as keys:
+            result = self.invoke()
+        self.assertNotIn("failed", result, result)
+        self.assertTrue(result["changed"])
+        self.assertEqual(keys.call_count, 1)
+        self.assertEqual(Path(keys.call_args.args[0]).name, "root-ca.key")
 
     def test_chain_repair_subject_update_and_force(self) -> None:
         """Repair exports without reissuing, then update and force the same graph."""

@@ -16,6 +16,7 @@ generations and their active or final CRLs. Run `jomrr.ca.crl` first.
   fixed `aia/` and `crl/` directories; `file` must be a plain filename.
 - `owner`, `group`: Optional owner and group for published files.
 - `mode`: Published file mode, default `0644`.
+- `directory_mode`: Mode for the webroot, `aia` and `crl`, default `0755`.
 - `force`: Rewrite even identical files, default `false`.
 
 Provide nonempty `authorities` or `artifacts`. Explicit artifacts must preserve
@@ -37,9 +38,8 @@ all issuer generations needed by existing certificates and their original URLs.
 ```
 
 The execution user must be able to access CA data and locks and write the
-destination. Configure privilege escalation as needed. Manage directory ownership
-and permissions separately; the standalone role creates these directories before
-publication.
+destination. Configure privilege escalation as needed. The module creates the
+webroot, `aia` and `crl` and manages their ownership and `directory_mode`.
 
 ## Behavior and Returns
 
@@ -50,5 +50,6 @@ publication paths fail. Writes reject symlinks at destination path components.
 No archive, fetch or controller staging is used.
 
 Returns `path` (the destination webroot), `published_paths` (sorted relative
-paths) and `changed` (content or attribute changes). Check mode skips the module
-without mutation; diff output is not supported.
+paths) and `changed` (directory, content or attribute changes). Check mode
+predicts these changes without writing files, creating directories or changing
+locks. Source artifacts must exist. Diff output is not supported.

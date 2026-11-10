@@ -310,7 +310,6 @@ def _ensure_prepared_certificate_artifacts(
     """Ensure artifacts for an already resolved certificate model."""
     result = ensure_x509_operation(
         operation,
-        signed=True,
         manage_directory=True,
         manage_chain=True,
     )

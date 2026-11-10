@@ -72,7 +72,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
 )
 
 try:
-    from ansible_collections.jomrr.ca.plugins.module_utils._types import PrivateKey
     from cryptography import x509
     from cryptography.hazmat.primitives import serialization
 except ImportError:
@@ -110,7 +109,7 @@ class CrlGeneration:
 
     params: CrlPlan
     cert: x509.Certificate
-    key: PrivateKey
+    key_paths: list[str]
     existing: x509.CertificateRevocationList | None
     changed: bool
 
@@ -135,7 +134,7 @@ def _prepare_crl(
     previous_number: int,
     key_paths: list[str],
 ) -> CrlGeneration:
-    """Validate sequence state and every required key before making any writes."""
+    """Decide renewal from public state without opening signing keys."""
     existing_crls = load_existing_crls(params.paths)
     numbers = existing_numbers(existing_crls)
     if not previous_number and any(
@@ -157,13 +156,7 @@ def _prepare_crl(
     return CrlGeneration(
         params,
         cert,
-        generation_key(
-            params.request.context.name,
-            params.identity,
-            cert,
-            params.request.credentials,
-            key_paths,
-        ),
+        key_paths,
         next((crl for crl in existing_crls.values() if crl is not None), None),
         changed,
     )
@@ -182,7 +175,13 @@ def _build_crls(
                 now=crl_time,
                 crl_number=number,
                 ca_cert=item.cert,
-                private_key=item.key,
+                private_key=generation_key(
+                    item.params.request.context,
+                    item.params.identity,
+                    item.cert,
+                    item.params.request.credentials,
+                    item.key_paths,
+                ),
             )
             if rebuild
             else item.existing

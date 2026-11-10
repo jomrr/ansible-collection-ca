@@ -35,7 +35,8 @@ An empty list succeeds unchanged without creating CA state.
 
 The batch holds the graph lock once and shares its authority locks with the
 issuance and chain operations. Single-module operations retain their normal
-locking. Renewal, issuer constraints, retained generations and file permissions
+locking. Siblings share one signer cache per issuer; private keys are loaded only
+when signing is necessary. Renewal, issuer constraints, retained generations and file permissions
 use the same engines as individual operations. A failure stops execution;
 completed authorities remain managed and are reconciled on the next run.
 
