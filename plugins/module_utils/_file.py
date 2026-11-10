@@ -324,10 +324,6 @@ class FileAttributes:
         """Read a module's common file attributes."""
         return cls(params["owner"], params["group"], params[mode_key])
 
-    def apply(self, path: str) -> bool:
-        """Enforce these attributes on an existing file."""
-        return set_attrs(path, self.owner, self.group, self.mode)
-
 
 def file_needs_update(
     path: str,

@@ -132,15 +132,6 @@ def _pkcs12_existing_matches(
     return existing_fingerprints == desired_fingerprints
 
 
-def _pkcs12_passphrase(params: CertificateOperation) -> str:
-    """Return the configured PKCS#12 passphrase."""
-    return str(
-        params.request["exports"].passphrase
-        or params.request["exports"].passphrase
-        or ""
-    )
-
-
 def ensure_pkcs12_exports(
     params: CertificateOperation,
     key: PrivateKey,
@@ -148,15 +139,11 @@ def ensure_pkcs12_exports(
     extra_certs: list[x509.Certificate],
 ) -> tuple[bool, dict[str, str]]:
     """Ensure requested PKCS#12 export formats exist."""
-    paths: dict[str, str] = {
-        export_format: params.paths["pkcs12_paths"][export_format]
-        for export_format in ("pfx", "p12")
-        if export_format in params.request["exports"].formats
-    }
+    paths = params.paths["pkcs12_paths"]
     if not paths:
         return False, {}
 
-    passphrase = _pkcs12_passphrase(params)
+    passphrase = params.request["exports"].passphrase
     if not passphrase:
         raise ValueError("PKCS#12 bundle requires pfx_passphrase or passphrase")
     friendly_name = str(

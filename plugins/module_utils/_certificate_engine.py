@@ -324,7 +324,7 @@ def _finalize_prepared_certificate_result(
     """Add dispatcher metadata to a prepared X.509 result."""
     result["name"] = model["name"]
     result["profile"] = model["type"]
-    result["formats"] = [str(item).lower() for item in model["formats"]]
+    result["formats"] = model["formats"]
     return result
 
 
@@ -380,26 +380,24 @@ def ensure_certificate_batch(
         manage_directory=True,
         manage_chain=True,
     )
-    results: dict[int, CertificateResult] = {}
+    results: list[CertificateResult] = []
     inventory_records: list[
         tuple[dict[str, Any], CertificateMetadata, CertificateResult]
     ] = []
     changed = False
-    for index, ((model, _operation), raw_result) in enumerate(
-        zip(prepared, raw_results)
-    ):
+    for (model, _operation), raw_result in zip(prepared, raw_results):
         result = _finalize_prepared_certificate_result(model, raw_result)
         _sync_model_common_name(model, result)
         result["inventory_changed"] = result.pop("material_pending", False)
         result.pop("identity_changed", None)
-        results[index] = result
+        results.append(result)
         if not result["inventory_changed"]:
             inventory_records.append((params, model, result))
         changed = changed or bool(result["changed"])
 
     inventory_changed = update_certificates_inventory(
         inventory_records, check_mode=check_mode
-    ) or any(result["inventory_changed"] for result in results.values())
+    ) or any(result["inventory_changed"] for result in results)
     if inventory_changed:
         changed = True
 
@@ -408,5 +406,5 @@ def ensure_certificate_batch(
         "inventory_changed": inventory_changed,
         "count": len(results),
         "issuer_groups": dict(issuer_groups),
-        "results": [results[index] for index in range(len(prepared))],
+        "results": results,
     }

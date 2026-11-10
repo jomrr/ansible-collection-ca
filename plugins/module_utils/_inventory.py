@@ -72,15 +72,9 @@ def update_certificate_inventory(
     check_mode: bool = False,
 ) -> bool:
     """Record certificate fragments and compose inventory in one transaction."""
-    base_dir = str(params["base_dir"]).rstrip("/")
-    with file_lock(inventory_lock_path(base_dir), readonly=check_mode):
-        changed = record_certificate_inventory(
-            params, model, result, check_mode=check_mode
-        )
-        return (
-            _compose_inventory_if_configured_unlocked(params, check_mode=check_mode)
-            or changed
-        )
+    return update_certificates_inventory(
+        [(params, model, result)], check_mode=check_mode
+    )
 
 
 def update_certificates_inventory(
