@@ -79,3 +79,13 @@ def authority_options() -> dict[str, dict[str, Any]]:
         }
     )
     return spec
+
+
+def authority_list_argument(options: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Wrap authority fields in the shared required-list argument contract."""
+    return {
+        "type": "list",
+        "elements": "dict",
+        "required": True,
+        "options": authority_options() if options is None else options,
+    }

@@ -203,21 +203,17 @@ formats:
 # Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.
 # pylint: disable=wrong-import-position
 from collections.abc import Callable
-from typing import Any, cast
+from functools import partial
+from typing import cast
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.jomrr.ca.plugins.module_utils._crl_engine import ensure_crls
-from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
-    OPERATION_ERRORS,
-    require_cryptography,
+from ansible_collections.jomrr.ca.plugins.module_utils._crl_dispatch import (
+    crl_argument_spec,
+    ensure_authority_crls,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._file import (
-    ca_lock_path,
-    file_argument_spec,
-    file_locks,
-    sanitize_error,
+from ansible_collections.jomrr.ca.plugins.module_utils._module import (
+    execute_certificate,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import DIGESTS
 
 # pylint: enable=wrong-import-position
 
@@ -225,53 +221,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import DIGESTS
 def main() -> None:
     """Run the Ansible module for certificate revocation lists."""
     module = cast(Callable[..., AnsibleModule], AnsibleModule)(
-        argument_spec={
-            "base_dir": {"type": "path", "required": True},
-            "base_url": {"type": "str", "default": ""},
-            "ca_name": {"type": "str", "default": ""},
-            "name": {"type": "str", "required": True},
-            "formats": {
-                "type": "list",
-                "elements": "str",
-                "default": ["pem", "der"],
-            },
-            "key_passphrase": {"type": "str", "required": True, "no_log": True},
-            "archived_key_passphrases": {"type": "dict", "default": {}, "no_log": True},
-            "legacy_generation": {"type": "str", "default": ""},
-            "common_name": {"type": "str"},
-            "subject": {"type": "dict", "default": {}},
-            "next_update_days": {"type": "int", "required": True},
-            "renew_before_days": {"type": "float", "default": 7},
-            "revoked_certificates": {"type": "list", "elements": "dict", "default": []},
-            "digest": {"type": "str", "default": "sha384", "choices": list(DIGESTS)},
-            **file_argument_spec(),
-        },
-        supports_check_mode=False,
+        argument_spec=crl_argument_spec(), supports_check_mode=False
     )
-
-    require_cryptography(module)
-
-    params: dict[str, Any] = module.params
-    try:
-        if not 0 <= params["renew_before_days"] < params["next_update_days"]:
-            raise ValueError(
-                "renew_before_days must be nonnegative and less than next_update_days"
-            )
-        with file_locks(
-            [
-                ca_lock_path(params["base_dir"], "authority", params["name"]),
-                ca_lock_path(params["base_dir"], "crl", params["name"]),
-            ]
-        ):
-            result = ensure_crls(params)
-    except OPERATION_ERRORS as exc:
-        module.fail_json(msg=sanitize_error(exc, module.params))
-    if result["migration_conflicts"]:
-        module.warn(
-            "Some certificates reference legacy URLs assigned to another generation; "
-            "reissue or revoke those listed in migration_conflicts"
-        )
-    module.exit_json(**result)
+    execute_certificate(module, partial(ensure_authority_crls, warn=module.warn))
 
 
 if __name__ == "__main__":

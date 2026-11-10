@@ -16,6 +16,8 @@
       ansible.builtin.import_tasks: targets/authority/tasks/main.yml
     - name: Exercise authority batch
       ansible.builtin.import_tasks: targets/authority_batch/tasks/main.yml
+    - name: Exercise CRL batch
+      ansible.builtin.import_tasks: targets/crl_batch/tasks/main.yml
     - name: Exercise direct publication
       ansible.builtin.import_tasks: targets/publish/tasks/main.yml
     - name: Exercise controller filter

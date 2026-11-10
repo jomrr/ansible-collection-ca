@@ -25,7 +25,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import
     IssuerUrls,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_engine import ensure_crls
-from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import CrlCredentials
+from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import (
+    CrlCredentials,
+    CrlResult,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import read_file
 from ansible_collections.jomrr.ca.plugins.module_utils._generation_history import (
     ca_history,
@@ -77,7 +80,7 @@ class TestCaRollover(TestCase):
         self.assertTrue(counts)
         self.assertEqual(max(counts.values()), 1, counts)
 
-    def crl(self, name: str = "issuer", **overrides: Any) -> dict[str, Any]:
+    def crl(self, name: str = "issuer", **overrides: Any) -> CrlResult:
         """Use the CRL engine with ordinary module defaults."""
         params = {
             "base_dir": str(self.base),

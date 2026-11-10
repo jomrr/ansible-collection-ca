@@ -1,0 +1,137 @@
+---
+- name: Allocate CRL batch fixture
+  ansible.builtin.tempfile:
+    state: directory
+  register: ca_crl_fixture
+
+- name: Exercise independent CRL batching
+  vars:
+    ca_crl_authorities:
+      - name: root
+        parent: root
+        common_name: CRL Batch Root
+        days: 3650
+        key_type: P-256
+        key_passphrase: crl-batch-root-passphrase
+        crl_days: 2
+        crl_renew_before_days: 0
+        crl_digest: sha256
+      - name: issuer
+        parent: root
+        common_name: CRL Batch Issuer
+        days: 365
+        key_type: P-256
+        key_passphrase: crl-batch-issuer-passphrase
+        crl_days: 30
+    ca_crl_params: &crl_batch_params
+      base_dir: '{{ ca_crl_fixture.path }}/pki'
+      ca_name: crl_batch
+      authorities: '{{ ca_crl_authorities }}'
+      renew_before_days: 7
+  block:
+    - name: Check CRLs before CA state exists
+      jomrr.ca.crl_batch: *crl_batch_params
+      check_mode: true
+      register: ca_crl_check
+
+    - name: Inspect uncreated CA directory
+      ansible.builtin.stat:
+        path: '{{ ca_crl_params.base_dir }}'
+      register: ca_crl_before
+
+    - name: Verify check mode skips without writes
+      ansible.builtin.assert:
+        that:
+          - ca_crl_check is skipped
+          - not ca_crl_before.stat.exists
+
+    - name: Create fixture authorities
+      jomrr.ca.authority_batch:
+        base_dir: '{{ ca_crl_params.base_dir }}'
+        ca_name: crl_batch
+        authorities: '{{ ca_crl_authorities }}'
+
+    - name: Generate CRLs and repeat
+      jomrr.ca.crl_batch: *crl_batch_params
+      loop: [first, repeat]
+      register: ca_crl_runs
+
+    - name: Verify batch changes and result identities
+      ansible.builtin.assert:
+        that:
+          - ca_crl_runs.results[0].changed
+          - not ca_crl_runs.results[1].changed
+          - ca_crl_runs.results[0].count == 2
+          - ca_crl_runs.results[0].results | map(attribute='name') | list == ['root', 'issuer']
+          - ca_crl_runs.results[0].results | map(attribute='crl_number') | list == [1, 1]
+          - "'crl-batch-root-passphrase' not in (ca_crl_runs | to_json)"
+          - "'crl-batch-issuer-passphrase' not in (ca_crl_runs | to_json)"
+
+    - name: Reconcile through the unchanged single module
+      jomrr.ca.crl:
+        base_dir: '{{ ca_crl_params.base_dir }}'
+        ca_name: crl_batch
+        name: root
+        key_passphrase: crl-batch-root-passphrase
+        next_update_days: 2
+        renew_before_days: 0
+        digest: sha256
+      register: ca_crl_single
+
+    - name: Verify single CRL sees identical state
+      ansible.builtin.assert:
+        that: not ca_crl_single.changed
+
+    - name: Record an issuer revocation independently of authority issuance
+      jomrr.ca.crl_batch:
+        <<: *crl_batch_params
+        revocations:
+          issuer:
+            - serial_number: '42'
+              reason: superseded
+      register: ca_crl_revoked
+
+    - name: Verify only the selected authority renewed
+      ansible.builtin.assert:
+        that:
+          - not ca_crl_revoked.results[0].changed
+          - ca_crl_revoked.results[1].changed
+          - ca_crl_revoked.results[1].crl_number == 2
+
+    - name: Verify each CRL signature with OpenSSL
+      ansible.builtin.command:
+        argv:
+          - openssl
+          - crl
+          - -in
+          - '{{ item.paths.pem }}'
+          - -noout
+          - -verify
+          - -CAfile
+          - '{{ ca_crl_params.base_dir }}/ca/{{ item.name }}-ca.pem'
+      loop: '{{ ca_crl_revoked.results }}'
+      loop_control:
+        label: '{{ item.name }}'
+      changed_when: false
+
+    - name: Repeat without revocation declarations
+      jomrr.ca.crl_batch: *crl_batch_params
+      register: ca_crl_persisted
+
+    - name: Verify persistent revocation state is unchanged
+      ansible.builtin.assert:
+        that: not ca_crl_persisted.changed
+
+    - name: Check CRLs after convergence
+      jomrr.ca.crl_batch: *crl_batch_params
+      check_mode: true
+      register: ca_crl_check
+
+    - name: Verify converged check mode skips
+      ansible.builtin.assert:
+        that: ca_crl_check is skipped
+  always:
+    - name: Remove CRL batch fixture
+      ansible.builtin.file:
+        path: '{{ ca_crl_fixture.path }}'
+        state: absent

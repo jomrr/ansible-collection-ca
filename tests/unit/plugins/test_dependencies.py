@@ -23,6 +23,7 @@ class MissingCryptographyTests(unittest.TestCase):
             "certificate_batch",
             "chain",
             "crl",
+            "crl_batch",
             "fritzbox_deploy",
             "publish",
             "publish_archive",

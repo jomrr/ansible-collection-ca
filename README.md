@@ -36,6 +36,7 @@ ansible-galaxy collection install jomrr.ca
 | [`jomrr.ca.certificate_batch`](plugins/modules/certificate_batch.py) | yes | no | Dispatch managed CA collection certificates in one batch |
 | [`jomrr.ca.chain`](plugins/modules/chain.py) | yes | no | Manage an ordered PEM certificate chain on the managed host |
 | [`jomrr.ca.crl`](plugins/modules/crl.py) | yes | no | Manage CA collection certificate revocation lists |
+| [`jomrr.ca.crl_batch`](plugins/modules/crl_batch.py) | yes | no | Manage authority CRLs in one batch |
 | [`jomrr.ca.fritzbox_deploy`](plugins/modules/fritzbox_deploy.py) | yes | no | Deploy a FritzBox PEM certificate bundle to FRITZ!OS |
 | [`jomrr.ca.publish`](plugins/modules/publish.py) | yes | no | Publish public AIA/CDP files directly on the CA host |
 | [`jomrr.ca.publish_archive`](plugins/modules/publish_archive.py) | yes | no | Create deterministic public AIA/CDP publish archives on the managed host |
@@ -44,9 +45,11 @@ ansible-galaxy collection install jomrr.ca
 
 | Name | idempotent | check_mode | Description |
 | ---- | ---------- | ---------- | ----------- |
+| [`jomrr.ca.authority_definition`](plugins/doc_fragments/authority_definition.py) | n/a | n/a | Shared authority fields for single-module and nested batch documentation. |
 | [`jomrr.ca.certificate`](plugins/doc_fragments/certificate.py) | n/a | n/a | Shared certificate dispatch arguments and X.509 return values. |
 | [`jomrr.ca.certificate_definition`](plugins/doc_fragments/certificate_definition.py) | n/a | n/a | One shared nested certificate schema for single and batch documentation. |
 | [`jomrr.ca.context`](plugins/doc_fragments/context.py) | n/a | n/a | Shared CA execution and file context documentation. |
+| [`jomrr.ca.crl_batch`](plugins/doc_fragments/crl_batch.py) | n/a | n/a | Document full authority definitions with CRL-specific field meanings. |
 
 ### Filter Plugins
 
@@ -86,8 +89,11 @@ the private key stays with the external CA. See the
 Supply `certificate_types` and `authorities` explicitly; these modules do
 not load the standalone role's defaults.
 
-`jomrr.ca.crl` resolves revocations from the persistent inventory by name,
-fingerprint or serial. `jomrr.ca.publish` writes public AIA/CDP files
+`jomrr.ca.crl_batch` manages all configured authority CRLs in one call,
+independently of authority issuance. Each authority retains its own locks,
+lifetime, renewal window and digest; `revocations` maps authority names to
+their declarations. It shares the generation and revocation engine with
+`jomrr.ca.crl`, resolving names, fingerprints and serials from inventory. `jomrr.ca.publish` writes public AIA/CDP files
 directly into a webroot on the CA host. `jomrr.ca.publish_archive` builds
 a deterministic archive for transfer to other hosts. Both select the same
 retained issuer generations. Transfer and web serving are separate tasks.

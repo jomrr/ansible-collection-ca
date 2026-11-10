@@ -12,7 +12,7 @@ from collections import Counter
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_args import (
-    authority_options,
+    authority_list_argument,
     certificate_options,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results import (
@@ -58,12 +58,7 @@ def certificate_common_argument_spec() -> dict[str, dict[str, Any]]:
         "base_url": {"type": "str", "default": ""},
         "ca_name": {"type": "str", "default": ""},
         "certificate_types": {"type": "dict", "required": True},
-        "authorities": {
-            "type": "list",
-            "elements": "dict",
-            "required": True,
-            "options": authority_options(),
-        },
+        "authorities": authority_list_argument(),
         "kerberos_realm": {"type": "str", "default": ""},
         "subject": {"type": "dict", "default": {}},
         "renewal": {"type": "dict", "default": {}},

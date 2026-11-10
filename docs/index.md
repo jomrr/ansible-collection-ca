@@ -22,14 +22,16 @@ Call the public modules in this order:
    formats. Certificate entries can also sign external CSRs with `csr_path` or
    `csr_content`. `jomrr.ca.certificate` uses the same engine for one certificate.
 4. `jomrr.ca.fritzbox_deploy` can deploy a generated FritzBox bundle to FRITZ!OS.
-5. `jomrr.ca.crl` resolves declared revocations and creates PEM/DER CRL exports for
-   every CA.
+5. `jomrr.ca.crl_batch` manages all selected authority CRLs in one call.
+   `jomrr.ca.crl` remains available for one authority; both resolve declared
+   revocations and export PEM/DER CRLs independently of authority issuance.
 6. Optional publish tasks use `jomrr.ca.publish` to write CA certificates,
    issuing chains and CRLs directly into a local webroot. For other hosts, use
    `jomrr.ca.publish_archive` and transfer and unpack the resulting archive.
 
 `jomrr.ca.authority_batch`, `jomrr.ca.authority`, `jomrr.ca.certificate_batch`,
-`jomrr.ca.certificate`, and `jomrr.ca.crl` update internal CA inventory fragments. When `ca_name` is set, the fragments are
+`jomrr.ca.certificate`, `jomrr.ca.crl_batch`, and `jomrr.ca.crl` update internal
+CA inventory fragments. When `ca_name` is set, the fragments are
 composed into `<base_dir>/inventory/ca-inventory.json`.
 
 ## Public Modules
@@ -40,6 +42,7 @@ composed into `<base_dir>/inventory/ca-inventory.json`.
 - [jomrr.ca.certificate](certificate.md)
 - [jomrr.ca.certificate_batch](certificate_batch.md)
 - [jomrr.ca.crl](crl.md)
+- [jomrr.ca.crl_batch](crl_batch.md)
 - [jomrr.ca.fritzbox_deploy](fritzbox_deploy.md)
 - [jomrr.ca.publish](publish.md)
 - [jomrr.ca.publish_archive](publish_archive.md)

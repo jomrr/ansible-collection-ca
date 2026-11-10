@@ -13,6 +13,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._authority import (
     ensure_authority,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_args import (
+    authority_list_argument,
     authority_options,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._chain import (
@@ -72,12 +73,7 @@ def authority_batch_argument_spec() -> dict[str, Any]:
     options = authority_options()
     for key in ("parent", "days"):
         options[key]["required"] = True
-    spec["authorities"] = {
-        "type": "list",
-        "elements": "dict",
-        "required": True,
-        "options": options,
-    }
+    spec["authorities"] = authority_list_argument(options)
     return spec
 
 

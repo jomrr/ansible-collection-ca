@@ -31,8 +31,11 @@ from ansible_collections.jomrr.ca.plugins.module_utils._crl import (
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_models import (
     CrlPlan,
     CrlRequest,
+    CrlResult,
+    CrlWriteResult,
     GenerationResult,
     GenerationStatus,
+    MigrationConflict,
     revocation,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._crl_state import (
@@ -226,7 +229,7 @@ def _store_crls(
     issuers: dict[str, x509.Certificate],
     prepared: list[CrlGeneration],
     status: dict[str, GenerationStatus],
-) -> dict[str, Any]:
+) -> CrlWriteResult:
     """Reserve the shared number, then persist status, revocations and CRL exports."""
     rebuild = any(item.changed for item in prepared)
     number = last_crl_number(params.context.base_dir, params.context.name) + int(
@@ -274,7 +277,7 @@ def _store_crls(
     }
 
 
-def ensure_crls(values: dict[str, Any]) -> dict[str, Any]:
+def ensure_crls(values: dict[str, Any]) -> CrlResult:
     """Prepare all CRLs first, then reserve numbers and persist state and exports."""
     params = CrlRequest.from_input(
         values,
@@ -325,7 +328,7 @@ def ensure_crls(values: dict[str, Any]) -> dict[str, Any]:
     ]
     result = _store_crls(params, issuers, prepared, status)
     revoked = {str(entry["serial_number"]) for entry in params.revoked_certificates}
-    conflicts = [
+    conflicts: list[MigrationConflict] = [
         {
             "name": record["name"],
             "serial_number": record["certificate"]["serial_number"],

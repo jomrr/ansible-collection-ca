@@ -156,3 +156,29 @@ class GenerationResult(GenerationStatus):
 
     paths: dict[str, str]
     crl_number: NotRequired[int]
+
+
+class MigrationConflict(TypedDict):
+    """A certificate still referring to a different legacy URL owner."""
+
+    name: str
+    serial_number: str
+    generation_id: str | None
+
+
+class CrlWriteResult(TypedDict):
+    """Changes and generation state committed by the CRL engine."""
+
+    changed: bool
+    inventory_changed: bool
+    generations: dict[str, GenerationResult]
+    crl_number: int
+
+
+class CrlResult(CrlWriteResult):
+    """Public result of reconciling all generations of one authority."""
+
+    formats: list[str]
+    legacy_generation: str
+    migration_conflicts: list[MigrationConflict]
+    paths: dict[str, str]

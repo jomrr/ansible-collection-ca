@@ -1,6 +1,7 @@
 # jomrr.ca.crl
 
 Manage certificate revocation lists for all signing generations of one CA.
+For multiple authorities in one invocation, use [crl_batch](crl_batch.md).
 
 `jomrr.ca.crl` creates PEM and DER exports for each active CA signing generation
 and records CRL and revocation state in the internal CA inventory.
