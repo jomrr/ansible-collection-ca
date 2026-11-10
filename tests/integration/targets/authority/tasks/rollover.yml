@@ -114,11 +114,23 @@
     authorities: *rollover_authorities
   loop: [first, repeat]
   register: ca_rollover_published
+- name: Publish all issuer generations directly and repeat for idempotence
+  jomrr.ca.publish:
+    base_dir: '{{ ca_test_root.path }}/rollover'
+    dest: '{{ ca_test_root.path }}/rollover/public'
+    owner: '{{ ca_test_uid.stdout }}'
+    group: '{{ ca_test_gid.stdout }}'
+    authorities: *rollover_authorities
+  loop: [first, repeat]
+  register: ca_rollover_direct
 - name: Verify publication converges
   ansible.builtin.assert:
     that:
       - ca_rollover_published.results[0].changed
       - not ca_rollover_published.results[1].changed
+      - ca_rollover_direct.results[0].changed
+      - not ca_rollover_direct.results[1].changed
+      - ca_rollover_direct.results[0].published_paths == ca_rollover_published.results[0].archive_paths
 - name: Verify old and new leaves against their published AIA and CDP material
   ansible.builtin.script:
     cmd: "{{ ca_rollover_script | default('rollover.py') }} {{ ca_test_root.path }}/rollover"

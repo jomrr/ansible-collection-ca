@@ -31,6 +31,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._generation_history impor
     ca_history,
     generation_id,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._publish import (
+    artifacts_from_authorities,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     certificate_not_valid_after,
 )
@@ -39,7 +42,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
 )
 from ansible_collections.jomrr.ca.plugins.modules.publish_archive import (
     _archive_content,
-    _artifacts_from_authorities,
 )
 from ansible_collections.jomrr.ca.tests.integration.targets.authority.files import (
     rollover,
@@ -100,7 +102,7 @@ class TestCaRollover(TestCase):
 
     def publish(self) -> dict[str, bytes]:
         """Read the actual authority-derived tar without extracting private data."""
-        artifacts = _artifacts_from_authorities(
+        artifacts = artifacts_from_authorities(
             [{"name": "root", "parent": "root"}, {"name": "issuer", "parent": "root"}],
             str(self.base),
         )

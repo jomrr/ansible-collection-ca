@@ -72,7 +72,7 @@ def verify(base: Path, name: str, public: dict[str, bytes]) -> tuple[str, str]:
 
 
 def main() -> None:
-    """Load only the public tar produced by publish_archive and check both issuers."""
+    """Compare both publication paths and check old and new issuer URLs."""
     base = Path(sys.argv[1])
     public = {}
     with tarfile.open(base / "public.tar") as archive:
@@ -82,7 +82,13 @@ def main() -> None:
             stream = archive.extractfile(member)
             assert stream is not None
             public[member.name] = stream.read()
-    old_urls = verify(base, "old", public)
+    direct = {
+        str(path.relative_to(base / "public")): path.read_bytes()
+        for path in (base / "public").rglob("*")
+        if path.is_file()
+    }
+    assert direct == public, "Direct publication differs from the archive"
+    old_urls = verify(base, "old", direct)
     assert old_urls == ("aia/issuer-ca.der", "crl/issuer-ca.crl")
     assert verify(base, "old-valid", public) == old_urls
     new_urls = verify(base, "new", public)

@@ -1,0 +1,244 @@
+---
+- name: Allocate publication fixture
+  ansible.builtin.tempfile:
+    state: directory
+  register: ca_publish_fixture
+
+- name: Exercise direct publication
+  vars:
+    ca_publish_params: &publish_params
+      base_dir: '{{ ca_publish_fixture.path }}/ca'
+      dest: '{{ ca_publish_fixture.path }}/webroot'
+      mode: '0640'
+      artifacts:
+        - src: '{{ ca_publish_fixture.path }}/certificate'
+          file: root-ca.pem
+          area: aia
+        - src: '{{ ca_publish_fixture.path }}/crl'
+          file: root-ca.crl
+          area: cdp
+  block:
+    - name: Check publication before convergence
+      jomrr.ca.publish: *publish_params
+      check_mode: true
+      register: ca_publish_check
+
+    - name: Inspect check mode destination
+      ansible.builtin.stat:
+        path: '{{ ca_publish_params.dest }}'
+      register: ca_publish_before
+
+    - name: Verify publication check mode skips without writes
+      ansible.builtin.assert:
+        that:
+          - ca_publish_check is skipped
+          - not ca_publish_before.stat.exists
+
+    - name: Create public source fixtures
+      ansible.builtin.copy:
+        content: 'public {{ item }} version one'
+        dest: '{{ ca_publish_fixture.path }}/{{ item }}'
+        mode: '0600'
+      loop: [certificate, crl]
+
+    - name: Publish and repeat with identical inputs
+      jomrr.ca.publish: *publish_params
+      loop: [first, repeat]
+      register: ca_publish_runs
+
+    - name: Verify publication converges
+      ansible.builtin.assert:
+        that:
+          - ca_publish_runs.results[0].changed
+          - not ca_publish_runs.results[1].changed
+          - ca_publish_runs.results[0].published_paths == ['aia/root-ca.pem', 'crl/root-ca.crl']
+
+    - name: Check publication after convergence
+      jomrr.ca.publish: *publish_params
+      check_mode: true
+      register: ca_publish_check
+
+    - name: Verify check mode skips after convergence
+      ansible.builtin.assert:
+        that: ca_publish_check is skipped
+
+    - name: Alter a published certificate
+      ansible.builtin.copy:
+        content: altered
+        dest: '{{ ca_publish_params.dest }}/aia/root-ca.pem'
+        mode: '0644'
+
+    - name: Remove a published CRL
+      ansible.builtin.file:
+        path: '{{ ca_publish_params.dest }}/crl/root-ca.crl'
+        state: absent
+
+    - name: Create unrelated webroot content
+      ansible.builtin.copy:
+        content: unrelated
+        dest: '{{ ca_publish_params.dest }}/index.html'
+        mode: '0644'
+
+    - name: Restore published files and repeat
+      jomrr.ca.publish: *publish_params
+      loop: [repair, repeat]
+      register: ca_publish_repairs
+
+    - name: Compare restored content to its source
+      ansible.builtin.command:
+        argv:
+          - cmp
+          - '{{ item.src }}'
+          - '{{ ca_publish_params.dest }}/{{ item.area | replace("cdp", "crl") }}/{{ item.file }}'
+      loop: '{{ ca_publish_params.artifacts }}'
+      changed_when: false
+
+    - name: Inspect repaired file modes
+      ansible.builtin.stat:
+        path: '{{ ca_publish_params.dest }}/{{ item }}'
+      loop: [aia/root-ca.pem, crl/root-ca.crl, index.html]
+      register: ca_publish_files
+
+    - name: Verify repair and unrelated file preservation
+      ansible.builtin.assert:
+        that:
+          - ca_publish_repairs.results[0].changed
+          - not ca_publish_repairs.results[1].changed
+          - ca_publish_files.results[0].stat.mode == '0640'
+          - ca_publish_files.results[1].stat.mode == '0640'
+          - ca_publish_files.results[2].stat.checksum == ('unrelated' | hash('sha1'))
+
+    - name: Alter only the certificate permissions
+      ansible.builtin.file:
+        path: '{{ ca_publish_params.dest }}/aia/root-ca.pem'
+        mode: '0600'
+
+    - name: Correct only permission drift and repeat
+      jomrr.ca.publish: *publish_params
+      loop: [repair, repeat]
+      register: ca_publish_modes
+
+    - name: Verify permission repair converges
+      ansible.builtin.assert:
+        that:
+          - ca_publish_modes.results[0].changed
+          - not ca_publish_modes.results[1].changed
+
+    - name: Update an existing public source
+      ansible.builtin.copy:
+        content: public certificate version two
+        dest: '{{ ca_publish_fixture.path }}/certificate'
+        mode: '0600'
+
+    - name: Publish updated source and repeat
+      jomrr.ca.publish: *publish_params
+      loop: [update, repeat]
+      register: ca_publish_updates
+
+    - name: Verify source update converges
+      ansible.builtin.assert:
+        that:
+          - ca_publish_updates.results[0].changed
+          - not ca_publish_updates.results[1].changed
+
+    - name: Force publication of identical content
+      jomrr.ca.publish:
+        <<: *publish_params
+        force: true
+      register: ca_publish_forced
+
+    - name: Verify forced publication reports change
+      ansible.builtin.assert:
+        that: ca_publish_forced.changed
+
+    - name: Reject missing public source
+      jomrr.ca.publish:
+        <<: *publish_params
+        artifacts:
+          - src: '{{ ca_publish_fixture.path }}/absent'
+            file: missing.pem
+            area: aia
+      register: ca_publish_missing
+      failed_when: false
+
+    - name: Verify missing sources fail
+      ansible.builtin.assert:
+        that:
+          - not ca_publish_missing.changed
+          - "'No such file' in ca_publish_missing.msg"
+
+    - name: Reject unsafe publication filename
+      jomrr.ca.publish:
+        <<: *publish_params
+        artifacts:
+          - src: '{{ ca_publish_fixture.path }}/certificate'
+            file: ../escape
+            area: aia
+      register: ca_publish_unsafe
+      failed_when: false
+
+    - name: Verify path traversal fails
+      ansible.builtin.assert:
+        that:
+          - not ca_publish_unsafe.changed
+          - "'Unsafe publish artifact filename' in ca_publish_unsafe.msg"
+    - name: Reject duplicate destinations across CRL area aliases
+      jomrr.ca.publish:
+        <<: *publish_params
+        artifacts:
+          - src: '{{ ca_publish_fixture.path }}/crl'
+            file: duplicate.crl
+            area: cdp
+          - src: '{{ ca_publish_fixture.path }}/crl'
+            file: duplicate.crl
+            area: crl
+      register: ca_publish_duplicate
+      failed_when: false
+
+    - name: Verify duplicate publication fails
+      ansible.builtin.assert:
+        that:
+          - not ca_publish_duplicate.changed
+          - "'Duplicate publish artifact path' in ca_publish_duplicate.msg"
+
+    - name: Replace public certificate with a symlink
+      ansible.builtin.file:
+        path: '{{ ca_publish_params.dest }}/aia/root-ca.pem'
+        src: '{{ ca_publish_fixture.path }}/certificate'
+        state: link
+        force: true
+
+    - name: Reject a symlink destination
+      jomrr.ca.publish: *publish_params
+      register: ca_publish_symlink
+      failed_when: false
+
+    - name: Verify symlink destination fails
+      ansible.builtin.assert:
+        that:
+          - not ca_publish_symlink.changed
+          - "'symlink' in ca_publish_symlink.msg"
+
+    - name: Create a symlinked webroot
+      ansible.builtin.file:
+        path: '{{ ca_publish_fixture.path }}/linked-webroot'
+        src: '{{ ca_publish_params.dest }}'
+        state: link
+
+    - name: Reject a symlinked webroot
+      jomrr.ca.publish:
+        <<: *publish_params
+        dest: '{{ ca_publish_fixture.path }}/linked-webroot'
+      register: ca_publish_symlink_directory
+      failed_when: false
+
+    - name: Verify symlinked directory fails
+      ansible.builtin.assert:
+        that:
+          - not ca_publish_symlink_directory.changed
+          - "'directory' in ca_publish_symlink_directory.msg"
+  always:
+    - name: Remove publication fixture
+      ansible.builtin.file:
+        path: '{{ ca_publish_fixture.path }}'
+        state: absent

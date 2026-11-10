@@ -82,164 +82,31 @@ archive_paths:
 import io
 import tarfile
 from collections.abc import Callable
-from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.jomrr.ca.plugins.module_utils._authority_generations import (
-    generation_root,
-    generation_stem,
-    legacy_id,
-)
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     OPERATION_ERRORS,
     require_cryptography,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     FileAttributes,
-    ca_lock_path,
     file_locks,
     parse_mode,
-    read_file,
     sanitize_error,
-    set_attrs,
     write_file,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._generation_history import (
-    ca_history,
+from ansible_collections.jomrr.ca.plugins.module_utils._publish import (
+    Artifact,
+    publish_argument_spec,
+    publish_lock_paths,
+    read_artifacts,
+    resolve_artifacts,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._inventory_store import read_json
-from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
-    authority_paths,
-    chain_paths,
-    crl_paths,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._validation import authority_map
 
 # pylint: enable=wrong-import-position
 
-AREA_DIRECTORY = {
-    "aia": "aia",
-    "cdp": "crl",
-    "crl": "crl",
-}
 MTIME = 0
-
-
-def _base_dir(value: Any) -> str:
-    """Return a normalized base directory string."""
-    return str(value).rstrip("/")
-
-
-def _artifact(
-    area: str,
-    source: str,
-    filename: str,
-    artifact_format: str,
-    kind: str,
-) -> dict[str, str]:
-    """Return one public artifact descriptor."""
-    return {
-        "area": area,
-        "src": source,
-        "file": filename,
-        "format": artifact_format,
-        "kind": kind,
-    }
-
-
-def _generation_retired(directory: Path) -> bool:
-    """Keep a retired generation's final CRL when present, without requiring one."""
-    try:
-        return bool(read_json(str(directory / "status.json"))["retired"])
-    except FileNotFoundError:
-        return False
-
-
-def _artifacts_from_authorities(
-    authorities: list[dict[str, Any]],
-    base_dir: str,
-) -> list[dict[str, Any]]:
-    """Return public AIA/CDP artifacts derived from managed authorities."""
-    authority_by_name = authority_map(authorities)
-    root = _base_dir(base_dir)
-    artifacts = []
-
-    for name, authority in authority_by_name.items():
-        history = ca_history(root, name)
-        history.require_current()
-        legacy = legacy_id(root, name, history=history)
-        for identity in history.certificates:
-            ca_stem = generation_stem(name, identity, legacy)
-            retained = generation_root(root, name) / identity
-            for artifact_format in ("pem", "der", "txt"):
-                source = (
-                    str(retained / f"certificate.{artifact_format}")
-                    if retained.is_dir()
-                    else authority_paths(root, name)[
-                        "certificate_text"
-                        if artifact_format == "txt"
-                        else f"certificate_{artifact_format}"
-                    ]
-                )
-                artifacts.append(
-                    _artifact(
-                        "aia",
-                        source,
-                        f"{ca_stem}.{artifact_format}",
-                        artifact_format,
-                        "certificate",
-                    )
-                )
-            for artifact_format, source in crl_paths(root, ca_stem).items():
-                if _generation_retired(retained) and not Path(source).exists():
-                    continue
-                artifacts.append(
-                    _artifact(
-                        "cdp",
-                        source,
-                        Path(source).name,
-                        artifact_format,
-                        "crl",
-                    )
-                )
-
-        parent = str(authority.get("parent") or name)
-        if parent != name:
-            for artifact_format, source in chain_paths(root, name).items():
-                artifacts.append(
-                    _artifact(
-                        "aia",
-                        source,
-                        Path(source).name,
-                        artifact_format,
-                        "chain",
-                    )
-                )
-
-    return artifacts
-
-
-def _resolve_artifacts(params: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return explicitly supplied or authority-derived public artifacts."""
-    artifacts = params.get("artifacts") or []
-    if artifacts:
-        return artifacts
-    authorities = params.get("authorities") or []
-    if not authorities:
-        raise ValueError("artifacts or authorities is required")
-    return _artifacts_from_authorities(authorities, params["base_dir"])
-
-
-def _archive_path(area: str, filename: str) -> str:
-    """Return a safe relative archive path for one public artifact."""
-    directory = AREA_DIRECTORY.get(str(area))
-    if directory is None:
-        raise ValueError(f"Unsupported publish artifact area: {area}")
-    path = PurePosixPath(str(filename))
-    if path.name != str(filename) or path.name in ("", ".", ".."):
-        raise ValueError(f"Unsafe publish artifact filename: {filename}")
-    return str(PurePosixPath(directory) / path.name)
 
 
 def _add_bytes(
@@ -261,96 +128,43 @@ def _add_bytes(
 
 
 def _archive_content(
-    artifacts: list[dict[str, Any]],
+    artifacts: list[Artifact],
     artifact_mode: Any,
 ) -> tuple[bytes, list[str]]:
-    """Return deterministic tar bytes and archive paths for public artifacts."""
+    """Return deterministic tar bytes and paths for public artifacts."""
     mode = parse_mode(artifact_mode, fallback=0o644)
-    archive_paths: set[str] = set()
+    contents = read_artifacts(artifacts)
     buffer = io.BytesIO()
-
     with tarfile.open(fileobj=buffer, mode="w") as archive:
-        for artifact in sorted(
-            artifacts,
-            key=lambda item: (str(item.get("area", "")), str(item.get("file", ""))),
-        ):
-            area = str(artifact.get("area", ""))
-            filename = str(artifact.get("file", ""))
-            source = str(artifact.get("src", ""))
-            archive_path = _archive_path(area, filename)
-            if archive_path in archive_paths:
-                raise ValueError(f"Duplicate publish archive path: {archive_path}")
-            content = read_file(source)
-            _add_bytes(archive, archive_path, content, mode)
-            archive_paths.add(archive_path)
-
-    return buffer.getvalue(), sorted(archive_paths)
+        for path, content in contents.items():
+            _add_bytes(archive, path, content, mode)
+    return buffer.getvalue(), sorted(contents)
 
 
 def run_module() -> None:
     """Run the Ansible module for deterministic public publish archives."""
     module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec={
-            "base_dir": {"type": "path", "required": True},
-            "dest": {"type": "path", "required": True},
-            "artifacts": {
-                "type": "list",
-                "elements": "dict",
-                "default": [],
-            },
-            "authorities": {
-                "type": "list",
-                "elements": "dict",
-                "default": [],
-                "no_log": True,
-            },
+            **publish_argument_spec("0600"),
             "artifact_mode": {"type": "str", "default": "0644"},
-            "owner": {"type": "str"},
-            "group": {"type": "str"},
-            "mode": {"type": "str", "default": "0600"},
-            "force": {"type": "bool", "default": False},
         },
         supports_check_mode=False,
     )
 
     params = module.params
     try:
-        locks = [ca_lock_path(params["base_dir"], "publish", "archive")]
         if not params["artifacts"]:
             require_cryptography(module)
-            locks.extend(
-                ca_lock_path(params["base_dir"], "authority", name)
-                for name in authority_map(params["authorities"])
-            )
-        with file_locks(locks):
-            artifacts = _resolve_artifacts(params)
+        with file_locks(publish_lock_paths(params)):
             content, archive_paths = _archive_content(
-                artifacts,
-                params["artifact_mode"],
+                resolve_artifacts(params), params["artifact_mode"]
             )
-            changed = params["force"]
-            if not changed:
-                try:
-                    changed = read_file(params["dest"]) != content
-                except FileNotFoundError:
-                    changed = True
-            if changed:
-                write_file(
-                    params["dest"],
-                    content,
-                    FileAttributes.from_params(params, "mode"),
-                    force=True,
-                )
-            else:
-                changed = (
-                    set_attrs(
-                        params["dest"],
-                        params["owner"],
-                        params["group"],
-                        params["mode"],
-                    )
-                    or changed
-                )
+            changed = write_file(
+                params["dest"],
+                content,
+                FileAttributes.from_params(params, "mode"),
+                force=params["force"],
+            )
     except OPERATION_ERRORS as exc:
         module.fail_json(msg=sanitize_error(exc, params))
 

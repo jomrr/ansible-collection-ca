@@ -21,9 +21,9 @@ Call the public modules in this order:
 4. `jomrr.ca.fritzbox_deploy` can deploy a generated FritzBox bundle to FRITZ!OS.
 5. `jomrr.ca.crl` resolves declared revocations and creates PEM/DER CRL exports for
    every CA.
-6. Optional publish tasks use `jomrr.ca.publish_archive` to build deterministic
-   archives and unpack CA certificates, issuing chains, and CRLs to configured
-   AIA/CDP target webroots.
+6. Optional publish tasks use `jomrr.ca.publish` to write CA certificates,
+   issuing chains and CRLs directly into a local webroot. For other hosts, use
+   `jomrr.ca.publish_archive` and transfer and unpack the resulting archive.
 
 `jomrr.ca.authority`, `jomrr.ca.certificate_batch`, `jomrr.ca.certificate`, and `jomrr.ca.crl` update
 internal CA inventory fragments. When `ca_name` is set, the fragments are
@@ -37,6 +37,7 @@ composed into `<base_dir>/inventory/ca-inventory.json`.
 - [jomrr.ca.certificate_batch](certificate_batch.md)
 - [jomrr.ca.crl](crl.md)
 - [jomrr.ca.fritzbox_deploy](fritzbox_deploy.md)
+- [jomrr.ca.publish](publish.md)
 - [jomrr.ca.publish_archive](publish_archive.md)
 - [AIA/CDP publishing](publishing.md)
 

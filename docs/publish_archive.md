@@ -3,6 +3,8 @@
 `jomrr.ca.publish_archive` creates a deterministic tar archive on the CA host
 from authority definitions or explicit public AIA/CDP artifacts. Transfer the
 archive and unpack it on the publication host in separate playbook tasks.
+For a webroot on the CA host itself, use [jomrr.ca.publish](publish.md) to write
+the same public artifacts directly, without an archive or controller transfer.
 
 ## Parameters
 
