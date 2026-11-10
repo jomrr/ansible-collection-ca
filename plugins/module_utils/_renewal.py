@@ -115,46 +115,36 @@ def renewal_status(
     now: _dt.datetime | None = None,
 ) -> dict[str, Any]:
     """Return renewal status for a certificate summary and policy."""
-    policy = renewal_policy(policy_value)
-    current_time = now if now is not None else now_utc()
     not_before = parse_datetime(certificate["not_valid_before"])
     not_after = parse_datetime(certificate["not_valid_after"])
     if not_before is None or not_after is None:
         raise ValueError("certificate summary must contain validity timestamps")
-
-    seconds_remaining = (not_after - current_time).total_seconds()
-    days_remaining = max(0, int(seconds_remaining // 86400))
-    renew_at = renewal_datetime(policy["renew_at"])
-    scheduled = False
-    scheduled_due = False
-    if renew_at is not None:
-        scheduled = not_before < renew_at
-        scheduled_due = scheduled and renew_at <= current_time
-    renew_window = policy[
-        "renew_before_days"
-    ] > 0 and current_time >= not_after - _dt.timedelta(
-        days=policy["renew_before_days"]
+    decision = renewal_decision(
+        force=False,
+        not_before=not_before,
+        not_after=not_after,
+        policy_value=policy_value,
+        now=now,
     )
-    warning = policy[
-        "warn_before_days"
-    ] > 0 and current_time >= not_after - _dt.timedelta(days=policy["warn_before_days"])
-    state = "valid"
-    if not_after <= current_time:
-        state = "expired"
-    elif scheduled_due:
-        state = "scheduled_due"
-    elif renew_window:
-        state = "renewal_due"
-    elif warning:
-        state = "warning"
-    elif scheduled:
-        state = "scheduled"
+    policy = decision["policy"]
+    renew_at = renewal_datetime(policy["renew_at"])
+    scheduled = renew_at is not None and not_before < renew_at
+    state = {
+        "expired": "expired",
+        "scheduled": "scheduled_due",
+        "renewal_window": "renewal_due",
+    }.get(decision["reason"], "valid")
+    if not decision["renew"]:
+        if decision["warning"]:
+            state = "warning"
+        elif scheduled:
+            state = "scheduled"
     return {
         "state": state,
-        "days_remaining": days_remaining,
-        "warning": warning,
-        "renewal_due": state in {"expired", "scheduled_due", "renewal_due"},
-        "scheduled": bool(scheduled),
+        "days_remaining": decision["days_remaining"],
+        "warning": decision["warning"],
+        "renewal_due": decision["renew"],
+        "scheduled": scheduled,
         "rekey_on_renewal": policy["rekey"],
         "policy": policy,
     }
