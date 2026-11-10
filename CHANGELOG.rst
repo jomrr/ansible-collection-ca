@@ -4,6 +4,20 @@ jomrr.ca 1.2 Release Notes
 
 .. contents:: Topics
 
+v1.2.2
+======
+
+Breaking Changes / Porting Guide
+--------------------------------
+
+- Stored inventory JSON no longer contains status or renewal_status. Consumers must derive time-dependent values when reading; compose_inventory retains the enriched read view.
+
+Bugfixes
+--------
+
+- Persist only stable inventory metadata, avoiding daily changed results in normal and check-mode runs. Validity and renewal status are computed in read views.
+- Skip repeated RSA validation for matching receipts from either generation or prior full validation, including existing CA keys.
+
 v1.2.1
 ======
 
