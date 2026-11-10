@@ -21,6 +21,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     with_derived_paths,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_preview import preview_x509
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_validation import (
+    prepare_signing_request,
+)
 
 ROOT_CA_DEFAULTS = {
     "basic_constraints": ["CA:TRUE", "pathlen:1"],
@@ -86,8 +89,13 @@ def ensure_authority(
         manage_directory=False,
         manage_chain=False,
     )
+    operation.check_mode = check_mode
     result = (
-        preview_x509(operation, signed=signed, issuer_pending=issuer_pending)
+        preview_x509(
+            operation,
+            signed=signed,
+            request=prepare_signing_request(operation, issuer_pending=issuer_pending),
+        )
         if check_mode
         else ensure_x509_operation(operation, signed=signed, held_locks=held_locks)
     )

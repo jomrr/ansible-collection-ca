@@ -8,8 +8,10 @@ import datetime
 import shutil
 import tempfile
 import unittest
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine import (
     ensure_certificate_artifacts,
@@ -18,6 +20,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine impor
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import ordered_chain
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_constraints import (
     validate_issuer_constraints,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    load_csr_bytes,
+    load_private_key,
 )
 from ansible_collections.jomrr.ca.tests.integration.targets.authority.files.csr import (
     untrusted_csr,
@@ -346,20 +352,34 @@ class IssuanceConstraintTests(unittest.TestCase):
                 "extended_key_usage": [],
             }
         )
-        before = snapshot(self.base)
-        with forbid_mutation():
-            self.assertTrue(
-                ensure_certificate_batch(params, check_mode=True)["changed"]
-            )
-        self.assertEqual(before, snapshot(self.base))
-        self.assertTrue(ensure_certificate_batch(params)["changed"])
-        before = snapshot(self.base)
-        with forbid_mutation():
-            self.assertFalse(
-                ensure_certificate_batch(params, check_mode=True)["changed"]
-            )
-        self.assertEqual(before, snapshot(self.base))
-        self.assertFalse(ensure_certificate_batch(params)["changed"])
+        for check, changed in (
+            (True, True),
+            (False, True),
+            (True, False),
+            (False, False),
+        ):
+            before = snapshot(self.base)
+            with (
+                forbid_mutation() if check else nullcontext(),
+                patch(
+                    "ansible_collections.jomrr.ca.plugins.module_utils."
+                    "_x509_keys.load_private_key",
+                    wraps=load_private_key,
+                ) as keys,
+                patch(
+                    "ansible_collections.jomrr.ca.plugins.module_utils."
+                    "_x509_material.load_csr_bytes",
+                    wraps=load_csr_bytes,
+                ) as requests,
+            ):
+                self.assertEqual(
+                    ensure_certificate_batch(params, check_mode=check)["changed"],
+                    changed,
+                )
+                self.assertEqual(keys.call_count, 1)
+                self.assertEqual(requests.call_count, len(params["certificates"]))
+            if check:
+                self.assertEqual(before, snapshot(self.base))
         issued = x509.load_pem_x509_certificate(
             (self.base / "certs/openbao/openbao.pem").read_bytes()
         )

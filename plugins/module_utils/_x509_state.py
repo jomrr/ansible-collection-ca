@@ -34,3 +34,12 @@ class CertificateSpec:
     key: PrivateKey | PublicKey
     subject: x509.Name
     extensions: list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]]
+
+
+@dataclass
+class SigningRequest:
+    """Validated CSR and shared issuer material for one locked operation."""
+
+    signer: SignerMaterial
+    csr: x509.CertificateSigningRequest | None = None
+    issuer_pending: bool = False

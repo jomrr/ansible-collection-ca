@@ -38,25 +38,22 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_exports import (
     ensure_exports,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
-    load_certificate,
     load_csr,
     load_existing_certificate,
-    load_signing_key,
     public_key_bytes,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
     archive_existing_material,
     ensure_external_csr,
     reusable_key,
-    validated_external_csr,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
     CertificateSpec,
-    SignerMaterial,
+    SigningRequest,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_validation import (
     certificate_spec,
-    validate_signing_request,
+    prepare_signing_request,
 )
 
 try:
@@ -78,27 +75,12 @@ class PreviewMaterial:
     renewal: RenewalDecision
 
 
-def preview_signer(params: CertificateOperation, *, signed: bool) -> SignerMaterial:
-    """Validate available issuer material, allowing a not-yet-created authority."""
-    signer = SignerMaterial()
-    if not signed:
-        return signer
-    try:
-        signer.cert = load_certificate(params.paths["signer_cert_path"])
-    except FileNotFoundError:
-        return signer
-    validate_signing_request(params, signer)
-    signer.key = load_signing_key(
-        params.paths["signer_key_path"], params.request["issuer"].passphrase
-    )
-    return signer
-
-
-def _material(params: CertificateOperation, signer: SignerMaterial) -> PreviewMaterial:
+def _material(params: CertificateOperation, request: SigningRequest) -> PreviewMaterial:
     """Apply the same renewal, key selection and extension rules as issuance."""
     existing = load_existing_certificate(params.paths["cert_path"])
     renewal = certificate_renewal(params, existing)
-    csr = validated_external_csr(params) if params.request["csr"].external else None
+    csr = request.csr
+    signer = request.signer
     if csr is not None:
         renewal["rekey"] = False
     key = None if csr is not None else reusable_key(params, rekey=renewal["rekey"])
@@ -179,19 +161,16 @@ def preview_x509(
     signed: bool,
     manage_directory: bool = False,
     manage_chain: bool = False,
-    issuer_pending: bool = False,
+    request: SigningRequest | None = None,
 ) -> CertificateResult:
     """Predict artifacts and expose dependency state to the batch coordinator."""
     params.check_mode = True
     _validate_output_paths(params)
-    signer = (
-        preview_signer(params, signed=signed)
-        if not issuer_pending
-        else SignerMaterial()
-    )
-    material = _material(params, signer)
+    request = request or prepare_signing_request(params)
+    signer = request.signer
+    material = _material(params, request)
     pending = (
-        issuer_pending
+        request.issuer_pending
         or (signed and signer.cert is None)
         or certificate_needs_replacement(
             params, material.existing, material.spec, signer, material.renewal

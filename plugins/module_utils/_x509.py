@@ -49,12 +49,14 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     with_derived_paths,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_preview import preview_x509
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
     SignerMaterial,
+    SigningRequest,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_validation import (
     certificate_spec,
-    validate_signing_request,
+    prepare_signing_request,
 )
 
 try:
@@ -143,38 +145,52 @@ def ensure_x509_many(
             )
             for params in params_list
         ]
+    return ensure_x509_operations(
+        derived_params, manage_directory=manage_directory, manage_chain=manage_chain
+    )
+
+
+def ensure_x509_operations(
+    operations: list[CertificateOperation],
+    *,
+    manage_directory: bool = False,
+    manage_chain: bool = False,
+) -> list[CertificateResult]:
+    """Run prepared certificate operations with one signer cache per locked group."""
     groups: dict[str, list[tuple[int, CertificateOperation]]] = {}
-    for index, derived in enumerate(derived_params):
+    for index, derived in enumerate(operations):
         groups.setdefault(str(derived.paths["signer_lock_path"]), []).append(
             (index, derived)
         )
     results: dict[int, CertificateResult] = {}
     for signer_lock_path, group in groups.items():
         with file_locks(
-            [signer_lock_path, *(params.paths["lock_path"] for _index, params in group)]
+            [
+                signer_lock_path,
+                *(params.paths["lock_path"] for _index, params in group),
+            ],
+            readonly=group[0][1].check_mode,
         ):
-            signer = _group_signer(group)
-            for index, params in group:
+            requests = _group_requests(group)
+            for (index, params), request in zip(group, requests):
                 results[index] = _ensure_x509_locked(
                     params,
-                    signed=signed,
+                    signed=bool(params.paths["signer_cert_path"]),
                     manage_directory=manage_directory,
                     manage_chain=manage_chain,
-                    signer=signer,
+                    request=request,
                 )
-    return [results[index] for index in range(len(params_list))]
+    return [results[index] for index in range(len(operations))]
 
 
-def _group_signer(group: list[tuple[int, CertificateOperation]]) -> SignerMaterial:
+def _group_requests(
+    group: list[tuple[int, CertificateOperation]],
+) -> list[SigningRequest]:
     """Load and validate issuer material once for a locked batch."""
     first = group[0][1]
-    signer = SignerMaterial(cert=load_certificate(first.paths["signer_cert_path"]))
-    for _index, params in group:
-        validate_signing_request(params, signer)
-    signer.key = load_signing_key(
-        first.paths["signer_key_path"], first.request["issuer"].passphrase
-    )
-    if any(
+    signer = SignerMaterial()
+    requests = [prepare_signing_request(params, signer) for _index, params in group]
+    if not first.check_mode and any(
         set(params.request["exports"].formats).intersection(
             {"pfx", "p12", "fullchain", "fritzbox"}
         )
@@ -182,7 +198,7 @@ def _group_signer(group: list[tuple[int, CertificateOperation]]) -> SignerMateri
     ):
         signer.chain_content = chain_content(first, signer.cert)
         signer.extra_certs = chain_certificates(first, signer.cert)
-    return signer
+    return requests
 
 
 def _directory_change(params: CertificateOperation, manage_directory: bool) -> bool:
@@ -254,11 +270,19 @@ def _ensure_x509_locked(
     signed: bool,
     manage_directory: bool,
     manage_chain: bool,
-    signer: SignerMaterial | None = None,
+    request: SigningRequest | None = None,
 ) -> CertificateResult:
     """Ensure one X.509 object while holding its object lock."""
-    signer = signer or SignerMaterial()
-    csr = validate_signing_request(params, signer) if signed else None
+    if params.check_mode:
+        return preview_x509(
+            params,
+            signed=signed,
+            manage_directory=manage_directory,
+            manage_chain=manage_chain,
+            request=request,
+        )
+    request = request or prepare_signing_request(params)
+    signer, csr = request.signer, request.csr
     if params.request["csr"].external:
         if csr is None:
             raise ValueError("CSR signing requires an issuing CA")

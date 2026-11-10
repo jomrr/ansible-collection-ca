@@ -19,6 +19,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
     desired_extensions,
     subject_from_params,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    load_certificate,
+    load_signing_key,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
     validated_external_csr,
 )
@@ -28,6 +32,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
     CertificateSpec,
     SignerMaterial,
+    SigningRequest,
 )
 
 try:
@@ -78,3 +83,28 @@ def certificate_spec(
     if public_key is None:
         return None
     return CertificateSpec(public_key, subject, extensions)
+
+
+def prepare_signing_request(
+    params: CertificateOperation,
+    signer: SignerMaterial | None = None,
+    *,
+    issuer_pending: bool = False,
+) -> SigningRequest:
+    """Validate once, reusing issuer material for all requests under its lock."""
+    signer = signer or SignerMaterial()
+    signed = bool(params.paths["signer_cert_path"])
+    if signed and params.check_mode and not issuer_pending and signer.cert is None:
+        try:
+            signer.cert = load_certificate(params.paths["signer_cert_path"])
+        except FileNotFoundError:
+            issuer_pending = True
+    if signed and not issuer_pending:
+        csr = validate_signing_request(params, signer)
+        if signer.key is None:
+            signer.key = load_signing_key(
+                params.paths["signer_key_path"], params.request["issuer"].passphrase
+            )
+    else:
+        csr = validated_external_csr(params) if params.request["csr"].external else None
+    return SigningRequest(signer, csr, issuer_pending)
