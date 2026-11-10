@@ -34,8 +34,8 @@ from ansible_collections.jomrr.ca.plugins.module_utils._time import (
     now_utc,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_compare import (
-    certificate_matches,
-    csr_matches,
+    certificate_needs_replacement,
+    csr_needs_replacement,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
     add_extensions,
@@ -219,14 +219,8 @@ def ensure_csr(
         existing = load_csr(params.paths["csr_path"])
     except MATERIAL_ERRORS:
         existing = None
-    changed = (
-        params.request["force"]
-        or existing is None
-        or not csr_matches(
-            existing,
-            CertificateSpec(key, subject, csr_extensions),
-            params.request["digest"],
-        )
+    changed = csr_needs_replacement(
+        params, existing, CertificateSpec(key, subject, csr_extensions)
     )
     if changed:
         builder = x509.CertificateSigningRequestBuilder().subject_name(subject)
@@ -325,14 +319,7 @@ def ensure_certificate(
             existing = load_certificate(params.paths["cert_path"])
         except MATERIAL_ERRORS:
             existing = None
-    changed = (
-        params.request["force"]
-        or renewal["renew"]
-        or existing is None
-        or not certificate_matches(
-            existing, spec, issuer, as_public_key(signer.key), params.request["digest"]
-        )
-    )
+    changed = certificate_needs_replacement(params, existing, spec, signer, renewal)
 
     if changed:
         archive_existing_material(

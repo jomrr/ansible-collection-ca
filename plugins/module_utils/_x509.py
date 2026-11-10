@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import Any
 
 from ansible_collections.jomrr.ca.plugins.module_utils._authority_generations import (
-    issuer_urls,
     retain_generation,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results import (
@@ -34,10 +33,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_exports import (
     chain_content,
     ensure_exports,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
-    desired_extensions,
-    subject_from_params,
-)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     load_certificate,
     load_existing_certificate,
@@ -55,10 +50,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     with_derived_paths,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
-    CertificateSpec,
     SignerMaterial,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_validation import (
+    certificate_spec,
     validate_signing_request,
 )
 
@@ -237,15 +232,9 @@ def _ensure_x509_from_csr_locked(
         )
     if signer.cert is None:
         signer.cert = load_certificate(params.paths["signer_cert_path"])
-    spec = CertificateSpec(
-        csr.public_key(),
-        subject_from_params(params),
-        desired_extensions(
-            params,
-            csr.public_key(),
-            signer.cert.public_key(),
-        ),
-    )
+    spec = certificate_spec(params, csr.public_key(), signer.cert.public_key())
+    if spec is None:
+        raise ValueError("Missing public key for CSR signing")
     cert, changes["cert_changed"] = ensure_certificate(
         params, spec, signer, renewal, existing_cert
     )
@@ -303,7 +292,6 @@ def _ensure_x509_locked(
     key, changes["key_changed"] = ensure_key(
         params, rekey=renewal["rekey"], existing_cert=existing_cert
     )
-    subject = subject_from_params(params)
     if signer.key is None:
         signer.key = (
             load_signing_key(
@@ -312,25 +300,18 @@ def _ensure_x509_locked(
             if signed
             else key
         )
-    if not signed:
-        params.urls = issuer_urls(
-            params,
-            params.request["name"],
-            subject,
-            key.public_key(),
-        )
-    extensions = desired_extensions(
+    spec = certificate_spec(
         params,
         key.public_key(),
         signer.cert.public_key() if signer.cert is not None else key.public_key(),
     )
-    _csr, changes["csr_changed"] = ensure_csr(params, key, subject, extensions)
+    if spec is None:
+        raise ValueError("Missing public key for certificate signing")
+    _csr, changes["csr_changed"] = ensure_csr(
+        params, key, spec.subject, spec.extensions
+    )
     cert, changes["cert_changed"] = ensure_certificate(
-        params,
-        CertificateSpec(key, subject, extensions),
-        signer,
-        renewal,
-        existing_cert,
+        params, spec, signer, renewal, existing_cert
     )
     if params.request["authority"]:
         changes["generation_changed"] = retain_generation(

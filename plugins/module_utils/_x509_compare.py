@@ -4,6 +4,10 @@
 
 from __future__ import annotations
 
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    CertificateOperation,
+    RenewalDecision,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
     extensions_equal,
 )
@@ -16,6 +20,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
     CertificateSpec,
+    SignerMaterial,
 )
 
 try:
@@ -53,4 +58,44 @@ def certificate_matches(
         == signature_algorithm_oid(signing_key, digest)
         and cert_public_key_bytes(existing) == public_key_bytes(spec.key)
         and extensions_equal(existing.extensions, spec.extensions)
+    )
+
+
+def csr_needs_replacement(
+    params: CertificateOperation,
+    existing: x509.CertificateSigningRequest | None,
+    spec: CertificateSpec | None,
+) -> bool:
+    """Decide CSR replacement independently of signing and file attributes."""
+    return (
+        params.request["force"]
+        or existing is None
+        or spec is None
+        or not csr_matches(existing, spec, params.request["digest"])
+    )
+
+
+def certificate_needs_replacement(
+    params: CertificateOperation,
+    existing: x509.Certificate | None,
+    spec: CertificateSpec | None,
+    signer: SignerMaterial,
+    renewal: RenewalDecision,
+) -> bool:
+    """Apply the same renewal and field comparisons in normal and check mode."""
+    if params.request["force"] or renewal["renew"] or existing is None or spec is None:
+        return True
+    signing_key = (
+        as_public_key(signer.key)
+        if signer.key is not None
+        else signer.cert.public_key()
+        if signer.cert is not None
+        else as_public_key(spec.key)
+    )
+    return not certificate_matches(
+        existing,
+        spec,
+        signer.cert.subject if signer.cert is not None else spec.subject,
+        signing_key,
+        params.request["digest"],
     )

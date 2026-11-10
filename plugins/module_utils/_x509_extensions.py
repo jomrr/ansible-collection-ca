@@ -206,8 +206,8 @@ def _raw_extension_value(value: str) -> bytes:
 
 def desired_extensions(
     params: CertificateOperation,
-    public_key: PublicKey,
-    signer_public_key: PublicKey,
+    public_key: PublicKey | None,
+    signer_public_key: PublicKey | None,
 ) -> list[tuple[x509.ObjectIdentifier, bool, x509.ExtensionType]]:
     """Build the desired certificate or CSR extension list."""
     extensions = [
@@ -286,7 +286,7 @@ def desired_extensions(
                 ),
             )
         )
-    if params.request["extensions"].include_identifiers:
+    if params.request["extensions"].include_identifiers and public_key is not None:
         extensions.append(
             (
                 ExtensionOID.SUBJECT_KEY_IDENTIFIER,
@@ -299,7 +299,9 @@ def desired_extensions(
                 ExtensionOID.AUTHORITY_KEY_IDENTIFIER,
                 False,
                 x509.AuthorityKeyIdentifier(
-                    x509.SubjectKeyIdentifier.from_public_key(signer_public_key).digest,
+                    x509.SubjectKeyIdentifier.from_public_key(
+                        signer_public_key or public_key
+                    ).digest,
                     None,
                     None,
                 ),

@@ -15,6 +15,8 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_constraints import 
     validate_issuer_constraints,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
+    add_extensions,
+    desired_extensions,
     subject_from_params,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
@@ -23,9 +25,13 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_policies import (
     validate_issuer_policies,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import SignerMaterial
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
+    CertificateSpec,
+    SignerMaterial,
+)
 
 try:
+    from ansible_collections.jomrr.ca.plugins.module_utils._types import PublicKey
     from cryptography import x509
 except ImportError:
     pass
@@ -56,3 +62,19 @@ def validate_signing_request(
         signer.cert.public_key(),
     )
     return csr
+
+
+def certificate_spec(
+    params: CertificateOperation,
+    public_key: PublicKey | None,
+    signer_public_key: PublicKey | None,
+) -> CertificateSpec | None:
+    """Validate configuration even when a future key prevents a complete spec."""
+    subject = subject_from_params(params)
+    if not params.paths["signer_cert_path"] and public_key is not None:
+        params.urls = issuer_urls(params, params.request["name"], subject, public_key)
+    extensions = desired_extensions(params, public_key, signer_public_key)
+    add_extensions(x509.CertificateBuilder().subject_name(subject), extensions)
+    if public_key is None:
+        return None
+    return CertificateSpec(public_key, subject, extensions)

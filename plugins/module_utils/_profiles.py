@@ -208,7 +208,9 @@ def apply_profile_defaults(
     return result
 
 
-def profile_key_usage(params: CertificateOperation, public_key: PublicKey) -> list[str]:
+def profile_key_usage(
+    params: CertificateOperation, public_key: PublicKey | None
+) -> list[str]:
     """Resolve default key usage against the actual certificate or CSR key."""
     if params.request["extensions"].usage.key_usage or not params.request["profile"]:
         return list(params.request["extensions"].usage.key_usage or [])

@@ -185,6 +185,26 @@ class BatchCheckModeTests(TestCase):
             [item["changed"] for item in actual["results"]],
         )
 
+    def test_invalid_configuration_without_material(self) -> None:
+        """Reject invalid subjects and extensions before a key exists in check mode."""
+        for index, override in enumerate(
+            (
+                {"common_name": ""},
+                {"subject": {"country": "DEU"}},
+                {"san": ["IP:invalid"]},
+                {"raw_extensions": [{"oid": "1.2.3", "value": "unsupported"}]},
+            )
+        ):
+            authorities = copy.deepcopy(self.params["authorities"])
+            authorities[1].update(override)
+            with self.subTest(override=override):
+                values = {
+                    "authorities": authorities,
+                    "base_dir": str(self.root / f"invalid-{index}"),
+                }
+                self.assertTrue(self.predict("authority", **values)["failed"])
+                self.assertTrue(self.invoke("authority", **values)["failed"])
+
     def test_credentials_missing_keys_and_symlinks(self) -> None:
         """Operational failures remain errors and never repair state in check mode."""
         self.converge()

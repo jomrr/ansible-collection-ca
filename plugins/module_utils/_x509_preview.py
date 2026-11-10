@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ansible_collections.jomrr.ca.plugins.module_utils._authority_generations import (
-    issuer_urls,
     retain_generation,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results import (
@@ -32,18 +31,13 @@ from ansible_collections.jomrr.ca.plugins.module_utils._renewal import (
     certificate_renewal,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_compare import (
-    certificate_matches,
-    csr_matches,
+    certificate_needs_replacement,
+    csr_needs_replacement,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_exports import (
     ensure_exports,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
-    desired_extensions,
-    subject_from_params,
-)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
-    as_public_key,
     load_certificate,
     load_csr,
     load_existing_certificate,
@@ -61,6 +55,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import (
     SignerMaterial,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_validation import (
+    certificate_spec,
     validate_signing_request,
 )
 
@@ -114,25 +109,9 @@ def _material(params: CertificateOperation, signer: SignerMaterial) -> PreviewMa
         if key is not None
         else None
     )
-    spec = None
-    if public is not None:
-        subject = subject_from_params(params)
-        if not params.paths["signer_cert_path"]:
-            params.urls = issuer_urls(
-                params,
-                params.request["name"],
-                subject,
-                public,
-            )
-        spec = CertificateSpec(
-            public,
-            subject,
-            desired_extensions(
-                params,
-                public,
-                signer.cert.public_key() if signer.cert is not None else public,
-            ),
-        )
+    spec = certificate_spec(
+        params, public, signer.cert.public_key() if signer.cert is not None else public
+    )
     return PreviewMaterial(existing, key, csr, spec, renewal)
 
 
@@ -140,34 +119,13 @@ def _csr_change(params: CertificateOperation, material: PreviewMaterial) -> bool
     """Predict a CSR replacement or attribute correction without signing."""
     if material.csr is not None:
         return ensure_external_csr(params, material.csr)[1]
-    if material.spec is None or params.request["force"]:
-        return True
     try:
         existing = load_csr(params.paths["csr_path"])
     except MATERIAL_ERRORS:
-        return True
-    return not csr_matches(
-        existing, material.spec, params.request["digest"]
-    ) or file_needs_update(
+        existing = None
+    return csr_needs_replacement(params, existing, material.spec) or file_needs_update(
         params.paths["csr_path"],
         params.request["storage"].attributes(),
-    )
-
-
-def _replacement(
-    params: CertificateOperation, material: PreviewMaterial, signer: SignerMaterial
-) -> bool:
-    """Predict issuance from renewal and pure certificate field comparisons."""
-    if material.spec is None or material.existing is None or material.renewal["renew"]:
-        return True
-    return not certificate_matches(
-        material.existing,
-        material.spec,
-        signer.cert.subject if signer.cert is not None else material.spec.subject,
-        signer.cert.public_key()
-        if signer.cert is not None
-        else as_public_key(material.spec.key),
-        params.request["digest"],
     )
 
 
@@ -235,7 +193,9 @@ def preview_x509(
     pending = (
         issuer_pending
         or (signed and signer.cert is None)
-        or _replacement(params, material, signer)
+        or certificate_needs_replacement(
+            params, material.existing, material.spec, signer, material.renewal
+        )
     )
     storage = params.request["storage"]
     changes: MaterialChanges = {
@@ -292,8 +252,8 @@ def preview_x509(
             != public_key_bytes(material.spec.key)
         )
     )
-    if material.csr is not None:
-        names = subject_from_params(params).get_attributes_for_oid(NameOID.COMMON_NAME)
+    if material.csr is not None and material.spec is not None:
+        names = material.spec.subject.get_attributes_for_oid(NameOID.COMMON_NAME)
         result.update(
             {
                 "csr_mode": True,
