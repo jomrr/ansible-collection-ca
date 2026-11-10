@@ -6,7 +6,7 @@ This helper is not a user-facing Ansible module. It exists so
 `jomrr.ca.certificate` and `jomrr.ca.certificate_batch` resolve certificate models, apply
 profile defaults, create artifacts, and update inventory through one code path.
 
-## Public Helper Functions
+## Collection-internal Helper Functions
 
 - **`single_certificate_argument_spec()`**
   Behavior: Returns the Ansible argument spec for `jomrr.ca.certificate`.
@@ -14,9 +14,9 @@ profile defaults, create artifacts, and update inventory through one code path.
 - **`batch_certificate_argument_spec()`**
   Behavior: Returns the Ansible argument spec for `jomrr.ca.certificate_batch`.
 
-- **`prepare_certificate_artifacts(params, certificate=None)`**
-  Behavior: Resolves one declarative certificate model into X.509 helper
-  parameters.
+- **`prepare_certificate_artifacts(params, certificate=None, authorities=None)`**
+  Behavior: Resolves one declarative certificate into typed input, artifact paths
+  and public inventory metadata. Batches reuse the validated authority map.
 
 - **`ensure_certificate_artifacts(params, certificate=None)`**
   Behavior: Ensures one certificate and updates inventory state.
@@ -52,3 +52,7 @@ written. Explicit extension overrides retain their existing behavior.
 The helper validates certificate type, issuer existence, required profile
 fields, PFX passphrase requirements, merged subject defaults, renewal policy
 overrides, and MSKDC Kerberos realm propagation before calling the X.509 helper.
+
+Normal and check-mode batches use the same prepared operations and issuer grouping.
+Each external CSR is validated once and the signing key is loaded once per issuer
+while that issuer's locks are held.

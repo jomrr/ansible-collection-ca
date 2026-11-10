@@ -15,15 +15,13 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_args import 
     authority_list_argument,
     certificate_options,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._certificate_preview import (
-    preview_certificates,
-)
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results import (
     CertificateMetadata,
     CertificateResult,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._formats import normalize_formats
-from ansible_collections.jomrr.ca.plugins.module_utils._input import InputValues
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
+    CertificateOperation,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
     update_certificate_inventory,
     update_certificates_inventory,
@@ -33,7 +31,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._profiles import (
     CERTIFICATE_PROFILE_DEFAULTS,
     apply_certificate_profile,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._renewal import renewal_policy
 from ansible_collections.jomrr.ca.plugins.module_utils._validation import (
     authority_map,
     require_value,
@@ -41,14 +38,14 @@ from ansible_collections.jomrr.ca.plugins.module_utils._validation import (
     string_value,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509 import (
-    ensure_x509,
-    ensure_x509_many,
+    ensure_x509_operation,
+    ensure_x509_operations,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
     basic_constraints,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
-    certificate_params,
+    with_derived_paths,
 )
 
 SUPPORTED_FORMATS = {"pem", "der", "txt", "pfx", "p12", "fullchain", "fritzbox"}
@@ -112,22 +109,15 @@ def _as_dict(value: Any, context: str) -> dict[str, Any]:
     raise ValueError(f"{context} must be a dictionary")
 
 
-def _profile_formats(value: Any, profile: str) -> list[str]:
-    """Resolve certificate output formats for a profile."""
-    return normalize_formats(
-        CERTIFICATE_DEFAULT_FORMATS[profile] if value is None else value,
-        supported=SUPPORTED_FORMATS,
-    )
-
-
 def _certificate_profile(
     params: dict[str, Any],
     certificate: dict[str, Any],
-    name: str,
     csr_mode: bool,
     cert_type: str,
+    authorities: dict[str, dict[str, Any]],
 ) -> tuple[str, str, str, Any]:
     """Validate and resolve the profile, issuer and lifetime."""
+    name = certificate["name"]
     if cert_type not in CERTIFICATE_PROFILE_DEFAULTS:
         raise ValueError(f"Certificate {name} uses unknown profile {cert_type}")
 
@@ -139,7 +129,6 @@ def _certificate_profile(
     issuer = string_value(
         require_value(profile, "issuer", f"Certificate type {cert_type}")
     )
-    authorities = authority_map(params["authorities"])
     if issuer not in authorities:
         raise ValueError(
             f"Certificate type {cert_type} references unknown issuer {issuer}"
@@ -182,9 +171,11 @@ def _merged_setting(
 
 
 def _resolve_certificate(
-    params: dict[str, Any], certificate: dict[str, Any] | None = None
-) -> tuple[CertificateMetadata, dict[str, Any]]:
-    """Resolve a declarative role certificate into X.509 module parameters."""
+    params: dict[str, Any],
+    certificate: dict[str, Any] | None,
+    authorities: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Resolve context and profile input before constructing the typed operation."""
     certificate = _as_dict(
         params.get("certificate") if certificate is None else certificate,
         "certificate",
@@ -193,6 +184,7 @@ def _resolve_certificate(
         key: value for key, value in certificate.items() if value is not None
     }
     name = safe_name(require_value(certificate, "name", "Certificate"), "Certificate")
+    certificate["name"] = name
     csr_path = string_value(certificate.get("csr_path")).strip()
     csr_content = string_value(certificate.get("csr_content")).strip()
     csr_mode = bool(csr_path or csr_content)
@@ -217,23 +209,8 @@ def _resolve_certificate(
         ).strip()
 
     cert_type, issuer, issuer_passphrase, days = _certificate_profile(
-        params, certificate, name, csr_mode, cert_type
+        params, certificate, csr_mode, cert_type, authorities
     )
-
-    formats = _profile_formats(certificate.get("formats"), cert_type)
-    if csr_mode:
-        unsupported = sorted(set(formats).intersection({"pfx", "p12", "fritzbox"}))
-        if unsupported:
-            raise ValueError(
-                f"Certificate {name} CSR signing cannot create formats that "
-                "require a private key: " + ", ".join(unsupported)
-            )
-    if set(formats).intersection({"pfx", "p12"}) and not string_value(
-        certificate.get("pfx_passphrase") or certificate.get("passphrase")
-    ):
-        raise ValueError(
-            f"Certificate {name} uses PFX/PKCS#12 output and requires pfx_passphrase"
-        )
 
     model = dict(certificate)
     model.update(
@@ -243,10 +220,12 @@ def _resolve_certificate(
             "common_name": common_name,
             "issuer": issuer,
             "days": days,
-            "formats": formats,
+            "formats": certificate.get(
+                "formats", CERTIFICATE_DEFAULT_FORMATS[cert_type]
+            ),
             "subject": _merged_setting(params, certificate, "subject", name),
             "renewal": _merged_setting(params, certificate, "renewal", name),
-            "csr_mode": csr_mode,
+            "csr_source_path": csr_path,
         }
     )
     if cert_type == "mskdc":
@@ -256,64 +235,81 @@ def _resolve_certificate(
             .upper()
         )
 
-    module_params = {
+    return {
+        **model,
         "base_dir": params["base_dir"],
         "base_url": params["base_url"],
         "ca_name": params["ca_name"],
-        "certificate": model,
-        "name": name,
-        "issuer": issuer,
-        "issuer_key_passphrase": issuer_passphrase,
-        "common_name": common_name,
-        "days": days,
-        "renewal": model["renewal"],
+        "signer_key_passphrase": issuer_passphrase,
         "owner": params["owner"],
         "group": params["group"],
         "force": params["force"],
     }
-    return _certificate_metadata(model), module_params
 
 
-def _certificate_metadata(model: dict[str, Any]) -> CertificateMetadata:
-    """Project resolved input onto the public, typed inventory schema."""
-    values = InputValues(model)
-    metadata: CertificateMetadata = {
-        "name": values.text("name"),
-        "type": values.text("type"),
-        "common_name": values.text("common_name"),
-        "issuer": values.text("issuer"),
-        "days": values.integer("days"),
-        "formats": values.strings("formats"),
-        "output_dir": values.text("output_dir"),
-        "renewal": renewal_policy(model["renewal"]),
-        "csr_mode": values.boolean("csr_mode"),
+def _certificate_metadata(operation: CertificateOperation) -> CertificateMetadata:
+    """Project validated input onto the public inventory schema without reparsing."""
+    request = operation.request
+    return {
+        "name": request["name"],
+        "type": request["profile"],
+        "common_name": request["subject"].common_name,
+        "issuer": request["issuer"].name,
+        "days": request["days"],
+        "formats": request["exports"].formats,
+        "output_dir": request["exports"].output_dir,
+        "renewal": request["renewal"],
+        "csr_mode": request["csr"].external,
     }
-    return metadata
 
 
 def prepare_certificate_artifacts(
-    params: dict[str, Any], certificate: dict[str, Any] | None = None
-) -> tuple[CertificateMetadata, dict[str, Any]]:
-    """Return the resolved certificate model and X.509 helper parameters."""
-    model, module_params = _resolve_certificate(params, certificate)
-    x509_params = certificate_params(
-        module_params,
-        default_formats=CERTIFICATE_DEFAULT_FORMATS[model["type"]],
+    params: dict[str, Any],
+    certificate: dict[str, Any] | None = None,
+    *,
+    authorities: dict[str, dict[str, Any]] | None = None,
+) -> tuple[CertificateMetadata, CertificateOperation]:
+    """Resolve one certificate into typed input and derived artifact paths."""
+    values = _resolve_certificate(
+        params,
+        certificate,
+        authority_map(params["authorities"]) if authorities is None else authorities,
     )
-    x509_params = apply_certificate_profile(
-        x509_params,
-        model["type"],
-        ca=basic_constraints(x509_params.get("basic_constraints")).ca,
+    values = apply_certificate_profile(
+        values, values["type"], ca=basic_constraints(values.get("basic_constraints")).ca
     )
-    return model, x509_params
+    operation = with_derived_paths(
+        values, signed=True, authority=False, manage_directory=True, manage_chain=True
+    )
+    formats = set(operation.request["exports"].formats)
+    unsupported = sorted(formats - SUPPORTED_FORMATS)
+    if unsupported:
+        raise ValueError(f"Unsupported certificate formats: {', '.join(unsupported)}")
+    name = operation.request["name"]
+    if operation.request["csr"].external and formats.intersection(
+        {"pfx", "p12", "fritzbox"}
+    ):
+        raise ValueError(
+            f"Certificate {name} CSR signing cannot create formats that require a "
+            "private key: "
+            + ", ".join(sorted(formats.intersection({"pfx", "p12", "fritzbox"})))
+        )
+    if (
+        formats.intersection({"pfx", "p12"})
+        and not operation.request["exports"].passphrase
+    ):
+        raise ValueError(
+            f"Certificate {name} uses PFX/PKCS#12 output and requires pfx_passphrase"
+        )
+    return _certificate_metadata(operation), operation
 
 
 def _ensure_prepared_certificate_artifacts(
-    model: CertificateMetadata, x509_params: dict[str, Any]
+    model: CertificateMetadata, operation: CertificateOperation
 ) -> CertificateResult:
     """Ensure artifacts for an already resolved certificate model."""
-    result = ensure_x509(
-        x509_params,
+    result = ensure_x509_operation(
+        operation,
         signed=True,
         manage_directory=True,
         manage_chain=True,
@@ -344,52 +340,61 @@ def ensure_certificate_artifacts(
     params: dict[str, Any], certificate: dict[str, Any] | None = None
 ) -> CertificateResult:
     """Ensure one managed certificate and update its inventory state."""
-    model, x509_params = prepare_certificate_artifacts(params, certificate)
-    result = _ensure_prepared_certificate_artifacts(model, x509_params)
+    model, operation = prepare_certificate_artifacts(params, certificate)
+    result = _ensure_prepared_certificate_artifacts(model, operation)
     _sync_model_common_name(model, result)
-    inventory_changed = update_certificate_inventory(x509_params, model, result)
+    inventory_changed = update_certificate_inventory(params, model, result)
     result["inventory_changed"] = inventory_changed
     result["changed"] = result["changed"] or inventory_changed
     return result
+
+
+def _prepare_certificates(
+    params: dict[str, Any], *, check_mode: bool
+) -> list[tuple[CertificateMetadata, CertificateOperation]]:
+    """Resolve shared batch context once before preparing individual operations."""
+    certificates = _as_list(params.get("certificates"))
+    authorities = authority_map(params["authorities"]) if certificates else {}
+    prepared = []
+    for index, certificate in enumerate(certificates):
+        model, operation = prepare_certificate_artifacts(
+            params,
+            _as_dict(certificate, f"certificates[{index}]"),
+            authorities=authorities,
+        )
+        operation.check_mode = check_mode
+        prepared.append((model, operation))
+    return prepared
 
 
 def ensure_certificate_batch(
     params: dict[str, Any], *, check_mode: bool = False
 ) -> dict[str, Any]:
     """Ensure a list of managed certificates and compose inventory once."""
-    prepared: list[tuple[int, CertificateMetadata, dict[str, Any]]] = []
-    for index, certificate in enumerate(_as_list(params.get("certificates"))):
-        model, x509_params = prepare_certificate_artifacts(
-            params,
-            _as_dict(certificate, f"certificates[{index}]"),
-        )
-        prepared.append((index, model, x509_params))
+    prepared = _prepare_certificates(params, check_mode=check_mode)
 
-    issuer_groups = Counter(str(model["issuer"]) for _index, model, _params in prepared)
+    issuer_groups = Counter(model["issuer"] for model, _operation in prepared)
 
-    raw_results = (
-        preview_certificates([item[2] for item in prepared])
-        if check_mode
-        else ensure_x509_many(
-            [x509_params for _index, _model, x509_params in prepared],
-            signed=True,
-            manage_directory=True,
-            manage_chain=True,
-        )
+    raw_results = ensure_x509_operations(
+        [operation for _model, operation in prepared],
+        manage_directory=True,
+        manage_chain=True,
     )
     results: dict[int, CertificateResult] = {}
     inventory_records: list[
         tuple[dict[str, Any], CertificateMetadata, CertificateResult]
     ] = []
     changed = False
-    for (index, model, x509_params), raw_result in zip(prepared, raw_results):
+    for index, ((model, _operation), raw_result) in enumerate(
+        zip(prepared, raw_results)
+    ):
         result = _finalize_prepared_certificate_result(model, raw_result)
         _sync_model_common_name(model, result)
         result["inventory_changed"] = result.pop("material_pending", False)
         result.pop("identity_changed", None)
         results[index] = result
         if not result["inventory_changed"]:
-            inventory_records.append((x509_params, model, result))
+            inventory_records.append((params, model, result))
         changed = changed or bool(result["changed"])
 
     inventory_changed = update_certificates_inventory(
