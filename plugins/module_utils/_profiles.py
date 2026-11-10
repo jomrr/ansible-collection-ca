@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from uuid import UUID
 
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
     CertificateOperation,
@@ -132,18 +133,7 @@ def _ad_guid_hex(value: Any) -> str:
     guid_hex = re.sub(r"[-: ]", "", guid)
 
     if GUID_RE.match(guid):
-        return (
-            guid[6:8]
-            + guid[4:6]
-            + guid[2:4]
-            + guid[0:2]
-            + guid[11:13]
-            + guid[9:11]
-            + guid[16:18]
-            + guid[14:16]
-            + guid[19:23]
-            + guid[24:36]
-        ).upper()
+        return UUID(guid).bytes_le.hex().upper()
 
     if GUID_HEX_RE.match(guid_hex):
         return guid_hex.upper()
