@@ -131,6 +131,7 @@ def archive_existing_material(
         params.paths["cert_path"],
         params.paths["csr_path"],
         params.paths["der_path"],
+        params.paths["cer_path"],
         params.paths["txt_path"],
         params.paths["chain_path"],
     )

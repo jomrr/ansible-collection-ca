@@ -19,6 +19,12 @@ def verify_issuance(base: Path) -> None:
     issuer = x509.load_pem_x509_certificate((base / "ca/issuer-ca.pem").read_bytes())
     web = x509.load_pem_x509_certificate((base / "certs/web/web.pem").read_bytes())
     web.verify_directly_issued_by(issuer)
+    for relative in ("ca/root-ca", "ca/issuer-ca", "certs/web/web"):
+        der = (base / f"{relative}.der").read_bytes()
+        assert (base / f"{relative}.cer").read_bytes() == der
+        assert x509.load_der_x509_certificate(der) == x509.load_pem_x509_certificate(
+            (base / f"{relative}.pem").read_bytes()
+        )
     assert "changed.example.test" in web.extensions.get_extension_for_class(
         x509.SubjectAlternativeName
     ).value.get_values_for_type(x509.DNSName)
@@ -127,10 +133,16 @@ def main() -> None:
             "aia/issuer-ca-chain.der",
             "aia/issuer-ca-chain.pem",
             "aia/issuer-ca-chain.txt",
+            "aia/issuer.cer",
             "aia/issuer.der",
             "aia/root-ca.pem",
             "crl/issuer.crl",
         ]
+        member = archive.extractfile("aia/issuer.cer")
+        assert member is not None
+        expected_der = (base / "ca/issuer-ca.der").read_bytes()
+        assert member.read() == expected_der
+        assert (root / "webroot/aia/issuer.cer").read_bytes() == expected_der
         for suffix in ("pem", "der", "txt"):
             filename = f"aia/issuer-ca-chain.{suffix}"
             member = archive.extractfile(filename)

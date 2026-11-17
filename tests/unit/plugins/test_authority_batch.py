@@ -56,6 +56,7 @@ class AuthorityBatchTests(TestCase):
             item.update(
                 common_name=item["name"],
                 days=365,
+                formats=["pem", "der", "cer", "txt"],
                 key_type="P-256",
                 key_passphrase=f"{item['name']}-batch-secret",
             )
@@ -100,6 +101,9 @@ class AuthorityBatchTests(TestCase):
         self.assertNotIn("failed", result)
         self.assertTrue(result["changed"])
         self.assertEqual(result["count"], 4)
+        for item in result["results"]:
+            path = Path(item["cer_path"])
+            self.assertEqual(path.read_bytes(), path.with_suffix(".der").read_bytes())
         names = [item["name"] for item in result["results"]]
         for item in self.items:
             self.assertLessEqual(names.index(item["parent"]), names.index(item["name"]))

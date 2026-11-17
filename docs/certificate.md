@@ -37,6 +37,28 @@ X.509 module.
 - Replaced generations are archived below `<base_dir>/archive/certificates`.
 - Records certificate inventory state.
 
+## Windows certificate export
+
+Add `cer` to `certificate.formats` (or a `certificate_batch.certificates` entry)
+to create `<output_dir>/<name>.cer`. For example:
+
+```yaml
+certificate:
+  name: web01
+  type: tls_server
+  common_name: web01.example.org
+  formats: [pem, cer]
+```
+
+`cer` contains DER-encoded certificate bytes, identical to the `der` format;
+only the filename extension differs. Request `der` and `cer` together to create
+both files. Existing profile defaults remain unchanged, and the managed PEM
+certificate is still maintained even with `formats: [cer]`.
+The export supports external CSRs and custom `output_dir`, uses `public_mode`,
+and is archived with the replaced certificate generation. Adding or repairing
+it does not require reissuing the certificate. Results include `cer_path` and
+`cer_changed`; batch check mode predicts the same export changes without writes.
+
 ## Chain and bundle contents
 
 - `<name>-chain.pem` contains the direct issuing CA followed by parent
@@ -230,7 +252,7 @@ These keys are accepted inside `certificate`.
 - **`formats`**: Output and export formats. CSR-signed certificates reject
   `pfx`, `p12`, and `fritzbox`.
   Type: list[str]; Required: no; Default: profile default; Allowed values:
-  `pem`, `der`, `txt`, `pfx`, `p12`, `fullchain`, `fritzbox`; Secret: no
+  `pem`, `der`, `cer`, `txt`, `pfx`, `p12`, `fullchain`, `fritzbox`; Secret: no
 
 - **`output_dir`**: Directory for key, certificate, chain copy, and bundles.
   Type: path; Required: no; Default: `<base_dir>/certs/<name>`; Allowed values:
@@ -409,6 +431,7 @@ For `name: web01`, `issuer: component`, and `base_dir: /etc/pki/example`:
 - `/etc/pki/example/certs/web01/web01.pem`
 - `/etc/pki/example/certs/web01/web01.der` when `der` is requested
 - `/etc/pki/example/certs/web01/web01.txt` when `txt` is requested
+- `/etc/pki/example/certs/web01/web01.cer` when `cer` is requested
 - `/etc/pki/example/certs/web01/web01-chain.pem`
 - `/etc/pki/example/certs/web01/web01.pfx` when `pfx` is requested
 - `/etc/pki/example/certs/web01/web01.p12` when `p12` is requested
@@ -449,6 +472,9 @@ CSR-signed certificates also store a normalized copy of the CSR at
 - **`cert_changed`**: Whether the PEM certificate changed.
   Type: bool
 
+- **`cer_changed`**: Whether the DER-encoded `.cer` export changed.
+  Type: bool
+
 - **`der_changed`**: Whether the DER export changed.
   Type: bool
 
@@ -487,6 +513,9 @@ CSR-signed certificates also store a normalized copy of the CSR at
 
 - **`pkcs12_paths`**: Written PKCS#12 paths keyed by format.
   Type: dict
+
+- **`cer_path`**: DER-encoded `.cer` export path, or empty string when not requested.
+  Type: str
 
 - **`fullchain_path`**: Fullchain bundle path, or empty string.
   Type: str

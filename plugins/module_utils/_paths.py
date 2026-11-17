@@ -49,6 +49,7 @@ def authority_paths(
         "csr": _path(base_dir, "csr", f"{stem}.csr"),
         "certificate_pem": _path(base_dir, "ca", f"{stem}.pem"),
         "certificate_der": _path(base_dir, "ca", f"{stem}.der"),
+        "certificate_cer": _path(base_dir, "ca", f"{stem}.cer"),
         "certificate_text": _path(base_dir, "ca", f"{stem}.txt"),
         **{f"crl_{kind}": path for kind, path in crl_paths(base_dir, stem).items()},
     }
@@ -68,6 +69,7 @@ def certificate_paths(
         "csr": _path(base_dir, "csr", f"{name}.csr"),
         "certificate_pem": f"{directory}/{name}.pem",
         "certificate_der": f"{directory}/{name}.der",
+        "certificate_cer": f"{directory}/{name}.cer",
         "certificate_text": f"{directory}/{name}.txt",
         "chain": f"{directory}/{name}-chain.pem",
         "fullchain": f"{directory}/{name}-fullchain.pem",

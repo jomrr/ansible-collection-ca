@@ -23,7 +23,9 @@ Authority cryptographic fields use the single module's defaults, including RSA
 may also retain certificate/CRL metadata used by the role's other phases.
 Parent key passphrases always come from the matching authority in this list.
 Chain exports use PEM, DER and text with mode `0644`, matching the role's
-individual chain calls. `ansible-doc jomrr.ca.authority_batch` lists all fields.
+individual chain calls. Add `cer` to an authority's `formats` to write DER bytes
+as `<base_dir>/ca/<name>-ca.cer`; `cer_path` returns that path or an empty string
+when not requested. Default formats and chain formats remain unchanged. `ansible-doc jomrr.ca.authority_batch` lists all fields.
 
 ## Execution
 
@@ -53,7 +55,7 @@ credential fields are redacted by Ansible. The role also sets `no_log: true`.
 `changed` combines material, inventory and chain changes. `count` reports the
 processed authorities; `inventory_changed` reports their inventory changes.
 `results` follows parent-first execution order and contains each authority's
-`name`, `changed`, `cert_path`, `csr_path`, `chain_paths`, `chain_changed` and
+`name`, `changed`, `cert_path`, `cer_path`, `csr_path`, `chain_paths`, `chain_changed` and
 `inventory_changed`. It contains no credentials.
 
 ```yaml

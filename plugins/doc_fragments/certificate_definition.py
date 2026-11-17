@@ -133,7 +133,10 @@ options:
         type: str
         required: true
       formats:
-        description: Requested export formats; omitted values use the selected profile defaults.
+        description:
+        - Requested export formats; omitted values use the selected profile defaults.
+        - C(cer) writes DER-encoded certificate bytes with a C(.cer) extension.
+          C(der) and C(cer) can be requested together.
         type: list
         elements: str
       key_type:

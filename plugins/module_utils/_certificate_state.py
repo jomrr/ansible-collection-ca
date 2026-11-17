@@ -185,6 +185,7 @@ class CertificatePaths(TypedDict):
     csr_path: str
     cert_path: str
     der_path: str
+    cer_path: str
     txt_path: str
     directory_path: str
     signer_lock_path: str

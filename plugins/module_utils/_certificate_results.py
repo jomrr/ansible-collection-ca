@@ -42,6 +42,7 @@ class ExportChanges(TypedDict):
     """Changes and paths returned by certificate export writers."""
 
     der_changed: bool
+    cer_changed: bool
     txt_changed: bool
     chain_changed: bool
     pkcs12_changed: bool
@@ -58,6 +59,7 @@ class CertificateResult(MaterialChanges, ExportChanges):
     renewal: RenewalDecision
     csr_path: str
     cert_path: str
+    cer_path: str
     txt_path: str
     fullchain_path: str
     fritzbox_bundle_path: str
@@ -84,6 +86,7 @@ def certificate_result(
         "csr_changed": changes["csr_changed"],
         "cert_changed": changes["cert_changed"],
         "der_changed": exports["der_changed"],
+        "cer_changed": exports["cer_changed"],
         "txt_changed": exports["txt_changed"],
         "chain_changed": exports["chain_changed"],
         "pkcs12_changed": exports["pkcs12_changed"],
@@ -96,6 +99,7 @@ def certificate_result(
         "renewal": renewal,
         "csr_path": params.paths["csr_path"],
         "cert_path": params.paths["cert_path"],
+        "cer_path": params.paths["cer_path"],
         "txt_path": params.paths["txt_path"],
         "fullchain_path": params.paths["fullchain_path"],
         "fritzbox_bundle_path": params.paths["fritzbox_bundle_path"],

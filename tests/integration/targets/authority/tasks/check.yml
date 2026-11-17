@@ -86,6 +86,7 @@
       formats:
         - pem
         - der
+        - cer
         - txt
         - fullchain
   check_mode: true

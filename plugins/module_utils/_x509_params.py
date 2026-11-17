@@ -64,6 +64,7 @@ def with_derived_paths(
         csr_path=paths["csr"],
         cert_path=paths["certificate_pem"],
         der_path=paths["certificate_der"] if "der" in formats else "",
+        cer_path=paths["certificate_cer"] if "cer" in formats else "",
         txt_path=paths["certificate_text"] if "txt" in formats else "",
         directory_path="",
         signer_lock_path="",

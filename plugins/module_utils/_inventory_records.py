@@ -58,8 +58,9 @@ def _certificate_record_paths(
     keys = {"output_dir", "csr", "certificate_pem", "chain"}
     if not certificate.get("csr_mode"):
         keys.add("private_key")
-    if "der" in formats:
-        keys.add("certificate_der")
+    for suffix in ("der", "cer"):
+        if suffix in formats:
+            keys.add(f"certificate_{suffix}")
     if "txt" in formats:
         keys.add("certificate_text")
     if "fullchain" in formats:
@@ -86,6 +87,8 @@ def record_authority_inventory(
     parent = str(params.get("parent") or name)
     self_signed = parent == name
     paths = authority_paths(base_dir, name, include_chain=not self_signed)
+    if "cer" not in result["formats"]:
+        paths.pop("certificate_cer")
     certificate = certificate_summary(cert)
     record = {
         "record_type": "authority",

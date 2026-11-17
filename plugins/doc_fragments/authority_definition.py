@@ -35,7 +35,8 @@ def _batch_definitions(documentation: str) -> str:
     descriptions = {
         "formats": (
             "Authority certificate exports; defaults to PEM, DER and text. "
-            "Chains always use all three formats."
+            "Optional C(cer) writes DER bytes with a C(.cer) extension. "
+            "Chains always use PEM, DER and text."
         ),
         "subject": "Authority subject overrides merged with O(subject).",
         "renewal": "Authority renewal overrides merged with O(renewal).",

@@ -50,12 +50,12 @@ except ImportError:
     pass
 
 
-def ensure_der(params: CertificateOperation, cert: x509.Certificate) -> bool:
-    """Ensure the optional DER certificate export exists."""
-    if not params.paths["der_path"]:
+def ensure_der(params: CertificateOperation, cert: x509.Certificate, path: str) -> bool:
+    """Ensure an optional DER-encoded export with its requested file extension."""
+    if not path:
         return False
     return write_file(
-        params.paths["der_path"],
+        path,
         cert.public_bytes(serialization.Encoding.DER),
         params.request["storage"].attributes(),
         check_mode=params.check_mode,
@@ -257,7 +257,8 @@ def ensure_exports(
 ) -> ExportChanges:
     """Write the requested public and private certificate exports."""
     changes: ExportChanges = {
-        "der_changed": ensure_der(params, cert),
+        "der_changed": ensure_der(params, cert, params.paths["der_path"]),
+        "cer_changed": ensure_der(params, cert, params.paths["cer_path"]),
         "txt_changed": ensure_txt(params, cert),
         "chain_changed": ensure_chain(params, signer.cert) if manage_chain else False,
         "pkcs12_changed": False,

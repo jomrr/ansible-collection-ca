@@ -63,7 +63,9 @@ text exports, and CA inventory state for a root or issuing CA.
 
 - **`formats`**: Output formats for the CA certificate.
   Type: list[str]; Required: no; Default: `["pem", "der", "txt"]`; Allowed
-  values: `pem`, `der`, `txt`; Secret: no
+  values: `pem`, `der`, `cer`, `txt`; Secret: no
+  `cer` writes DER bytes with a Windows-style `.cer` extension. Request `der`
+  and `cer` together for both files; existing defaults remain unchanged.
 
 - **`key_type`**: Private key algorithm.
   Type: str; Required: no; Default: `RSA`; Allowed values: see
@@ -208,6 +210,7 @@ For `name: root` and `base_dir: /etc/pki/example`:
 - `/etc/pki/example/csr/root-ca.csr`
 - `/etc/pki/example/ca/root-ca.pem`
 - `/etc/pki/example/ca/root-ca.der` when `der` is requested
+- `/etc/pki/example/ca/root-ca.cer` when `cer` is requested
 - `/etc/pki/example/ca/root-ca.txt` when `txt` is requested
 - `/etc/pki/example/inventory/state/authorities/root.json`
 - `/etc/pki/example/inventory/state/authority_certificates/root/<serial>.json`
@@ -218,7 +221,14 @@ For `name: root` and `base_dir: /etc/pki/example`:
 `jomrr.ca.authority` does not create chain files. Chain generation is handled by
 [`jomrr.ca.chain`](chain.md).
 
+The optional `.cer` export is archived with replaced generations and appears as
+`paths.certificate_cer` in inventory. Use explicit publication `artifacts` when
+publishing a `.cer` download; authority-derived AIA/CDP filenames remain unchanged.
+
 ## Return Values
+
+- **`cer_path`**: DER-encoded `.cer` export path, or empty string when not requested.
+  Type: str
 
 - **`changed`**: Whether any generated artifact or inventory state changed.
   Type: bool
@@ -233,6 +243,9 @@ For `name: root` and `base_dir: /etc/pki/example`:
   Type: bool
 
 - **`cert_changed`**: Whether the PEM certificate changed.
+  Type: bool
+
+- **`cer_changed`**: Whether the DER-encoded `.cer` export changed.
   Type: bool
 
 - **`der_changed`**: Whether the DER export changed.

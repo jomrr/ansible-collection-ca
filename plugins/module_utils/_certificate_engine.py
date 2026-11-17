@@ -48,7 +48,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     with_derived_paths,
 )
 
-SUPPORTED_FORMATS = {"pem", "der", "txt", "pfx", "p12", "fullchain", "fritzbox"}
+SUPPORTED_FORMATS = {"pem", "der", "cer", "txt", "pfx", "p12", "fullchain", "fritzbox"}
 
 
 def certificate_common_argument_spec() -> dict[str, dict[str, Any]]:

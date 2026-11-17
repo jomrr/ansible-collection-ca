@@ -86,6 +86,10 @@ results:
     cert_path:
       description: Authority PEM certificate path.
       type: str
+    cer_path:
+      description: DER-encoded C(.cer) certificate export path, or empty string when not requested.
+      type: str
+      version_added: 1.3.0
     csr_path:
       description: Authority CSR path.
       type: str

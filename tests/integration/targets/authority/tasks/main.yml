@@ -81,6 +81,7 @@
           formats: &id004
             - pem
             - der
+            - cer
             - txt
             - fullchain
           san:

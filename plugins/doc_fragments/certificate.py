@@ -14,6 +14,10 @@ class ModuleDocFragment:
 
     DOCUMENTATION: ClassVar[str] = r"""
 notes:
+- Add C(cer) to the requested formats to write the certificate as DER bytes with a
+  Windows-style C(.cer) extension. C(der) writes the identical bytes with a C(.der)
+  extension; request both formats to create both files. Profile defaults are unchanged.
+  CER also supports externally signed CSRs and uses the public file permissions.
 - The C(<name>-chain.pem) copy contains only issuer intermediates, starting with the direct
   issuer. C(fullchain) contains the issued certificate followed by those intermediates.
   Neither includes the self-signed root. PKCS#12 and FritzBox bundles use the same chain.
@@ -100,6 +104,11 @@ der_changed:
   description: Whether the DER export changed.
   type: bool
   returned: success
+cer_changed:
+  description: Whether the DER-encoded C(.cer) certificate export changed.
+  type: bool
+  returned: success
+  version_added: 1.3.0
 txt_changed:
   description: Whether the text export changed.
   type: bool
@@ -124,6 +133,11 @@ cert_path:
   description: PEM certificate path.
   type: str
   returned: success
+cer_path:
+  description: DER-encoded C(.cer) certificate export path, or empty string when not requested.
+  type: str
+  returned: success
+  version_added: 1.3.0
 txt_path:
   description: Text export path, or empty string.
   type: str

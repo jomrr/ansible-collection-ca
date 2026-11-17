@@ -34,8 +34,9 @@ Profile defaults come from `ca_profiles`:
 - identity certificates: `pem`, `der`, `txt`, `pfx`
 - FritzBox certificates: `pem`, `der`, `txt`, `fritzbox`
 
-Supported export formats are `pem`, `der`, `txt`, `pfx`, `p12`, `fullchain`,
-and `fritzbox`.
+Supported export formats are `pem`, `der`, `cer`, `txt`, `pfx`, `p12`, `fullchain`,
+and `fritzbox`. The optional `cer` format writes the same DER certificate bytes
+as `der`, using a `.cer` extension; defaults remain unchanged.
 
 Certificate models that set `csr_path` or `csr_content` are treated as
 CSR-signed certificates. They require an approved `common_name` or

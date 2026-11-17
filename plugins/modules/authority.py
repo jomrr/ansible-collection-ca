@@ -13,6 +13,9 @@ version_added: 0.1.0
 description:
 - Manage a CA authority certificate.
 notes:
+- Add C(cer) to O(formats) to write a DER-encoded certificate with a Windows-style
+  C(.cer) extension. Request both C(der) and C(cer) to create byte-identical files.
+  The default formats remain C(pem), C(der) and C(txt).
 - Before CA rekey, retain the previous public issuer identity. Its existing AIA/CDP
   URLs remain pinned to it; new generations receive a filename suffix derived from
   their public key and complete subject. Same-key, same-subject renewal keeps its URLs.

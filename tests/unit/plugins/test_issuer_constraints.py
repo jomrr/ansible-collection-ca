@@ -178,6 +178,8 @@ class IssuanceConstraintTests(unittest.TestCase):
                         else self.ca.request("root")
                     )
                     params["certificate_types"] = {profile: {"issuer": "root"}}
+                    if profile == "tls_server":
+                        params["certificate"]["formats"] = ["cer"]
                     params["certificate"].update(
                         name=f"external-{profile}-{index}",
                         type=profile,
@@ -194,6 +196,11 @@ class IssuanceConstraintTests(unittest.TestCase):
                         Path(result["cert_path"]).read_bytes()
                     )
                     issued.verify_directly_issued_by(root)
+                    if profile == "tls_server":
+                        self.assertEqual(
+                            Path(result["cer_path"]).read_bytes(),
+                            issued.public_bytes(serialization.Encoding.DER),
+                        )
                     self.assertEqual(issued.subject, subject)
                     constraints = issued.extensions.get_extension_for_class(
                         x509.BasicConstraints

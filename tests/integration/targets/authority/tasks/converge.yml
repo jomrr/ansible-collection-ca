@@ -8,6 +8,7 @@
     name: root
     common_name: Test Root
     days: 3650
+    formats: [pem, der, cer, txt]
     key_type: P-256
     key_passphrase: test-root-passphrase
   register: ca_result
@@ -26,6 +27,7 @@
     common_name: Test Issuer
     email: pki@example.test
     days: 365
+    formats: [pem, der, cer, txt]
     key_type: P-256
     key_passphrase: test-issuer-passphrase
     parent_key_passphrase: test-root-passphrase
@@ -82,6 +84,7 @@
       formats:
         - pem
         - der
+        - cer
         - txt
         - fullchain
   register: ca_result
@@ -94,8 +97,10 @@
     that:
       - ca_result.name == 'web'
       - ca_result.profile == 'tls_server'
-      - ca_result.formats == ['pem', 'der', 'txt', 'fullchain']
+      - ca_result.formats == ['pem', 'der', 'cer', 'txt', 'fullchain']
       - ca_result.cert_path == ca_test_root.path ~ '/pki/certs/web/web.pem'
+      - ca_result.cer_path == ca_test_root.path ~ '/pki/certs/web/web.cer'
+      - ca_result.cer_changed == ca_expect_changed
       - "'test-root-passphrase' not in (ca_result | to_json)"
       - "'test-issuer-passphrase' not in (ca_result | to_json)"
 
@@ -225,6 +230,9 @@
       - src: '{{ ca_test_root.path }}/pki/ca/issuer-ca.der'
         area: aia
         file: issuer.der
+      - src: '{{ ca_test_root.path }}/pki/ca/issuer-ca.cer'
+        area: aia
+        file: issuer.cer
       - src: '{{ ca_test_root.path }}/pki/crl/issuer-ca.crl'
         area: cdp
         file: issuer.crl

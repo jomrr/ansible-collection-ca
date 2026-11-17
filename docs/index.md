@@ -138,6 +138,10 @@ check mode. Diff mode remains unsupported.
   Authority path: `<base_dir>/ca/<name>-ca.der`; Certificate path:
   `<output_dir>/<name>.der`
 
+- **CER certificate**
+  Authority path: `<base_dir>/ca/<name>-ca.cer`; Certificate path:
+  `<output_dir>/<name>.cer`. Optional DER export with a Windows-style extension.
+
 - **Text certificate**
   Authority path: `<base_dir>/ca/<name>-ca.txt`; Certificate path:
   `<output_dir>/<name>.txt`
@@ -180,6 +184,7 @@ Supported certificate formats:
 
 - `pem`
 - `der`
+- `cer` (DER certificate bytes with a `.cer` extension)
 - `txt`
 - `pfx`
 - `p12`

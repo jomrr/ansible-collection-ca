@@ -41,6 +41,7 @@ class AuthorityResult(TypedDict):
     name: str
     changed: bool
     cert_path: str
+    cer_path: str
     csr_path: str
     chain_paths: dict[str, str]
     chain_changed: bool
@@ -166,6 +167,7 @@ def ensure_authority_batch(
                         name=item["name"],
                         changed=material["changed"] or chain["changed"],
                         cert_path=material["cert_path"],
+                        cer_path=material["cer_path"],
                         csr_path=material["csr_path"],
                         chain_paths=chain["paths"],
                         chain_changed=chain["changed"],

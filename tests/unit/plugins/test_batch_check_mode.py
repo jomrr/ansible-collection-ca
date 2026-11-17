@@ -73,6 +73,7 @@ class BatchCheckModeTests(TestCase):
                     "parent": "root",
                     "common_name": name,
                     "days": 365,
+                    "formats": ["pem", "der", "cer", "txt"],
                     "key_type": "P-256",
                     "key_passphrase": "check-test-secret",
                     "crl_days": 30,
@@ -88,7 +89,16 @@ class BatchCheckModeTests(TestCase):
             "key_type": "P-256",
             "key_passphrase": "check-leaf-secret",
             "pfx_passphrase": "check-pfx-secret",
-            "formats": ["pem", "der", "txt", "pfx", "p12", "fullchain", "fritzbox"],
+            "formats": [
+                "pem",
+                "der",
+                "cer",
+                "txt",
+                "pfx",
+                "p12",
+                "fullchain",
+                "fritzbox",
+            ],
         }
 
     def invoke(
@@ -261,12 +271,14 @@ class BatchCheckModeTests(TestCase):
     def test_file_repairs_and_revocations(self) -> None:
         """Detect missing exports, changed bytes, file modes and new revocations."""
         self.converge()
-        paths = {
-            "authority": self.base / "ca/issuer-ca.der",
-            "certificate": self.base / "certs/web/web.der",
-            "crl": self.base / "crl/issuer-ca.crl",
-        }
-        for name, path in paths.items():
+        paths = [
+            ("authority", self.base / "ca/issuer-ca.der"),
+            ("authority", self.base / "ca/issuer-ca.cer"),
+            ("certificate", self.base / "certs/web/web.der"),
+            ("certificate", self.base / "certs/web/web.cer"),
+            ("crl", self.base / "crl/issuer-ca.crl"),
+        ]
+        for name, path in paths:
             with self.subTest(name=name):
                 self.assertTrue(path.exists(), path)
                 for damage in ("mode", "content", "missing"):
@@ -288,6 +300,48 @@ class BatchCheckModeTests(TestCase):
             result["results"][0]["crl_number"],
             self.invoke("crl", revocations=revoked)["results"][0]["crl_number"],
         )
+
+    def test_optional_cer_export_and_archive(self) -> None:
+        """Add CER without renewal, then preserve it when renewing a generation."""
+        for item in self.params["authorities"]:
+            item.pop("formats")
+        self.leaf["formats"] = ["pem"]
+        self.converge()
+        self.assertFalse(list(self.base.rglob("*.cer")))
+        for module, path, archive in (
+            ("certificate", self.base / "certs/web/web.pem", "certificates/web"),
+            ("authority", self.base / "ca/issuer-ca.pem", "authorities/issuer"),
+        ):
+            original = path.read_bytes()
+            if module == "authority":
+                for item in self.params["authorities"]:
+                    item["formats"] = ["cer"]
+            else:
+                self.leaf["formats"] = ["cer"]
+            self.assertTrue(self.predict(module)["changed"])
+            result = self.invoke(module)
+            self.assertTrue(result["changed"], result)
+            self.assertIn(
+                str(path.with_suffix(".cer")),
+                [entry["cer_path"] for entry in result["results"]],
+            )
+            self.assertEqual(path.read_bytes(), original)
+            content = x509.load_pem_x509_certificate(original).public_bytes(
+                serialization.Encoding.DER
+            )
+            self.assertEqual(path.with_suffix(".cer").read_bytes(), content)
+            self.assertFalse(self.predict(module)["changed"])
+            self.assertFalse(self.invoke(module)["changed"])
+            self.assertTrue(self.predict(module, force=True)["changed"])
+            self.assertTrue(self.invoke(module, force=True)["changed"])
+            archived = list(
+                (self.base / "archive" / archive).glob(f"*/{path.stem}.cer")
+            )
+            self.assertEqual([entry.read_bytes() for entry in archived], [content])
+        self.assertFalse((self.base / "certs/web/web.der").exists())
+        inventory = json.loads((self.base / "inventory/ca-inventory.json").read_text())
+        for record in inventory["authorities"] + inventory["certificates"]:
+            self.assertTrue(Path(record["paths"]["certificate_cer"]).is_file())
 
     def test_legacy_root_in_certificate_exports(self) -> None:
         """Repair legacy bundles from a legacy source without renewing the leaf."""

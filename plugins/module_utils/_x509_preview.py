@@ -127,6 +127,7 @@ def _pending_exports(
     """Report exports that depend on the certificate that would be issued."""
     return {
         "der_changed": bool(params.paths["der_path"]),
+        "cer_changed": bool(params.paths["cer_path"]),
         "txt_changed": bool(params.paths["txt_path"]),
         "chain_changed": manage_chain and bool(params.paths["chain_path"]),
         "pkcs12_changed": bool(params.paths["pkcs12_paths"]),
@@ -150,6 +151,7 @@ def _validate_output_paths(params: CertificateOperation) -> None:
             "csr_path",
             "cert_path",
             "der_path",
+            "cer_path",
             "txt_path",
             "chain_path",
             "fullchain_path",

@@ -1,0 +1,4 @@
+---
+minor_changes:
+  - authority, authority_batch, certificate, certificate_batch - add the optional cer export format for DER-encoded certificates
+    with a Windows-style .cer extension, including result paths, inventory, archival and batch check mode.
