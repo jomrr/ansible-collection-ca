@@ -15,8 +15,8 @@ from typing import Any
 from unittest import TestCase
 from unittest.mock import patch
 
-from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine import (
-    SUPPORTED_FORMATS,
+from ansible_collections.jomrr.ca.plugins.module_utils._formats import (
+    CERTIFICATE_SUPPORTED_FORMATS,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
     compose_inventory,
@@ -92,7 +92,7 @@ class BatchCheckModeTests(TestCase):
             "key_type": "P-256",
             "key_passphrase": "check-leaf-secret",
             "pfx_passphrase": "check-pfx-secret",
-            "formats": sorted(SUPPORTED_FORMATS),
+            "formats": sorted(CERTIFICATE_SUPPORTED_FORMATS),
         }
 
     def invoke(

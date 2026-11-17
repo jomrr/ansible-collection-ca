@@ -22,6 +22,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results impo
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
     CertificateOperation,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._formats import (
+    CERTIFICATE_DEFAULT_FORMATS,
+    CERTIFICATE_SUPPORTED_FORMATS,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
     update_certificate_inventory,
     update_certificates_inventory,
@@ -30,7 +34,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._pkcs12_encoding import (
     require_pkcs12_parser,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._profiles import (
-    CERTIFICATE_DEFAULT_FORMATS,
     CERTIFICATE_PROFILE_DEFAULTS,
     apply_certificate_profile,
 )
@@ -50,18 +53,6 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_extensions import (
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     with_derived_paths,
 )
-
-SUPPORTED_FORMATS = {
-    "pem",
-    "der",
-    "cer",
-    "txt",
-    "pfx",
-    "p12",
-    "fullchain",
-    "bundle",
-    "fritzbox",
-}
 
 
 def certificate_common_argument_spec() -> dict[str, dict[str, Any]]:
@@ -295,7 +286,7 @@ def prepare_certificate_artifacts(
         values, signed=True, authority=False, manage_directory=True, manage_chain=True
     )
     formats = set(operation.request["exports"].formats)
-    unsupported = sorted(formats - SUPPORTED_FORMATS)
+    unsupported = sorted(formats - CERTIFICATE_SUPPORTED_FORMATS)
     if unsupported:
         raise ValueError(f"Unsupported certificate formats: {', '.join(unsupported)}")
     name = operation.request["name"]

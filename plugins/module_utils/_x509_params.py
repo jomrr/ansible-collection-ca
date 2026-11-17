@@ -18,7 +18,10 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import
     CertificatePaths,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._file import ca_lock_path
-from ansible_collections.jomrr.ca.plugins.module_utils._formats import normalize_formats
+from ansible_collections.jomrr.ca.plugins.module_utils._formats import (
+    DEFAULT_PUBLIC_FORMATS,
+    normalize_formats,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
     authority_paths,
     certificate_paths,
@@ -117,7 +120,7 @@ def ca_authority_argument_spec(
         "formats": {
             "type": "list",
             "elements": "str",
-            "default": ["pem", "der", "txt"],
+            "default": list(DEFAULT_PUBLIC_FORMATS),
         },
         "key_type": {"type": "str", "default": "RSA", "choices": KEY_TYPES},
         "key_size": {"type": "int", "default": 4096},
@@ -213,7 +216,9 @@ def certificate_params(
     formats = module_formats if module_formats is not None else certificate_formats
     if formats is None:
         formats = (
-            default_formats if default_formats is not None else ["pem", "der", "txt"]
+            default_formats
+            if default_formats is not None
+            else list(DEFAULT_PUBLIC_FORMATS)
         )
     result["formats"] = normalize_formats(formats)
     result["signer_key_passphrase"] = result.pop("issuer_key_passphrase")

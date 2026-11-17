@@ -19,6 +19,7 @@ def _authority_definitions(certificate_documentation: str) -> str:
         "csr_content",
         "output_dir",
         "directory_mode",
+        "publish_private",
         "pfx_friendly_name",
         "pfx_encryption",
         "pfx_iterations",
@@ -276,6 +277,15 @@ options:
       directory_mode:
         description: Certificate directory permissions; defaults to C(0755).
         type: str
+      publish_private:
+        description:
+        - Allow C(jomrr.ca.artifacts) to list this certificate's local key and
+          requested private exports, marking them with C(secret=true).
+        - Consumer metadata for devices whose private material an administrator
+          handles manually. Does not create additional exports or publish files.
+        type: bool
+        default: false
+        version_added: 1.3.0
       pfx_friendly_name:
         description: PKCS#12 friendly name; defaults to the common name or object name.
           The existing C(friendly_name) spelling remains an alias.

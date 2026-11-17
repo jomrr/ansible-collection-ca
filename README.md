@@ -55,6 +55,7 @@ ansible-galaxy collection install jomrr.ca
 
 | Name | idempotent | check_mode | Description |
 | ---- | ---------- | ---------- | ----------- |
+| [`jomrr.ca.artifacts`](plugins/filter/artifacts.py) | n/a | n/a | List configured public and opted-in private certificate files |
 | [`jomrr.ca.authority_map`](plugins/filter/authority_map.py) | n/a | n/a | Index and validate certificate authorities by name |
 | [`jomrr.ca.host_certificates`](plugins/filter/host_certificates.py) | n/a | n/a | Build TLS server certificate definitions from inventory hosts |
 
@@ -65,7 +66,7 @@ to a dedicated CA host. Install Python 3.12 and `cryptography>=43` in that
 host's Ansible interpreter. PKCS#12 exports (`pfx` and `p12`) additionally
 require `asn1crypto>=1.5.1,<2` there to inspect encryption settings.
 The controller uses ansible-core 2.20 and
-Python 3.12. The `authority_map` and `host_certificates` filters run on
+Python 3.12. The `authority_map`, `host_certificates` and `artifacts` filters run on
 the controller and need no additional Python libraries.
 No other runtime collections are required.
 
@@ -152,6 +153,23 @@ Pass the result to `certificate_batch.certificates`, with
 `certificate_types.tls_server.issuer` selecting the CA as usual.
 See [host_certificates](docs/host_certificates.md) for the full output.
 
+## Artifact Manifests
+
+Use the definitions passed to the issuance modules to list their files:
+
+```yaml
+ca_files: "{{ ca_certificates | jomrr.ca.artifacts(ca_authorities) }}"
+```
+
+Each entry contains `src` (relative to `base_dir`), `owner` (the object
+name), `format` and `secret`. Authorities contribute PEM and requested
+DER, CER and TXT exports; certificates contribute PEM, chain and selected
+public formats. Set `publish_private: true` on a certificate to include
+its local key and requested private exports with `secret: true`.
+This only controls the manifest; it does not create or publish files.
+The filter requires the default layout without a custom `output_dir`.
+See [artifacts](docs/artifacts.md) for defaults, aliases and examples.
+
 ## Example
 
 ```yaml
@@ -179,7 +197,7 @@ starts at [docs/index.md](docs/index.md). For certificate modules, pass
 Extracted from the `jomrr.ca` standalone role and licensed under
 GPL-3.0-or-later.
 The collection contains modules, their internal utilities and the
-`authority_map` and `host_certificates` filters. It does not embed or
+`authority_map`, `host_certificates` and `artifacts` filters. It does not embed or
 modify the standalone role.
 
 ## References

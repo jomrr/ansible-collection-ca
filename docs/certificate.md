@@ -375,6 +375,10 @@ These keys are accepted inside `certificate`.
   Secret: no
 
 - **`directory_mode`**: Output directory mode.
+- **`publish_private`**: Boolean, default `false`. Allows the
+  [artifacts filter](artifacts.md) to list the local key and requested private
+  exports with `secret: true`. Consumer metadata only; does not change issuance,
+  create additional exports or publish files.
   Type: str; Required: no; Default: `0755`; Allowed values: octal mode string;
   Secret: no
 

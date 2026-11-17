@@ -50,6 +50,7 @@ composed into `<base_dir>/inventory/ca-inventory.json`.
 
 ## Filters
 
+- [jomrr.ca.artifacts](artifacts.md): List configured public files and opted-in private certificate exports.
 - [jomrr.ca.host_certificates](host_certificates.md): Build TLS server certificate definitions from inventory hosts.
 - [jomrr.ca.authority_map](authority_map.md): Index and validate authorities by name.
 

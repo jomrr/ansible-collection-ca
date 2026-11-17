@@ -7,6 +7,29 @@ from __future__ import annotations
 from collections.abc import Collection, Sequence
 from typing import Any
 
+DEFAULT_PUBLIC_FORMATS = ("pem", "der", "txt")
+CERTIFICATE_DEFAULT_FORMATS: dict[str, list[str]] = {
+    "issuing_ca": [*DEFAULT_PUBLIC_FORMATS, "fullchain"],
+    "tls_server": list(DEFAULT_PUBLIC_FORMATS),
+    "tls_client": list(DEFAULT_PUBLIC_FORMATS),
+    "eap_tls_client": list(DEFAULT_PUBLIC_FORMATS),
+    "mskdc": list(DEFAULT_PUBLIC_FORMATS),
+    "identity": [*DEFAULT_PUBLIC_FORMATS, "pfx"],
+    "identity_full": [*DEFAULT_PUBLIC_FORMATS, "pfx"],
+    "fritzbox": [*DEFAULT_PUBLIC_FORMATS, "fritzbox"],
+}
+CERTIFICATE_SUPPORTED_FORMATS = {
+    "pem",
+    "der",
+    "cer",
+    "txt",
+    "pfx",
+    "p12",
+    "fullchain",
+    "bundle",
+    "fritzbox",
+}
+
 
 def normalize_formats(
     value: Any,

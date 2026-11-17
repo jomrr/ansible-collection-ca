@@ -37,6 +37,7 @@ def certificate_options() -> dict[str, dict[str, Any]]:
             "csr_content": {"type": "str"},
             "output_dir": {"type": "path"},
             "directory_mode": {"type": "str"},
+            "publish_private": {"type": "bool", "default": False},
             "pfx_friendly_name": {"type": "str", "aliases": ["friendly_name"]},
             "pfx_encryption": {"type": "str", "choices": ["best", "compatibility2022"]},
             "pfx_iterations": {"type": "int"},
