@@ -23,3 +23,5 @@
       ansible.builtin.import_tasks: targets/publish/tasks/main.yml
     - name: Exercise controller filter
       ansible.builtin.import_tasks: targets/filter_authority_map/tasks/main.yml
+    - name: Exercise inventory certificate definitions
+      ansible.builtin.import_tasks: targets/filter_host_certificates/tasks/main.yml

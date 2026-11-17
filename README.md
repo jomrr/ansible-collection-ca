@@ -56,6 +56,7 @@ ansible-galaxy collection install jomrr.ca
 | Name | idempotent | check_mode | Description |
 | ---- | ---------- | ---------- | ----------- |
 | [`jomrr.ca.authority_map`](plugins/filter/authority_map.py) | n/a | n/a | Index and validate certificate authorities by name |
+| [`jomrr.ca.host_certificates`](plugins/filter/host_certificates.py) | n/a | n/a | Build TLS server certificate definitions from inventory hosts |
 
 ## Execution and Requirements
 
@@ -64,8 +65,9 @@ to a dedicated CA host. Install Python 3.12 and `cryptography>=43` in that
 host's Ansible interpreter. PKCS#12 exports (`pfx` and `p12`) additionally
 require `asn1crypto>=1.5.1,<2` there to inspect encryption settings.
 The controller uses ansible-core 2.20 and
-Python 3.12. The `authority_map` filter runs on the controller and needs
-no additional Python libraries. No other runtime collections are required.
+Python 3.12. The `authority_map` and `host_certificates` filters run on
+the controller and need no additional Python libraries.
+No other runtime collections are required.
 
 The modules retain the source role's file layout and certificate profiles.
 `authority_batch`, `certificate_batch` and `crl_batch` support check mode:
@@ -133,6 +135,23 @@ certificates. FRITZ!Box uses a self-signed certificate by default, so
 `validate_certs` defaults to `false`, as in the source role. Set it to
 `true` when the managed host trusts the device certificate.
 
+## Certificates from Inventory Hosts
+
+Build TLS server certificate definitions from short inventory host names:
+
+```yaml
+ca_certificates: >-
+  {{ groups['webservers'] | jomrr.ca.host_certificates(hostvars, 'example.test') }}
+```
+
+Each selected host needs an IPv4 or IPv6 `ansible_host`. The result is
+sorted by name and includes the full and short DNS names plus the IP SAN.
+Defaults are `key_type: P-384` and
+`formats: [pem, der, txt, fullchain]`; both can be overridden.
+Pass the result to `certificate_batch.certificates`, with
+`certificate_types.tls_server.issuer` selecting the CA as usual.
+See [host_certificates](docs/host_certificates.md) for the full output.
+
 ## Example
 
 ```yaml
@@ -160,7 +179,8 @@ starts at [docs/index.md](docs/index.md). For certificate modules, pass
 Extracted from the `jomrr.ca` standalone role and licensed under
 GPL-3.0-or-later.
 The collection contains modules, their internal utilities and the
-`authority_map` filter. It does not embed or modify the standalone role.
+`authority_map` and `host_certificates` filters. It does not embed or
+modify the standalone role.
 
 ## References
 

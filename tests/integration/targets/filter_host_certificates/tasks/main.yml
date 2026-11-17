@@ -1,0 +1,81 @@
+---
+- name: Add inventory hosts for certificate definitions
+  ansible.builtin.add_host:
+    name: '{{ item.name }}'
+    groups: ca_filter_hosts
+    ansible_host: '{{ item.address }}'
+  loop:
+    - {name: web02, address: '2001:db8::20'}
+    - {name: web01, address: '192.0.2.10'}
+
+- name: Build definitions using the real inventory hostvars mapping
+  ansible.builtin.set_fact:
+    ca_filter_certificates: >-
+      {{ groups['ca_filter_hosts'] | jomrr.ca.host_certificates(hostvars, 'example.test') }}
+
+- name: Verify sorted complete certificate definitions
+  vars:
+    ca_expected_certificates:
+      - name: web01
+        type: tls_server
+        common_name: web01.example.test
+        key_type: P-384
+        san: [DNS:web01.example.test, DNS:web01, 'IP:192.0.2.10']
+        formats: [pem, der, txt, fullchain]
+      - name: web02
+        type: tls_server
+        common_name: web02.example.test
+        key_type: P-384
+        san: [DNS:web02.example.test, DNS:web02, 'IP:2001:db8::20']
+        formats: [pem, der, txt, fullchain]
+  ansible.builtin.assert:
+    that:
+      - ca_filter_certificates == ca_expected_certificates
+      - ([] | jomrr.ca.host_certificates(hostvars, 'example.test')) == []
+
+- name: Build definitions with keyword overrides
+  ansible.builtin.set_fact:
+    ca_filter_custom: >-
+      {{ ['web01'] | jomrr.ca.host_certificates(hostvars, 'example.test',
+                                               key_type='P-256', formats=['pem', 'bundle']) }}
+
+- name: Verify overrides
+  ansible.builtin.assert:
+    that:
+      - ca_filter_custom[0].key_type == 'P-256'
+      - ca_filter_custom[0].formats == ['pem', 'bundle']
+
+- name: Reject invalid inventory addresses through Ansible
+  block:
+    - name: Attempt a non-IP SAN
+      ansible.builtin.set_fact:
+        ca_invalid_certificates: >-
+          {{ ['web01'] | jomrr.ca.host_certificates(
+               {'web01': {'ansible_host': 'not-an-ip'}}, 'example.test') }}
+    - name: Fail if an invalid address was accepted
+      ansible.builtin.fail:
+        msg: Invalid address was accepted
+  rescue:
+    - name: Verify the filter diagnostic
+      ansible.builtin.assert:
+        that:
+          - "'ansible_host must be an IPv4 or IPv6 address' in ansible_failed_result.msg"
+
+- name: Preserve lazy undefined-variable errors
+  vars:
+    ca_undefined_hostvars:
+      web01:
+        ansible_host: '{{ ca_intentionally_undefined_address }}'
+  block:
+    - name: Attempt to resolve an undefined address
+      ansible.builtin.set_fact:
+        ca_invalid_certificates: >-
+          {{ ['web01'] | jomrr.ca.host_certificates(ca_undefined_hostvars, 'example.test') }}
+    - name: Fail if an undefined address was accepted
+      ansible.builtin.fail:
+        msg: Undefined address was accepted
+  rescue:
+    - name: Verify the original undefined-variable diagnostic
+      ansible.builtin.assert:
+        that:
+          - "'ca_intentionally_undefined_address' in ansible_failed_result.msg"

@@ -48,6 +48,11 @@ composed into `<base_dir>/inventory/ca-inventory.json`.
 - [jomrr.ca.publish_archive](publish_archive.md)
 - [AIA/CDP publishing](publishing.md)
 
+## Filters
+
+- [jomrr.ca.host_certificates](host_certificates.md): Build TLS server certificate definitions from inventory hosts.
+- [jomrr.ca.authority_map](authority_map.md): Index and validate authorities by name.
+
 ## Internal Helpers
 
 These files are not user-facing Ansible modules. They are documented because
@@ -64,7 +69,6 @@ inventory state, and validation.
 - [ca_time](time.md)
 - [ca_validation](validation.md)
 - [ca_x509](x509.md)
-- [plugins/filter/authority_map.py](authority_map.md)
 
 ## Common Behavior
 
