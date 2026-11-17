@@ -162,3 +162,52 @@ releases:
     fragments:
       - stable-inventory.yml
     release_date: '2026-11-10'
+  1.3.0:
+    changes:
+      bugfixes:
+        - authority_batch - do not predict descendant chain changes for root renewal
+          alone when the intermediate certificates remain unchanged.
+        - certificate, certificate_batch - exclude self-signed roots from chain copies,
+          fullchain, PKCS#12 and FritzBox bundles, including when reading legacy chain
+          sources. Direct root issuers produce empty issuer chains.
+        - chain, authority_batch - exclude self-signed roots from PEM, DER and text
+          chain exports while retaining intermediate order and self-issued rollover
+          certificates.
+      minor_changes:
+        - artifacts - add a controller filter listing configured public authority
+          and certificate files using the shared output layout.
+        - authority, authority_batch, certificate, certificate_batch - add the optional
+          cer export format for DER-encoded certificates with a Windows-style .cer
+          extension, including result paths, inventory, archival and batch check mode.
+        - certificate and certificate_batch - accept publish_private (default false)
+          to include local keys and requested private exports in artifact manifests.
+        - certificate, certificate_batch - add PEM bundle exports with selectable
+          PKCS#8 or traditional RSA/EC private key encoding, retaining key encryption
+          and excluding the root CA.
+        - certificate, certificate_batch - add pfx_encryption (best or compatibility2022),
+          optional pfx_iterations and pfx_friendly_name (with friendly_name retained
+          as an alias).
+        - certificate, certificate_batch - compare decoded PKCS#12 content, friendly
+          names and encryption settings for idempotent exports; pfx/p12 now require
+          asn1crypto on the managed host.
+        - certificate, certificate_batch - share the PEM bundle writer with FRITZ!Box
+          exports while preserving their existing filename, order and key bytes.
+        - host_certificates - add a controller filter that creates sorted TLS server
+          certificate definitions from inventory hosts, with DNS/IP SANs and configurable
+          key type and formats.
+    fragments:
+      - artifacts.yml
+      - bundle-export.yml
+      - cer-export.yml
+      - host-certificates.yml
+      - pkcs12-encryption.yml
+      - root-free-chains.yml
+    plugins:
+      filter:
+        - description: List configured public and opted\-in private certificate files
+          name: artifacts
+          namespace: null
+        - description: Build TLS server certificate definitions from inventory hosts
+          name: host_certificates
+          namespace: null
+    release_date: '2026-11-17'

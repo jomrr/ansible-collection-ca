@@ -1,4 +1,0 @@
----
-minor_changes:
-  - artifacts - add a controller filter listing configured public authority and certificate files using the shared output layout.
-  - certificate and certificate_batch - accept publish_private (default false) to include local keys and requested private exports in artifact manifests.

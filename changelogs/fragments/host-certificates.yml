@@ -1,4 +1,0 @@
----
-minor_changes:
-  - host_certificates - add a controller filter that creates sorted TLS server certificate
-    definitions from inventory hosts, with DNS/IP SANs and configurable key type and formats.

@@ -1,8 +1,39 @@
 ==========================
-jomrr.ca 1.2 Release Notes
+jomrr.ca 1.3 Release Notes
 ==========================
 
 .. contents:: Topics
+
+v1.3.0
+======
+
+Minor Changes
+-------------
+
+- artifacts - add a controller filter listing configured public authority and certificate files using the shared output layout.
+- authority, authority_batch, certificate, certificate_batch - add the optional cer export format for DER-encoded certificates with a Windows-style .cer extension, including result paths, inventory, archival and batch check mode.
+- certificate and certificate_batch - accept publish_private (default false) to include local keys and requested private exports in artifact manifests.
+- certificate, certificate_batch - add PEM bundle exports with selectable PKCS#8 or traditional RSA/EC private key encoding, retaining key encryption and excluding the root CA.
+- certificate, certificate_batch - add pfx_encryption (best or compatibility2022), optional pfx_iterations and pfx_friendly_name (with friendly_name retained as an alias).
+- certificate, certificate_batch - compare decoded PKCS#12 content, friendly names and encryption settings for idempotent exports; pfx/p12 now require asn1crypto on the managed host.
+- certificate, certificate_batch - share the PEM bundle writer with FRITZ!Box exports while preserving their existing filename, order and key bytes.
+- host_certificates - add a controller filter that creates sorted TLS server certificate definitions from inventory hosts, with DNS/IP SANs and configurable key type and formats.
+
+Bugfixes
+--------
+
+- authority_batch - do not predict descendant chain changes for root renewal alone when the intermediate certificates remain unchanged.
+- certificate, certificate_batch - exclude self-signed roots from chain copies, fullchain, PKCS#12 and FritzBox bundles, including when reading legacy chain sources. Direct root issuers produce empty issuer chains.
+- chain, authority_batch - exclude self-signed roots from PEM, DER and text chain exports while retaining intermediate order and self-issued rollover certificates.
+
+New Plugins
+-----------
+
+Filter
+~~~~~~
+
+- artifacts - List configured public and opted\-in private certificate files
+- host_certificates - Build TLS server certificate definitions from inventory hosts
 
 v1.2.2
 ======

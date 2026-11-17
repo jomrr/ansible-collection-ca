@@ -1,7 +1,0 @@
----
-bugfixes:
-  - chain, authority_batch - exclude self-signed roots from PEM, DER and text chain exports while retaining
-    intermediate order and self-issued rollover certificates.
-  - certificate, certificate_batch - exclude self-signed roots from chain copies, fullchain, PKCS#12 and FritzBox bundles,
-    including when reading legacy chain sources. Direct root issuers produce empty issuer chains.
-  - authority_batch - do not predict descendant chain changes for root renewal alone when the intermediate certificates remain unchanged.
