@@ -18,11 +18,13 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine impor
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results import (
     CertificateResult,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._chain import (
+    ensure_authority_chain,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
     update_authority_inventory,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509 import ensure_x509
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import ordered_chain
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     load_certificate,
 )
@@ -42,11 +44,7 @@ class CertificateFixture:
         self.base = base
         self.authority("root", "root")
         self.authority("issuer", "root")
-        chain = ordered_chain(str(self.base), "issuer")
-        (self.base / "chains").mkdir()
-        (self.base / "chains/issuer-ca-chain.pem").write_bytes(
-            b"".join(cert.public_bytes(serialization.Encoding.PEM) for cert in chain)
-        )
+        self.chain("issuer")
         self.key = ec.generate_private_key(ec.SECP256R1())
         self.csr = (
             x509.CertificateSigningRequestBuilder()
@@ -79,6 +77,20 @@ class CertificateFixture:
         result = ensure_x509(params, signed=signed, authority=True)
         update_authority_inventory(values, result)
         return result
+
+    def chain(self, name: str) -> None:
+        """Build chain exports through the shared single and batch implementation."""
+        ensure_authority_chain(
+            {
+                "base_dir": str(self.base),
+                "name": name,
+                "formats": ["pem"],
+                "force": False,
+                "owner": str(os.getuid()),
+                "group": str(os.getgid()),
+                "mode": "0644",
+            }
+        )
 
     def request(self, issuer: str = "issuer") -> dict[str, Any]:
         """Build an external CA request with explicit certificate-signing usage."""

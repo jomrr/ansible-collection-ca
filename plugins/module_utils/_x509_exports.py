@@ -23,10 +23,14 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     write_file,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._text import ensure_txt
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import is_self_signed
+from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import (
+    intermediate_chain,
+    is_self_signed,
+    pem_chain,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     cert_fingerprint,
-    load_certificates,
+    load_certificates_bytes,
     public_key_bytes,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
@@ -58,6 +62,12 @@ def ensure_der(params: CertificateOperation, cert: x509.Certificate) -> bool:
     )
 
 
+def _read_chain(path: str) -> list[x509.Certificate]:
+    """Read intermediate certificates, including legacy root-containing chains."""
+    data = read_file(path)
+    return intermediate_chain(load_certificates_bytes(data)) if data.strip() else []
+
+
 def ensure_chain(
     params: CertificateOperation, signer_cert: x509.Certificate | None
 ) -> bool:
@@ -65,11 +75,11 @@ def ensure_chain(
     if not params.paths["chain_src_path"] or not params.paths["chain_path"]:
         return False
     try:
-        content = read_file(params.paths["chain_src_path"])
+        content = pem_chain(_read_chain(params.paths["chain_src_path"]))
     except FileNotFoundError:
         if signer_cert is None or not is_self_signed(signer_cert):
             raise
-        content = signer_cert.public_bytes(serialization.Encoding.PEM)
+        content = b""
     return write_file(
         params.paths["chain_path"],
         content,
@@ -82,16 +92,7 @@ def chain_content(
     params: CertificateOperation, signer_cert: x509.Certificate | None
 ) -> bytes:
     """Return the issuing chain content for certificate export bundles."""
-    for path in (params.paths["chain_src_path"], params.paths["chain_path"]):
-        if not path:
-            continue
-        try:
-            return read_file(path).rstrip() + b"\n"
-        except FileNotFoundError:
-            continue
-    if signer_cert is not None:
-        return signer_cert.public_bytes(serialization.Encoding.PEM).rstrip() + b"\n"
-    raise ValueError("certificate chain is required for bundle export formats")
+    return pem_chain(chain_certificates(params, signer_cert))
 
 
 def chain_certificates(
@@ -102,10 +103,12 @@ def chain_certificates(
         if not path:
             continue
         try:
-            return load_certificates(path)
+            return _read_chain(path)
         except FileNotFoundError:
             continue
-    return [signer_cert] if signer_cert is not None else []
+    if signer_cert is None:
+        raise ValueError("certificate chain is required for bundle export formats")
+    return intermediate_chain([signer_cert])
 
 
 def _pkcs12_existing_matches(

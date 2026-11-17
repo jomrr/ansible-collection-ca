@@ -6,6 +6,8 @@ profiles.
 `jomrr.ca.certificate_batch` is the public module used by the role task for
 `ca_certificates`. It uses the same internal engine as `jomrr.ca.certificate`, so PEM,
 DER, text, PKCS#12, fullchain, and FritzBox bundle generation live in one place.
+All chain copies and bundles exclude the self-signed root; see
+[chain and bundle contents](certificate.md#chain-and-bundle-contents).
 Certificate models can also reference `csr_path` or `csr_content` to sign an
 external CSR through the same issuer grouping and inventory flow.
 Use `type: issuing_ca` for an external issuing CA and map

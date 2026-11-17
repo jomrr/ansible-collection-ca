@@ -144,14 +144,12 @@ check mode. Diff mode remains unsupported.
 
 - **CA chain**
   Authority path: `<base_dir>/chains/<name>-ca-chain.{pem,der,txt}` for issuing
-  CAs; Certificate path: copied to `<output_dir>/<name>-chain.pem`
-
-- **Versioned CA chain**
-  Authority path: `<base_dir>/chains/<name>-ca-chain-<serial>.{pem,der,txt}` for
-  issuing CAs; Certificate path: none
+  CAs; Certificate path: copied to `<output_dir>/<name>-chain.pem`.
+  Both contain only intermediates, excluding the self-signed root.
 
 - **Fullchain bundle**
-  Authority path: none; Certificate path: `<output_dir>/<name>-fullchain.pem`
+  Authority path: none; Certificate path: `<output_dir>/<name>-fullchain.pem`.
+  Contains the issued certificate followed by intermediates, excluding the root.
 
 - **FritzBox bundle**
   Authority path: none; Certificate path: `<output_dir>/<name>-fritzbox.pem`

@@ -12,6 +12,11 @@ Both publish CA certificates and issuing chains under `aia/`, and CRLs under
 `jomrr.ca.crl` before publishing. Private keys are not part of authority-derived
 publication.
 
+Chain files contain only intermediates, excluding the self-signed root.
+Publication copies source bytes: refresh chains with `chain` or `authority_batch`
+before publishing, including when migrating existing root-containing chains.
+Standalone root certificates remain published for separate trust distribution.
+
 The standalone role selects direct publication when a target's inventory name
 equals `inventory_hostname`. It uses the target's `become` and `become_user`
 settings. Other targets receive archives through the controller, shared by

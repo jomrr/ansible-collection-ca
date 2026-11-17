@@ -310,7 +310,11 @@ def load_certificate(path: str) -> x509.Certificate:
 
 def load_certificates(path: str) -> list[x509.Certificate]:
     """Load one or more certificates from a PEM or DER source."""
-    data = read_file(path)
+    return load_certificates_bytes(read_file(path))
+
+
+def load_certificates_bytes(data: bytes) -> list[x509.Certificate]:
+    """Load one or more certificates from PEM or DER bytes."""
     pem_blocks = PEM_CERT_RE.findall(data)
     if pem_blocks:
         return [x509.load_pem_x509_certificate(block) for block in pem_blocks]

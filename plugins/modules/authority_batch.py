@@ -17,6 +17,8 @@ description:
 - Each authority uses the same issuance, inventory and chain implementation as M(jomrr.ca.authority)
   and M(jomrr.ca.chain).
 notes:
+- Chain exports contain the issuing CA and parent intermediates, excluding the self-signed
+  root. Root CA chain files are absent.
 - The authority graph lock is held once across the batch. Existing per-authority locks are
   shared with single-module operations.
 - Cycles, unknown parents and duplicate names are rejected before writes. Failures stop the

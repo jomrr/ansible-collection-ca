@@ -54,10 +54,11 @@ When `authorities` is used, the module derives the role defaults:
   stems. Run `crl` first; missing active exports cause publication to fail.
 - Retired generations keep their public CA certificates and any existing final
   CRL. Publication does not require a retired signing key or create another CRL.
-- AIA gets every issuing CA chain as `pem`, `der`, and `txt`.
+- AIA gets every issuing CA chain as `pem`, `der`, and `txt`, excluding the
+  self-signed root. Refresh existing chains before publication.
 - CDP gets every CRL as `pem` and `der`.
-- Self-signed root CAs do not get chain files because they would be identical
-  to the root certificate.
+- Self-signed root CAs do not get chain files; their standalone CA certificates
+  remain published separately.
 
 Authority-derived publication requires `cryptography >= 43` on the managed host.
 Explicit `artifacts` remain literal and override this generation discovery. When

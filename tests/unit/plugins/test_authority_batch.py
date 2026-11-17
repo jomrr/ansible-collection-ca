@@ -27,6 +27,7 @@ from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
     module_transport,
 )
 from cryptography import x509
+from cryptography.hazmat.primitives import serialization
 from cryptography.x509.oid import NameOID
 
 
@@ -122,7 +123,21 @@ class AuthorityBatchTests(TestCase):
         chain = x509.load_pem_x509_certificates(
             (self.base / "chains/child-ca-chain.pem").read_bytes()
         )
-        self.assertEqual(len(chain), 3)
+        self.assertEqual(len(chain), 2)
+        root = x509.load_pem_x509_certificate(
+            (self.base / "ca/root-ca.pem").read_bytes()
+        )
+        chain[-1].verify_directly_issued_by(root)
+        self.assertEqual(chain[0], child)
+        self.assertEqual(
+            (self.base / "chains/child-ca-chain.der").read_bytes(),
+            b"".join(cert.public_bytes(serialization.Encoding.DER) for cert in chain),
+        )
+        self.assertEqual(
+            (self.base / "chains/child-ca-chain.txt").read_bytes(),
+            (self.base / "ca/child-ca.txt").read_bytes()
+            + (self.base / "ca/parent-ca.txt").read_bytes(),
+        )
         for cert, issuer in pairwise(chain):
             cert.verify_directly_issued_by(issuer)
         self.assertFalse((self.base / "chains/root-ca-chain.pem").exists())
@@ -157,15 +172,21 @@ class AuthorityBatchTests(TestCase):
         self.assertTrue(self.invoke()["changed"])
         certificate = self.base / "ca/child-ca.pem"
         original = certificate.read_bytes()
-        chain = self.base / "chains/child-ca-chain.der"
-        chain.write_bytes(b"altered")
+        expected = {}
+        for suffix in ("pem", "der", "txt"):
+            chain = self.base / f"chains/child-ca-chain.{suffix}"
+            expected[chain] = chain.read_bytes()
+            chain.write_bytes(
+                chain.read_bytes() + (self.base / f"ca/root-ca.{suffix}").read_bytes()
+            )
         stale = self.base / "chains/root-ca-chain.pem"
         stale.write_bytes(b"stale root chain")
         repaired = self.invoke()
         self.assertTrue(repaired["changed"])
         self.assertEqual(certificate.read_bytes(), original)
         self.assertFalse(stale.exists())
-        self.assertNotEqual(chain.read_bytes(), b"altered")
+        for path, content in expected.items():
+            self.assertEqual(path.read_bytes(), content)
         self.assertTrue(
             next(item for item in repaired["results"] if item["name"] == "child")[
                 "chain_changed"

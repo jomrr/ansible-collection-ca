@@ -235,7 +235,13 @@ class IssuanceConstraintTests(unittest.TestCase):
                         chain = x509.load_pem_x509_certificates(
                             Path(result["fullchain_path"]).read_bytes()
                         )
-                        self.assertEqual(chain, [issued, root])
+                        self.assertEqual(chain, [issued])
+                        self.assertEqual(
+                            Path(result["cert_path"])
+                            .with_name(Path(result["cert_path"]).stem + "-chain.pem")
+                            .read_bytes(),
+                            b"",
+                        )
                     self.assertFalse(
                         Path(result["cert_path"]).with_suffix(".key").exists()
                     )
@@ -257,6 +263,11 @@ class IssuanceConstraintTests(unittest.TestCase):
         chain = ordered_chain(str(self.base), "rollover")
         self.assertEqual(len(chain), 2)
         chain[0].verify_directly_issued_by(chain[1])
+        self.ca.chain("rollover")
+        exported = x509.load_pem_x509_certificates(
+            (self.base / "chains/rollover-ca-chain.pem").read_bytes()
+        )
+        self.assertEqual(exported, [chain[0]])
 
     def identity_request(self) -> dict[str, Any]:
         """Request unapproved identities with a correctly signed external key."""

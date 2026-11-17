@@ -14,6 +14,14 @@ class ModuleDocFragment:
 
     DOCUMENTATION: ClassVar[str] = r"""
 notes:
+- The C(<name>-chain.pem) copy contains only issuer intermediates, starting with the direct
+  issuer. C(fullchain) contains the issued certificate followed by those intermediates.
+  Neither includes the self-signed root. PKCS#12 and FritzBox bundles use the same chain.
+- For a directly root-signed CA CSR, the chain copy is empty and C(fullchain) contains only
+  the issued CA certificate. Distribute the root certificate separately as a trust anchor.
+- Existing chain copies and bundles containing a root are repaired on the next normal run
+  without forcing certificate renewal. Refresh CA chains with M(jomrr.ca.chain) or
+  M(jomrr.ca.authority_batch), then publish and deploy the updated files.
 - Passphrase and other secret fields inside the certificate and authority dictionaries
   are masked in Ansible output, including validation failures. Non-secret names,
   formats, issuer groups and returned paths remain usable in registered results.

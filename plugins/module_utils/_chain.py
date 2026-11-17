@@ -24,8 +24,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._paths import (
 from ansible_collections.jomrr.ca.plugins.module_utils._text import certificate_text
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import (
     authority_name,
-    is_self_signed,
+    intermediate_chain,
     ordered_chain,
+    pem_chain,
 )
 
 try:
@@ -74,10 +75,7 @@ def _chain_content(certificates: list[x509.Certificate], chain_format: str) -> b
     if not certificates:
         raise ValueError("certificate chain needs at least one certificate")
     if chain_format == "pem":
-        return b"".join(
-            cert.public_bytes(serialization.Encoding.PEM).rstrip() + b"\n"
-            for cert in certificates
-        )
+        return pem_chain(certificates)
     if chain_format == "der":
         return b"".join(
             cert.public_bytes(serialization.Encoding.DER) for cert in certificates
@@ -114,10 +112,10 @@ def ensure_authority_chain(
         certificates = (
             []
             if material_pending
-            else ordered_chain(params["base_dir"], params["name"])
+            else intermediate_chain(ordered_chain(params["base_dir"], params["name"]))
         )
         root_pending = material_pending and params.get("parent") == params["name"]
-        if root_pending or (len(certificates) == 1 and is_self_signed(certificates[0])):
+        if root_pending or (not material_pending and not certificates):
             changed = False
             for path in paths.values():
                 changed = _remove_file(path, check_mode=check_mode) or changed

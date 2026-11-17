@@ -37,6 +37,24 @@ X.509 module.
 - Replaced generations are archived below `<base_dir>/archive/certificates`.
 - Records certificate inventory state.
 
+## Chain and bundle contents
+
+- `<name>-chain.pem` contains the direct issuing CA followed by parent
+  intermediates. It contains neither the issued certificate nor the self-signed root.
+- `<name>-fullchain.pem` contains the issued certificate first, followed by the
+  same intermediate chain.
+- PKCS#12 (`pfx`, `p12`) and FritzBox bundles also exclude the self-signed root.
+- A directly root-signed CA CSR has an empty `<name>-chain.pem`; its fullchain
+  contains only the issued CA certificate. Supply the root separately when the
+  external CA setup requires it.
+
+Cross-signed and self-issued rollover intermediates are retained. The same
+rules apply to `certificate_batch`. Internal validation still includes the root.
+Existing root-containing exports are repaired without forcing renewal, even
+when an older issuer chain source still includes the root. Refresh the CA chain
+source and republish/redeploy the corrected files as described in
+[chain migration](chain.md#existing-installations).
+
 ## Certificate Profiles
 
 Issuance checks CA status, certificate-signing key usage and path length along
@@ -49,7 +67,8 @@ It supplies `basic_constraints: ["CA:TRUE", "pathlen:0"]` and
 Explicit extension overrides remain supported. These values come from the task
 and profile, not from the CSR's requested extensions.
 Set `certificate_types.issuing_ca.issuer` to the root to sign directly with it;
-the root certificate supplies the resulting chain. A root with `pathlen:1`
+the issuer chain is then empty and fullchain contains only the issued CA
+certificate. A root with `pathlen:1`
 allows this additional issuing CA; an existing issuing CA with `pathlen:0` does
 not. Leaf CSRs retain the existing requirement to use an issuing CA.
 
@@ -515,8 +534,11 @@ using `common_name` and optional `subject`, or `subject_ordered`. A supplied
 are not inherited. Use the same structure in `certificate_batch.certificates`.
 
 The result provides `cert_path` for the CA certificate and `fullchain_path` for
-the certificate followed by the issuer chain. Both paths are on the managed CA
-host; transfer the needed public files to the external system. For this example,
+the certificate followed by any issuer intermediates, without the self-signed
+root. In this root-signed example, both files contain only the issued CA
+certificate. Supply the root certificate separately if the external system
+requires it. Both paths are on the managed CA host; transfer the needed public
+files to the external system. For this example,
 they are `certs/openbao/openbao.pem` and `certs/openbao/openbao-fullchain.pem`
 below `base_dir`. No private key is generated or copied for an external CSR.
 There is no need to create a managed authority entry for the external CA or

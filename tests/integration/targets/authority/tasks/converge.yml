@@ -221,15 +221,37 @@
   jomrr.ca.publish_archive:
     base_dir: '{{ ca_test_root.path }}/pki'
     dest: '{{ ca_test_root.path }}/public.tar'
-    artifacts:
+    artifacts: &public_artifacts
       - src: '{{ ca_test_root.path }}/pki/ca/issuer-ca.der'
         area: aia
         file: issuer.der
       - src: '{{ ca_test_root.path }}/pki/crl/issuer-ca.crl'
         area: cdp
         file: issuer.crl
+      - src: '{{ ca_test_root.path }}/pki/ca/root-ca.pem'
+        area: aia
+        file: root-ca.pem
+      - src: '{{ ca_test_root.path }}/pki/chains/issuer-ca-chain.pem'
+        area: aia
+        file: issuer-ca-chain.pem
+      - src: '{{ ca_test_root.path }}/pki/chains/issuer-ca-chain.der'
+        area: aia
+        file: issuer-ca-chain.der
+      - src: '{{ ca_test_root.path }}/pki/chains/issuer-ca-chain.txt'
+        area: aia
+        file: issuer-ca-chain.txt
   register: ca_result
 - name: Verify change prediction for publish_archive
+  ansible.builtin.assert:
+    that:
+      - ca_result.changed == ca_expect_changed
+- name: Converge direct publication of the same artifacts
+  jomrr.ca.publish:
+    base_dir: '{{ ca_test_root.path }}/pki'
+    dest: '{{ ca_test_root.path }}/webroot'
+    artifacts: *public_artifacts
+  register: ca_result
+- name: Verify change prediction for direct publication
   ansible.builtin.assert:
     that:
       - ca_result.changed == ca_expect_changed

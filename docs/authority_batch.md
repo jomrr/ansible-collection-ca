@@ -30,7 +30,9 @@ individual chain calls. `ansible-doc jomrr.ca.authority_batch` lists all fields.
 The whole graph is validated before writes, including duplicate names, missing
 parents and cycles. Input order need not follow the graph. For each authority,
 the module manages its material, updates inventory, then manages its chain.
-Root chain files are absent because they would duplicate the root certificate.
+Each exported chain starts with the named issuing CA and includes only parent
+intermediates. The self-signed root is excluded; root chain files are absent.
+Existing root-containing exports are repaired without forcing CA renewal.
 An empty list succeeds unchanged without creating CA state.
 
 The batch holds the graph lock once and shares its authority locks with the

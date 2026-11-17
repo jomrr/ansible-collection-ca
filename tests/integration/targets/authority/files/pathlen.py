@@ -58,7 +58,9 @@ def issue_leaf(base: Path, name: str) -> None:
     chain = x509.load_pem_x509_certificates(
         (base / f"certs/{name}/{name}-fullchain.pem").read_bytes()
     )
-    assert chain == [issuer, root]
+    assert chain == [issuer]
+    issuer.verify_directly_issued_by(root)
+    assert (base / f"certs/{name}/{name}-chain.pem").read_bytes() == b""
     assert (
         x509.load_der_x509_certificate((base / f"certs/{name}/{name}.der").read_bytes())
         == issuer

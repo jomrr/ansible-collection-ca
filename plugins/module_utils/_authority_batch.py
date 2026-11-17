@@ -149,13 +149,17 @@ def ensure_authority_batch(
                 )
                 if material.get("identity_changed"):
                     identities.add(item["name"])
-                if material.get("material_pending") or item["parent"] in pending_chains:
+                chain_pending = bool(material.get("material_pending")) or (
+                    item["parent"] in pending_chains
+                )
+                # Root renewal alone does not change exported intermediate chains.
+                if chain_pending and item["parent"] != item["name"]:
                     pending_chains.add(item["name"])
                 chain = ensure_authority_chain(
                     {**item, "formats": ["pem", "der", "txt"], "mode": "0644"},
                     held_locks=locks,
                     check_mode=check_mode,
-                    material_pending=item["name"] in pending_chains,
+                    material_pending=chain_pending,
                 )
                 results.append(
                     AuthorityResult(

@@ -4,8 +4,8 @@ Derive and manage ordered CA chain files for one authority.
 
 `jomrr.ca.chain` reads generated CA certificates below `<base_dir>/ca`, discovers the
 issuer chain by subject, issuer, SKI, and AKI, and writes PEM, DER, and text
-chain exports for issuing CAs. Root CA chains are intentionally absent because a
-root chain would be identical to the root CA certificate.
+chain exports for issuing CAs. All export formats exclude the self-signed root.
+Root CA chain files are absent because a root has no intermediate chain.
 
 ## Behavior
 
@@ -18,13 +18,13 @@ root chain would be identical to the root CA certificate.
 - The default output paths are `<base_dir>/chains/<name>-ca-chain.pem`,
   `<base_dir>/chains/<name>-ca-chain.der`, and
   `<base_dir>/chains/<name>-ca-chain.txt`.
-- The module also writes generation-specific chain files
-  `<base_dir>/chains/<name>-ca-chain-<serial>.<format>` for issuing CAs.
-- Before replacing the stable chain path, the previous chain is preserved under
-  its own serial-specific file. This keeps old and new issuing CA chains
-  available in parallel during CA rollover.
 - For an issuing CA, the chain contains the issuing CA certificate followed by
-  its issuer certificates up to the self-signed root.
+  its parent intermediates, stopping before the self-signed root.
+- Cross-signed certificates and self-issued rollover certificates remain in the
+  chain. Root detection checks the self-signature, not just matching subject and
+  issuer names.
+- Internal issuance validation still checks the complete path including the root;
+  this export rule does not weaken inherited path length constraints.
 - DER chain files contain the same ordered certificates as concatenated DER
   certificate objects.
 - Text chain files contain the deterministic text representation for every
@@ -32,6 +32,19 @@ root chain would be identical to the root CA certificate.
 - For a self-signed root CA, an existing chain file is removed and the module
   returns `state: absent`.
 - Ambiguous or missing issuer certificates fail the module.
+
+## Existing installations
+
+Rerun `chain` for each authority, or `authority_batch`, to replace existing
+root-containing exports in the selected formats. Then rerun `certificate` or
+`certificate_batch` to refresh chain copies, fullchain, PKCS#12 and FritzBox
+bundles, followed by publication and deployment. No forced reissuance is needed;
+normal renewal policy still applies. Historical archived certificate artifacts
+are not rewritten.
+
+`publish` and `publish_archive` copy existing artifacts; run chain generation
+before publication. Standalone root certificates remain available under `ca/`
+and in AIA publication and must be distributed separately as trust anchors.
 
 ## Parameters
 
@@ -72,9 +85,6 @@ For `name: component` and `base_dir: /etc/pki/example`:
 - `/etc/pki/example/chains/component-ca-chain.pem`
 - `/etc/pki/example/chains/component-ca-chain.der`
 - `/etc/pki/example/chains/component-ca-chain.txt`
-- `/etc/pki/example/chains/component-ca-chain-<serial>.pem`
-- `/etc/pki/example/chains/component-ca-chain-<serial>.der`
-- `/etc/pki/example/chains/component-ca-chain-<serial>.txt`
 
 For `name: root`, no chain file is kept:
 

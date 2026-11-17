@@ -16,6 +16,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
 
 try:
     from cryptography import x509
+    from cryptography.hazmat.primitives import serialization
 except ImportError:
     pass
 
@@ -64,6 +65,18 @@ def is_self_signed(cert: x509.Certificate) -> bool:
     except MATERIAL_ERRORS:
         return False
     return True
+
+
+def intermediate_chain(certificates: list[x509.Certificate]) -> list[x509.Certificate]:
+    """Exclude self-signed roots, retaining cross-signed and self-issued CAs."""
+    return [cert for cert in certificates if not is_self_signed(cert)]
+
+
+def pem_chain(certificates: list[x509.Certificate]) -> bytes:
+    """Serialize an ordered chain; a direct root issuer has an empty chain."""
+    return b"".join(
+        cert.public_bytes(serialization.Encoding.PEM) for cert in certificates
+    )
 
 
 def _issuer_matches(

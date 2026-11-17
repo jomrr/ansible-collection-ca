@@ -25,8 +25,16 @@ def verify_issuance(base: Path) -> None:
     chain = x509.load_pem_x509_certificates(
         (base / "chains/issuer-ca-chain.pem").read_bytes()
     )
-    assert len(chain) == 2
-    chain[0].verify_directly_issued_by(chain[1])
+    assert chain == [issuer]
+    root = x509.load_pem_x509_certificate((base / "ca/root-ca.pem").read_bytes())
+    issuer.verify_directly_issued_by(root)
+    for suffix in ("der", "txt"):
+        assert (base / f"chains/issuer-ca-chain.{suffix}").read_bytes() == (
+            base / f"ca/issuer-ca.{suffix}"
+        ).read_bytes()
+    assert x509.load_pem_x509_certificates(
+        (base / "certs/web/web-chain.pem").read_bytes()
+    ) == [issuer]
     assert not (base / "chains/root-ca-chain.pem").exists()
     private_path = base / "private/root-ca.key"
     assert private_path.stat().st_mode & 0o777 == 0o600
@@ -89,10 +97,14 @@ def verify_profiles(base: Path) -> None:
             (base / f"certs/{profile}/{profile}.pfx").read_bytes(),
             b"test-export-passphrase",
         )
-        assert key is not None and exported_cert is not None and extras
+        assert key is not None and exported_cert is not None
+        assert extras == [issuer]
     bundle = (base / "certs/fritzbox/fritzbox-fritzbox.pem").read_bytes()
     serialization.load_pem_private_key(bundle, None)
-    assert len(x509.load_pem_x509_certificates(bundle)) == 3
+    cert = x509.load_pem_x509_certificate(
+        (base / "certs/fritzbox/fritzbox.pem").read_bytes()
+    )
+    assert x509.load_pem_x509_certificates(bundle) == [cert, issuer]
 
 
 def main() -> None:
@@ -111,7 +123,24 @@ def main() -> None:
     assert len(inventory["certificates"]) == 8
     assert len(inventory["revocations"]) == 1
     with tarfile.open(root / "public.tar") as archive:
-        assert archive.getnames() == ["aia/issuer.der", "crl/issuer.crl"]
+        assert archive.getnames() == [
+            "aia/issuer-ca-chain.der",
+            "aia/issuer-ca-chain.pem",
+            "aia/issuer-ca-chain.txt",
+            "aia/issuer.der",
+            "aia/root-ca.pem",
+            "crl/issuer.crl",
+        ]
+        for suffix in ("pem", "der", "txt"):
+            filename = f"aia/issuer-ca-chain.{suffix}"
+            member = archive.extractfile(filename)
+            assert member is not None
+            expected = (base / f"chains/issuer-ca-chain.{suffix}").read_bytes()
+            assert member.read() == expected
+            assert (root / "webroot" / filename).read_bytes() == expected
+        assert (root / "webroot/aia/root-ca.pem").read_bytes() == (
+            base / "ca/root-ca.pem"
+        ).read_bytes()
         assert all(member.mtime == 0 for member in archive.getmembers())
     print("Verified certificates, chain, profiles, keys, inventory, CRL and archive")
 

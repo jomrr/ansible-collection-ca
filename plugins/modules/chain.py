@@ -11,7 +11,10 @@ module: chain
 short_description: Manage an ordered PEM certificate chain on the managed host
 version_added: 0.1.0
 description:
-- Manage an ordered PEM certificate chain on the managed host.
+- Manage ordered intermediate CA chains in PEM, DER and text formats on the managed host.
+- Chains start with the named issuing CA, followed by its parent intermediates; the self-signed
+  root is excluded. Root CA chain files are removed.
+- Cross-signed and self-issued CA certificates remain unless they are actually self-signed.
 extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.formats,
   jomrr.ca.context.file_mode, jomrr.ca.context.cryptography]
 options:

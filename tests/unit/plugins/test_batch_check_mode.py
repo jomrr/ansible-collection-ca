@@ -42,8 +42,10 @@ from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
     module_diagnostics,
     module_transport,
 )
+from cryptography import x509
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from cryptography.hazmat.primitives.serialization import pkcs12
 
 MODULES = {
     "authority": authority_batch,
@@ -286,6 +288,63 @@ class BatchCheckModeTests(TestCase):
             result["results"][0]["crl_number"],
             self.invoke("crl", revocations=revoked)["results"][0]["crl_number"],
         )
+
+    def test_legacy_root_in_certificate_exports(self) -> None:
+        """Repair legacy bundles from a legacy source without renewing the leaf."""
+        self.converge()
+        root_pem = (self.base / "ca/root-ca.pem").read_bytes()
+        root = x509.load_pem_x509_certificate(root_pem)
+        issuer = x509.load_pem_x509_certificate(
+            (self.base / "ca/issuer-ca.pem").read_bytes()
+        )
+        certificate = self.base / "certs/web/web.pem"
+        original = certificate.read_bytes()
+        leaf = x509.load_pem_x509_certificate(original)
+        paths = [self.base / "chains/issuer-ca-chain.pem"]
+        paths.extend(
+            self.base / f"certs/web/web-{suffix}.pem"
+            for suffix in ("chain", "fullchain", "fritzbox")
+        )
+        expected = {path: path.read_bytes() for path in paths}
+        for path in paths:
+            path.write_bytes(path.read_bytes() + root_pem)
+        for suffix in ("pfx", "p12"):
+            path = self.base / f"certs/web/web.{suffix}"
+            key, cert, extras = pkcs12.load_key_and_certificates(
+                path.read_bytes(), b"check-pfx-secret"
+            )
+            assert isinstance(key, ec.EllipticCurvePrivateKey)
+            path.write_bytes(
+                pkcs12.serialize_key_and_certificates(
+                    b"web",
+                    key,
+                    cert,
+                    [issuer, root],
+                    serialization.BestAvailableEncryption(b"check-pfx-secret"),
+                )
+            )
+        self.assertTrue(self.predict("certificate")["changed"])
+        self.assertTrue(self.invoke("certificate")["changed"])
+        self.assertEqual(certificate.read_bytes(), original)
+        for path in paths[1:]:
+            self.assertEqual(path.read_bytes(), expected[path])
+        self.assertEqual(
+            x509.load_pem_x509_certificates(paths[2].read_bytes()), [leaf, issuer]
+        )
+        for suffix in ("pfx", "p12"):
+            key, cert, extras = pkcs12.load_key_and_certificates(
+                (self.base / f"certs/web/web.{suffix}").read_bytes(),
+                b"check-pfx-secret",
+            )
+            self.assertEqual(cert, leaf)
+            self.assertEqual(extras, [issuer])
+        self.assertFalse(self.predict("certificate")["changed"])
+        self.assertFalse(self.invoke("certificate")["changed"])
+        self.assertTrue(self.predict("authority")["changed"])
+        self.assertTrue(self.invoke("authority")["changed"])
+        self.assertEqual(paths[0].read_bytes(), expected[paths[0]])
+        self.assertFalse(self.predict("authority")["changed"])
+        self.assertFalse(self.invoke("certificate")["changed"])
 
     def test_renewal_and_parent_dependencies(self) -> None:
         """Renewal preserves keys unless requested; descendant chains still change."""
