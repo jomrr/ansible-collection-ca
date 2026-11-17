@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Jonas Mauer
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""PEM key conversions through the public certificate module."""
+"""Private PEM and PKCS#12 exports through the public certificate module."""
 
 from __future__ import annotations
 
@@ -10,8 +10,12 @@ import tempfile
 from pathlib import Path
 from typing import Any
 from unittest import TestCase
+from unittest.mock import patch
 
 from ansible_collections.jomrr.ca.plugins.modules import certificate, certificate_batch
+from ansible_collections.jomrr.ca.tests.integration.targets.authority.files import (
+    pkcs12_profile,
+)
 from ansible_collections.jomrr.ca.tests.unit.plugins.batch_check_fixture import (
     forbid_mutation,
     snapshot,
@@ -24,7 +28,9 @@ from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
     module_transport,
 )
 from cryptography import x509
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.serialization import pkcs12
 
 
 class PemBundleTests(TestCase):
@@ -206,3 +212,141 @@ class PemBundleTests(TestCase):
         self.assertTrue(result["failed"])
         self.assertIn("private key: bundle", result["msg"])
         self.assertEqual(snapshot(self.base), before)
+
+    def test_pkcs12_setting_changes(self) -> None:
+        """Export option updates do not renew the certificate or replace its key."""
+        item: dict[str, Any] = {
+            "name": "scanner",
+            "type": "tls_server",
+            "common_name": "scanner.example.test",
+            "key_type": "P-256",
+            "formats": ["pfx", "p12"],
+            "pfx_passphrase": "bundle-test-secret",
+        }
+        self.assertTrue(self.predict(item)["pkcs12_changed"])
+        self.assertTrue(self.invoke(item)["pkcs12_changed"])
+        directory = self.base / "certs/scanner"
+        material = {
+            p: p.read_bytes()
+            for p in (directory / "scanner.pem", directory / "scanner.key")
+        }
+        for options, changed in (
+            ({}, False),
+            ({"pfx_encryption": "compatibility2022", "pfx_iterations": 2048}, True),
+            ({"pfx_iterations": 4096}, True),
+            ({"pfx_friendly_name": "Brother scanner"}, True),
+            ({"pfx_encryption": "best"}, True),
+            ({"pfx_iterations": None}, False),
+        ):
+            with self.subTest(options=options):
+                item.update(options)
+                self.assertEqual(self.predict(item)["pkcs12_changed"], changed)
+                result = self.invoke(item)
+                self.assertNotIn("failed", result, result)
+                self.assertEqual(result["pkcs12_changed"], changed)
+                for path in result["pkcs12_paths"].values():
+                    pkcs12_profile.verify_pkcs12_profile(
+                        Path(path),
+                        item.get("pfx_encryption") == "compatibility2022",
+                        item.get("pfx_iterations"),
+                    )
+                    loaded = pkcs12.load_pkcs12(
+                        Path(path).read_bytes(), b"bundle-test-secret"
+                    )
+                    assert loaded.cert is not None and loaded.key is not None
+                    self.assertEqual(
+                        loaded.key.public_key().public_bytes(
+                            serialization.Encoding.DER,
+                            serialization.PublicFormat.SubjectPublicKeyInfo,
+                        ),
+                        loaded.cert.certificate.public_key().public_bytes(
+                            serialization.Encoding.DER,
+                            serialization.PublicFormat.SubjectPublicKeyInfo,
+                        ),
+                    )
+                    self.assertEqual(
+                        loaded.cert.friendly_name,
+                        item.get("pfx_friendly_name", item["common_name"]).encode(),
+                    )
+                    self.assertEqual(Path(path).stat().st_mode & 0o777, 0o600)
+                before = snapshot(self.base)
+                self.assertFalse(self.invoke(item)["pkcs12_changed"])
+                self.assertFalse(self.predict(item)["pkcs12_changed"])
+                self.assertEqual(snapshot(self.base), before)
+                self.assertEqual({p: p.read_bytes() for p in material}, material)
+        item["friendly_name"] = item.pop("pfx_friendly_name")
+        self.assertFalse(self.invoke(item)["pkcs12_changed"])
+        item["friendly_name"] = "Existing alias"
+        self.assertTrue(self.invoke(item)["pkcs12_changed"])
+        self.assertFalse(self.invoke(item)["pkcs12_changed"])
+
+    def test_pkcs12_randomized_serialization(self) -> None:
+        """Different salts and IVs with identical content do not cause a rewrite."""
+        item = {
+            "name": "scanner",
+            "type": "tls_server",
+            "common_name": "scanner.example.test",
+            "key_type": "P-256",
+            "formats": ["pfx"],
+            "pfx_passphrase": "bundle-test-secret",
+            "pfx_encryption": "compatibility2022",
+            "pfx_iterations": 2048,
+        }
+        result = self.invoke(item)
+        self.assertNotIn("failed", result, result)
+        path = Path(result["pkcs12_paths"]["pfx"])
+        original = path.read_bytes()
+        loaded = pkcs12.load_pkcs12(original, b"bundle-test-secret")
+        assert loaded.cert is not None
+        assert isinstance(loaded.key, ec.EllipticCurvePrivateKey)
+        encryption = (
+            serialization.PrivateFormat.PKCS12.encryption_builder()
+            .key_cert_algorithm(pkcs12.PBES.PBESv1SHA1And3KeyTripleDESCBC)
+            .hmac_hash(hashes.SHA1())
+            .kdf_rounds(2048)
+            .build(b"bundle-test-secret")
+        )
+        alternate = pkcs12.serialize_key_and_certificates(
+            loaded.cert.friendly_name,
+            loaded.key,
+            loaded.cert.certificate,
+            loaded.additional_certs,
+            encryption,
+        )
+        self.assertNotEqual(original, alternate)
+        path.write_bytes(alternate)
+        self.assertFalse(self.predict(item)["pkcs12_changed"])
+        self.assertFalse(self.invoke(item)["pkcs12_changed"])
+        self.assertEqual(path.read_bytes(), alternate)
+
+    def test_pkcs12_invalid_options_and_missing_parser(self) -> None:
+        """Invalid choices and absent parsers fail before creating material."""
+        item = {
+            "name": "scanner",
+            "type": "tls_server",
+            "common_name": "scanner.example.test",
+            "key_type": "P-256",
+            "formats": ["pfx"],
+            "pfx_passphrase": "bundle-test-secret",
+        }
+        for invalid in (
+            {"pfx_encryption": "typo"},
+            {"pfx_iterations": 0},
+            {"pfx_iterations": -1},
+            {"pfx_iterations": 2147483648},
+        ):
+            before = snapshot(self.base)
+            result = self.invoke({**item, **invalid})
+            self.assertTrue(result["failed"])
+            self.assertEqual(snapshot(self.base), before)
+        with patch(
+            "ansible_collections.jomrr.ca.plugins.module_utils."
+            "_pkcs12_encoding.ASN1CRYPTO_IMPORT_ERROR",
+            "No module named 'asn1crypto'",
+        ):
+            before = snapshot(self.base)
+            result = self.invoke(item)
+            self.assertTrue(result["failed"])
+            self.assertIn("PKCS#12 exports require asn1crypto", result["msg"])
+            self.assertEqual(snapshot(self.base), before)
+            self.assertNotIn("failed", self.invoke({**item, "formats": ["pem"]}))

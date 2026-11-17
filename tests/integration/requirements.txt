@@ -1,1 +1,2 @@
 cryptography>=43
+asn1crypto>=1.5.1,<2

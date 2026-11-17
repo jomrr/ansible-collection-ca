@@ -143,10 +143,20 @@ def _exports(values: InputValues) -> ExportOptions:
             raise ValueError(
                 "traditional bundle key format requires an RSA or ECDSA key"
             )
+    encryption = values.text("pfx_encryption", "best")
+    if encryption not in ("best", "compatibility2022"):
+        raise ValueError("pfx_encryption must be best or compatibility2022")
+    iterations = None
+    if values.values.get("pfx_iterations") is not None:
+        iterations = values.integer("pfx_iterations")
+        if not 1 <= iterations <= 2147483647:
+            raise ValueError("pfx_iterations must be between 1 and 2147483647")
     return ExportOptions(
         formats,
         values.text("output_dir"),
-        values.text("friendly_name"),
+        values.text("pfx_friendly_name") or values.text("friendly_name"),
         values.text("passphrase") or values.text("pfx_passphrase"),
         key_format,
+        encryption,
+        iterations,
     )

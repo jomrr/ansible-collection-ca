@@ -19,7 +19,9 @@ def _authority_definitions(certificate_documentation: str) -> str:
         "csr_content",
         "output_dir",
         "directory_mode",
-        "friendly_name",
+        "pfx_friendly_name",
+        "pfx_encryption",
+        "pfx_iterations",
         "bundle_key_format",
         "pfx_passphrase",
         "passphrase",
@@ -274,9 +276,26 @@ options:
       directory_mode:
         description: Certificate directory permissions; defaults to C(0755).
         type: str
-      friendly_name:
+      pfx_friendly_name:
         description: PKCS#12 friendly name; defaults to the common name or object name.
+          The existing C(friendly_name) spelling remains an alias.
         type: str
+        aliases: [friendly_name]
+        version_added: 1.3.0
+      pfx_encryption:
+        description:
+        - Encryption for C(pfx) and C(p12); defaults to C(best), the library's BestAvailableEncryption.
+        - C(compatibility2022) selects PBES1 SHA-1 with 3-key TripleDES-CBC and a SHA-1 MAC
+          for legacy devices. Select it only when the device requires these algorithms.
+        type: str
+        choices: [best, compatibility2022]
+        version_added: 1.3.0
+      pfx_iterations:
+        description: Optional encryption KDF iteration count, from 1 to 2147483647.
+          When omitted, new exports use the library default and existing iteration counts
+          are accepted. Does not set the separate MAC iteration count.
+        type: int
+        version_added: 1.3.0
       pfx_passphrase:
         description: PKCS#12 export password. Protected by Ansible C(no_log).
         type: str

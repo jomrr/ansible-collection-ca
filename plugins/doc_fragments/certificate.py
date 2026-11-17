@@ -13,7 +13,16 @@ class ModuleDocFragment:
     """Ansible documentation fragments."""
 
     DOCUMENTATION: ClassVar[str] = r"""
+requirements:
+- asn1crypto >= 1.5.1, < 2 on the managed host for pfx/p12 exports
 notes:
+- C(pfx_encryption) selects C(best) (default) or C(compatibility2022), which uses
+  PBES1 SHA-1 with 3-key TripleDES-CBC and a SHA-1 MAC. C(pfx_iterations) sets the
+  encryption KDF rounds; C(pfx_friendly_name) defaults to the common name.
+  C(friendly_name) remains an alias. These options apply equally to C(pfx) and C(p12).
+- PKCS#12 reconciliation compares the key, certificate, CA chain, friendly name,
+  encryption algorithms and explicitly requested rounds. Random salt and IV bytes
+  do not cause changes. Changing these export settings does not renew the certificate.
 - Add C(cer) to the requested formats to write the certificate as DER bytes with a
   Windows-style C(.cer) extension. C(der) writes the identical bytes with a C(.der)
   extension; request both formats to create both files. Profile defaults are unchanged.

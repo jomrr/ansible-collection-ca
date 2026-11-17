@@ -104,6 +104,8 @@ class ExportOptions:
     friendly_name: str
     passphrase: str = field(repr=False)
     bundle_key_format: str = "pkcs8"
+    pfx_encryption: str = "best"
+    pfx_iterations: int | None = None
 
 
 @dataclass

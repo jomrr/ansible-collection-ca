@@ -68,6 +68,9 @@ inventory state, and validation.
 
 ## Common Behavior
 
+PKCS#12 exports additionally require `asn1crypto>=1.5.1,<2` on the managed CA host
+for inspecting encryption settings. See [PKCS#12 encryption](certificate.md#pkcs12-encryption).
+
 All certificate-generating modules use Python `cryptography` instead of the
 OpenSSL command line. Ed25519 and Ed448 signatures use the EdDSA-required
 digest-free signing mode; RSA and ECDSA default to `sha384`.

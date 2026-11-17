@@ -202,6 +202,12 @@
       ansible.builtin.include_tasks: pathlen.yml
     - name: Exercise external CSR identity approval
       ansible.builtin.include_tasks: csr.yml
+    - name: Verify PKCS12 encryption and MAC identifiers
+      ansible.builtin.script:
+        cmd: "{{ ca_pkcs12_script | default('pkcs12_profile.py') }} {{ ca_test_root.path }}/pki"
+        executable: "{{ ansible_python_interpreter }}"
+      changed_when: false
+
     - name: Exercise compromised key renewal protection
       ansible.builtin.include_tasks: key_revocation.yml
     - name: Verify revocation and publication across CA key rollover

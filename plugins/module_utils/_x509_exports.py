@@ -14,16 +14,15 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_results impo
 from ansible_collections.jomrr.ca.plugins.module_utils._certificate_state import (
     CertificateOperation,
 )
-from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
-    MATERIAL_ERRORS,
-)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     read_file,
-    set_attrs,
     write_file,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._pem_bundle import (
     ensure_key_bundle,
+)
+from ansible_collections.jomrr.ca.plugins.module_utils._pkcs12_export import (
+    ensure_pkcs12_exports,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._text import ensure_txt
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import (
@@ -32,12 +31,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import (
     pem_chain,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
-    cert_fingerprint,
     load_certificates_bytes,
-    public_key_bytes,
-)
-from ansible_collections.jomrr.ca.plugins.module_utils._x509_material import (
-    private_key_for,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_state import SignerMaterial
 
@@ -48,7 +42,6 @@ try:
     )
     from cryptography import x509
     from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.serialization import pkcs12
 except ImportError:
     pass
 
@@ -112,102 +105,6 @@ def chain_certificates(
     if signer_cert is None:
         raise ValueError("certificate chain is required for bundle export formats")
     return intermediate_chain([signer_cert])
-
-
-def _pkcs12_existing_matches(
-    path: str,
-    passphrase: str | None,
-    key: PrivateKey | PublicKey,
-    cert: x509.Certificate,
-    extra_certs: list[x509.Certificate],
-) -> bool:
-    """Return whether an existing PKCS#12 bundle matches desired content."""
-    try:
-        existing_key, existing_cert, existing_extra = pkcs12.load_key_and_certificates(
-            read_file(path),
-            passphrase.encode() if passphrase else None,
-        )
-    except MATERIAL_ERRORS:
-        return False
-    if existing_key is None or existing_cert is None:
-        return False
-    if existing_key.public_key().public_bytes(
-        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
-    ) != public_key_bytes(key):
-        return False
-    if cert_fingerprint(existing_cert) != cert_fingerprint(cert):
-        return False
-    existing_fingerprints = sorted(
-        cert_fingerprint(item) for item in (existing_extra or [])
-    )
-    desired_fingerprints = sorted(cert_fingerprint(item) for item in extra_certs)
-    return existing_fingerprints == desired_fingerprints
-
-
-def ensure_pkcs12_exports(
-    params: CertificateOperation,
-    key: PrivateKey | PublicKey,
-    cert: x509.Certificate,
-    extra_certs: list[x509.Certificate],
-) -> tuple[bool, dict[str, str]]:
-    """Ensure requested PKCS#12 export formats exist."""
-    paths = params.paths["pkcs12_paths"]
-    if not paths:
-        return False, {}
-
-    passphrase = params.request["exports"].passphrase
-    if not passphrase:
-        raise ValueError("PKCS#12 bundle requires pfx_passphrase or passphrase")
-    friendly_name = str(
-        params.request["exports"].friendly_name
-        or params.request["subject"].common_name
-        or params.request["name"]
-    )
-    changed = False
-    for path in paths.values():
-        export_changed = bool(params.request["force"]) or not _pkcs12_existing_matches(
-            path,
-            passphrase,
-            key,
-            cert,
-            extra_certs,
-        )
-        if export_changed:
-            if params.check_mode:
-                changed = True
-                continue
-            key = private_key_for(params, key)
-            content = pkcs12.serialize_key_and_certificates(
-                name=friendly_name.encode(),
-                key=key,
-                cert=cert,
-                cas=extra_certs,
-                encryption_algorithm=serialization.BestAvailableEncryption(
-                    passphrase.encode()
-                ),
-            )
-            changed = (
-                write_file(
-                    path,
-                    content,
-                    params.request["storage"].attributes(private=True),
-                    check_mode=params.check_mode,
-                    force=True,
-                )
-                or changed
-            )
-        else:
-            changed = (
-                set_attrs(
-                    path,
-                    params.request["storage"].owner,
-                    params.request["storage"].group,
-                    params.request["storage"].key_mode,
-                    check_mode=params.check_mode,
-                )
-                or changed
-            )
-    return changed, paths
 
 
 def _pem_join(*parts: bytes) -> bytes:

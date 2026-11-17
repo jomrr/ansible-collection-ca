@@ -12,10 +12,12 @@ default-groups = ["default"]
 conflicts = [[{ group = "ansible-stable-2-20" }, { group = "ansible-stable-2-21" }, { group = "ansible-devel" }]]
 [dependency-groups]
 default = [{ include-group = "dev" }, { include-group = "ansible-stable-2-20" }, { include-group = "docs" }]
+runtime = ["cryptography\u003e=43", "asn1crypto\u003e=1.5.1,\u003c2"]
 ansible-stable-2-20 = ["ansible-core @ https://github.com/ansible/ansible/archive/stable-2.20.tar.gz"]
 ansible-stable-2-21 = ["ansible-core @ https://github.com/ansible/ansible/archive/stable-2.21.tar.gz"]
 ansible-devel = ["ansible-core @ https://github.com/ansible/ansible/archive/devel.tar.gz"]
 dev = [
+  { include-group = "runtime" },
   "ansible-lint==26.*", "pre-commit==4.*",
   "molecule==26.*", "molecule-plugins[podman]==25.*",
   "mypy", "types-PyYAML", "ruff", "pylint", "antsibull-changelog", "python-semantic-release==10.*",

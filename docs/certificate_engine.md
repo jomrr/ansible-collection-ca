@@ -34,6 +34,10 @@ Profile defaults come from `ca_profiles`:
 - identity certificates: `pem`, `der`, `txt`, `pfx`
 - FritzBox certificates: `pem`, `der`, `txt`, `fritzbox`
 
+PKCS#12 exports additionally require `asn1crypto>=1.5.1,<2` on the managed host.
+Their `pfx_encryption`, `pfx_iterations` and `pfx_friendly_name` settings are
+documented in [certificate.md](certificate.md#pkcs12-encryption).
+
 Supported export formats are `pem`, `der`, `cer`, `txt`, `pfx`, `p12`, `fullchain`,
 `bundle`, and `fritzbox`. The optional `cer` format writes the same DER certificate bytes
 as `der`, using a `.cer` extension; defaults remain unchanged.

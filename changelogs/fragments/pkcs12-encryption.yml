@@ -1,0 +1,6 @@
+---
+minor_changes:
+  - certificate, certificate_batch - add pfx_encryption (best or compatibility2022),
+    optional pfx_iterations and pfx_friendly_name (with friendly_name retained as an alias).
+  - certificate, certificate_batch - compare decoded PKCS#12 content, friendly names
+    and encryption settings for idempotent exports; pfx/p12 now require asn1crypto on the managed host.

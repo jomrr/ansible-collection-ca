@@ -9,6 +9,7 @@
     ca_rollover_state_script: "{{ playbook_dir }}/targets/authority/files/rollover_state.py"
     ca_rollover_script: "{{ playbook_dir }}/targets/authority/files/rollover.py"
     ca_pathlen_script: "{{ playbook_dir }}/targets/authority/files/pathlen.py"
+    ca_pkcs12_script: "{{ playbook_dir }}/targets/authority/files/pkcs12_profile.py"
   tasks:
     - name: Exercise deployment validation
       ansible.builtin.import_tasks: targets/fritzbox_deploy/tasks/main.yml

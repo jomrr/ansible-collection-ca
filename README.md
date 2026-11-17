@@ -61,7 +61,9 @@ ansible-galaxy collection install jomrr.ca
 
 Modules run on the selected managed Linux host, including when delegated
 to a dedicated CA host. Install Python 3.12 and `cryptography>=43` in that
-host's Ansible interpreter. The controller uses ansible-core 2.20 and
+host's Ansible interpreter. PKCS#12 exports (`pfx` and `p12`) additionally
+require `asn1crypto>=1.5.1,<2` there to inspect encryption settings.
+The controller uses ansible-core 2.20 and
 Python 3.12. The `authority_map` filter runs on the controller and needs
 no additional Python libraries. No other runtime collections are required.
 

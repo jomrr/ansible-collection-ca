@@ -26,6 +26,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._inventory import (
     update_certificate_inventory,
     update_certificates_inventory,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._pkcs12_encoding import (
+    require_pkcs12_parser,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._profiles import (
     CERTIFICATE_DEFAULT_FORMATS,
     CERTIFICATE_PROFILE_DEFAULTS,
@@ -313,6 +316,8 @@ def prepare_certificate_artifacts(
         raise ValueError(
             f"Certificate {name} uses PFX/PKCS#12 output and requires pfx_passphrase"
         )
+    if formats.intersection({"pfx", "p12"}):
+        require_pkcs12_parser()
     return _certificate_metadata(operation), operation
 
 

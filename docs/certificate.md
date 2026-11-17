@@ -282,7 +282,17 @@ These keys are accepted inside `certificate`.
   Type: str; Required: conditional; Default: none; Allowed values: any string;
   Secret: yes
 
-- **`friendly_name`**: Friendly name for PKCS#12 exports.
+- **`pfx_encryption`**: Encryption for both `pfx` and `p12`.
+  Type: str; Required: no; Default: `best`; Allowed values: `best`,
+  `compatibility2022`; Secret: no. `best` preserves `BestAvailableEncryption`.
+  `compatibility2022` uses PBES1 SHA-1 with 3-key TripleDES-CBC and a SHA-1 MAC.
+
+- **`pfx_iterations`**: Optional encryption KDF iteration count.
+  Type: int; Required: no; Default: library default for new exports;
+  Allowed values: 1–2147483647; Secret: no. An omitted value accepts existing
+  iteration counts. This setting does not control the separate MAC iterations.
+
+- **`pfx_friendly_name`** (alias **`friendly_name`**): Friendly name for PKCS#12 exports.
   Type: str; Required: no; Default: `common_name` or `name`; Allowed values: any
   string; Secret: no
 
@@ -427,6 +437,42 @@ external CRLs or identify keys of certificates absent from local inventory.
 New inventory records include a SHA-256 public key fingerprint. Older records
 use the matching current or archived certificate; if that material is missing,
 restore it before reusing a key or signing an external CSR.
+
+## PKCS#12 Encryption
+
+PKCS#12 exports require `asn1crypto>=1.5.1,<2` in the managed CA host's Python
+interpreter in addition to `cryptography>=43`. The parser inspects the actual
+stored encryption settings; export passwords remain protected by `no_log`.
+
+```yaml
+certificate:
+  name: scanner
+  type: tls_client
+  common_name: scanner.example.org
+  formats: [pem, pfx]
+  pfx_passphrase: "{{ vaulted_scanner_pfx_passphrase }}"
+  pfx_encryption: compatibility2022
+  pfx_iterations: 50000
+  pfx_friendly_name: scanner.example.org
+```
+
+`compatibility2022` encrypts the certificate containers and private key with
+PBES1 SHA-1 / 3-key TripleDES-CBC (OID `1.2.840.113549.1.12.1.3`) and uses a
+SHA-1 MAC. This is an explicit compatibility option for legacy devices such as
+the Brother ADS-2800W; it is not the default. Actual device import depends on
+its firmware and certificate requirements.
+
+`best` retains the library's `BestAvailableEncryption` when no iteration count
+is supplied. With `pfx_iterations`, the library's PKCS#12 encryption builder
+uses that count and its default algorithms. `pfx_friendly_name` defaults to the
+common name, falling back to the object name when no CN is supplied. The previous
+`friendly_name` spelling remains accepted.
+
+Both `.pfx` and `.p12` use the same settings. The second unchanged run reports
+`pkcs12_changed: false`: comparison uses decoded keys, certificates, chain,
+friendly name, encryption algorithms and any explicitly requested iteration
+count, excluding salt and IV. Changes to these settings regenerate the export
+without renewing the certificate or replacing its key.
 
 ## Private PEM Bundle
 
