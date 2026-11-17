@@ -22,6 +22,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     set_attrs,
     write_file,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._pem_bundle import (
+    ensure_key_bundle,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._text import ensure_txt
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import (
     intermediate_chain,
@@ -228,26 +231,6 @@ def ensure_fullchain_bundle(
     )
 
 
-def ensure_fritzbox_bundle(
-    params: CertificateOperation, cert: x509.Certificate, bundle_content: bytes
-) -> bool:
-    """Ensure the requested FritzBox PEM import bundle exists."""
-    if "fritzbox" not in params.request["exports"].formats:
-        return False
-    content = _pem_join(
-        cert.public_bytes(serialization.Encoding.PEM),
-        bundle_content,
-        read_file(params.paths["key_path"]),
-    )
-    return write_file(
-        params.paths["fritzbox_bundle_path"],
-        content,
-        params.request["storage"].attributes(private=True),
-        check_mode=params.check_mode,
-        force=params.request["force"],
-    )
-
-
 def ensure_exports(
     params: CertificateOperation,
     cert: x509.Certificate,
@@ -263,6 +246,7 @@ def ensure_exports(
         "chain_changed": ensure_chain(params, signer.cert) if manage_chain else False,
         "pkcs12_changed": False,
         "fullchain_changed": False,
+        "bundle_changed": False,
         "pkcs12_paths": {},
         "fritzbox_bundle_changed": False,
     }
@@ -270,7 +254,7 @@ def ensure_exports(
     extra_certs = signer.extra_certs
     if not params.request["authority"] and set(
         params.request["exports"].formats
-    ).intersection({"pfx", "p12", "fullchain", "fritzbox"}):
+    ).intersection({"pfx", "p12", "fullchain", "bundle", "fritzbox"}):
         bundle_content = bundle_content or chain_content(params, signer.cert)
         if key is not None:
             extra_certs = extra_certs or chain_certificates(params, signer.cert)
@@ -281,8 +265,12 @@ def ensure_exports(
         )
     changes["fullchain_changed"] = ensure_fullchain_bundle(params, cert, bundle_content)
     if key is not None:
-        changes["fritzbox_bundle_changed"] = ensure_fritzbox_bundle(
-            params, cert, bundle_content
+        certificate_chain = _pem_join(
+            cert.public_bytes(serialization.Encoding.PEM), bundle_content
+        )
+        changes["bundle_changed"] = ensure_key_bundle(params, key, certificate_chain)
+        changes["fritzbox_bundle_changed"] = ensure_key_bundle(
+            params, key, certificate_chain, fritzbox=True
         )
     changes["pkcs12_paths"] = paths
     return changes

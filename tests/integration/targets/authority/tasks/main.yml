@@ -77,6 +77,7 @@
           name: web
           type: tls_server
           common_name: web.example.test
+          bundle_key_format: traditional
           key_type: P-256
           formats: &id004
             - pem
@@ -84,6 +85,7 @@
             - cer
             - txt
             - fullchain
+            - bundle
           san:
             - DNS:changed.example.test
       register: ca_updated
@@ -112,6 +114,7 @@
           name: web
           type: tls_server
           common_name: web.example.test
+          bundle_key_format: traditional
           key_type: P-256
           formats: *id004
           csr_path: /missing.csr

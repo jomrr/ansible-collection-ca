@@ -38,6 +38,7 @@ def certificate_options() -> dict[str, dict[str, Any]]:
             "output_dir": {"type": "path"},
             "directory_mode": {"type": "str"},
             "friendly_name": {"type": "str"},
+            "bundle_key_format": {"type": "str", "choices": ["pkcs8", "traditional"]},
             "pfx_passphrase": {"type": "str", "no_log": True},
             "passphrase": {"type": "str", "no_log": True},
             "krb5_realm": {"type": "str"},

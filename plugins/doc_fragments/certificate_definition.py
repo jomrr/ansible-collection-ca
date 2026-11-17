@@ -20,6 +20,7 @@ def _authority_definitions(certificate_documentation: str) -> str:
         "output_dir",
         "directory_mode",
         "friendly_name",
+        "bundle_key_format",
         "pfx_passphrase",
         "passphrase",
         "krb5_realm",
@@ -135,10 +136,20 @@ options:
       formats:
         description:
         - Requested export formats; omitted values use the selected profile defaults.
+        - C(bundle) writes the certificate, issuer intermediates and private key to C(<name>-bundle.pem).
+          Excludes the self-signed root; unavailable for external CSRs. Uses C(key_mode), default C(0600).
         - C(cer) writes DER-encoded certificate bytes with a C(.cer) extension.
           C(der) and C(cer) can be requested together.
         type: list
         elements: str
+      bundle_key_format:
+        description:
+        - Private key encoding for C(bundle) only; defaults to C(pkcs8).
+        - C(traditional) uses algorithm-specific PEM for RSA or ECDSA; Ed25519 and Ed448 require C(pkcs8).
+        - Encryption follows C(key_passphrase). Does not change the managed key or C(fritzbox) export.
+        version_added: 1.3.0
+        type: str
+        choices: [pkcs8, traditional]
       key_type:
         description: Private key algorithm.
         type: str

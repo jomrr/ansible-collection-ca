@@ -73,6 +73,7 @@ def with_derived_paths(
         chain_src_path="",
         chain_path="",
         fullchain_path="",
+        bundle_path="",
         fritzbox_bundle_path="",
         pkcs12_paths={},
     )
@@ -86,6 +87,7 @@ def with_derived_paths(
     if not authority:
         result["directory_path"] = paths["output_dir"] if manage_directory else ""
         result["fullchain_path"] = paths["fullchain"] if "fullchain" in formats else ""
+        result["bundle_path"] = paths["bundle"] if "bundle" in formats else ""
         result["fritzbox_bundle_path"] = (
             paths["fritzbox_bundle"] if "fritzbox" in formats else ""
         )

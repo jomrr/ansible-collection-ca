@@ -82,6 +82,7 @@
       name: web
       type: tls_server
       common_name: web.example.test
+      bundle_key_format: traditional
       key_type: P-256
       formats:
         - pem
@@ -89,6 +90,7 @@
         - cer
         - txt
         - fullchain
+        - bundle
   check_mode: true
   register: ca_check
 - name: Verify check mode skips certificate
@@ -154,6 +156,8 @@
         krb5_realm: EXAMPLE.TEST
       - name: fritzbox
         type: fritzbox
+        formats: [pem, der, txt, fritzbox, bundle]
+        bundle_key_format: traditional
         common_name: fritzbox.example.test
         key_type: RSA
         key_size: 2048

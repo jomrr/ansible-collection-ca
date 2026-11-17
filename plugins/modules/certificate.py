@@ -159,6 +159,11 @@ fullchain_changed:
   description: Whether the fullchain bundle changed.
   type: bool
   returned: success
+bundle_changed:
+  description: Whether the certificate, intermediate CA and private key bundle changed.
+  type: bool
+  returned: success
+  version_added: 1.3.0
 fritzbox_bundle_changed:
   description: Whether the FritzBox import bundle changed.
   type: bool
@@ -171,6 +176,11 @@ fullchain_path:
   description: Fullchain bundle path, or empty string.
   type: str
   returned: success
+bundle_path:
+  description: Private PEM bundle path, or empty string when not requested.
+  type: str
+  returned: success
+  version_added: 1.3.0
 fritzbox_bundle_path:
   description: FritzBox import bundle path, or empty string.
   type: str

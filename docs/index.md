@@ -155,6 +155,11 @@ check mode. Diff mode remains unsupported.
   Authority path: none; Certificate path: `<output_dir>/<name>-fullchain.pem`.
   Contains the issued certificate followed by intermediates, excluding the root.
 
+- **Private PEM bundle**
+  Authority path: none; Certificate path: `<output_dir>/<name>-bundle.pem`.
+  Certificate, intermediate CAs and private key; `bundle_key_format` selects
+  `pkcs8` (default) or `traditional` (RSA/ECDSA). Encryption uses `key_passphrase`.
+
 - **FritzBox bundle**
   Authority path: none; Certificate path: `<output_dir>/<name>-fritzbox.pem`
 
@@ -189,6 +194,7 @@ Supported certificate formats:
 - `pfx`
 - `p12`
 - `fullchain`
+- `bundle`
 - `fritzbox`
 
 Supported key type aliases:

@@ -48,7 +48,17 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
     with_derived_paths,
 )
 
-SUPPORTED_FORMATS = {"pem", "der", "cer", "txt", "pfx", "p12", "fullchain", "fritzbox"}
+SUPPORTED_FORMATS = {
+    "pem",
+    "der",
+    "cer",
+    "txt",
+    "pfx",
+    "p12",
+    "fullchain",
+    "bundle",
+    "fritzbox",
+}
 
 
 def certificate_common_argument_spec() -> dict[str, dict[str, Any]]:
@@ -287,12 +297,14 @@ def prepare_certificate_artifacts(
         raise ValueError(f"Unsupported certificate formats: {', '.join(unsupported)}")
     name = operation.request["name"]
     if operation.request["csr"].external and formats.intersection(
-        {"pfx", "p12", "fritzbox"}
+        {"pfx", "p12", "bundle", "fritzbox"}
     ):
         raise ValueError(
             f"Certificate {name} CSR signing cannot create formats that require a "
             "private key: "
-            + ", ".join(sorted(formats.intersection({"pfx", "p12", "fritzbox"})))
+            + ", ".join(
+                sorted(formats.intersection({"pfx", "p12", "bundle", "fritzbox"}))
+            )
         )
     if (
         formats.intersection({"pfx", "p12"})

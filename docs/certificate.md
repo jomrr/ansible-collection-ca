@@ -29,7 +29,7 @@ X.509 module.
   from task parameters and profile defaults; requested CSR identities are ignored.
 - Issues a PEM certificate and optional DER and text exports.
 - Copies the issuer chain into the certificate output directory.
-- Writes requested PKCS#12, fullchain, and FritzBox bundles directly.
+- Writes requested PKCS#12, fullchain, private PEM, and FritzBox bundles directly.
 - Renewal policy can mark warning state, renew inside a configured window, or
   renew at a planned timestamp.
 - Renewal keeps the existing key by default. Set `renewal.rekey: true` to
@@ -250,9 +250,15 @@ These keys are accepted inside `certificate`.
   positive integer; Secret: no
 
 - **`formats`**: Output and export formats. CSR-signed certificates reject
-  `pfx`, `p12`, and `fritzbox`.
+  `pfx`, `p12`, `bundle`, and `fritzbox`.
   Type: list[str]; Required: no; Default: profile default; Allowed values:
-  `pem`, `der`, `cer`, `txt`, `pfx`, `p12`, `fullchain`, `fritzbox`; Secret: no
+  `pem`, `der`, `cer`, `txt`, `pfx`, `p12`, `fullchain`, `bundle`, `fritzbox`; Secret: no
+
+- **`bundle_key_format`**: Private key encoding for the `bundle` export only.
+  Type: str; Required: no; Default: `pkcs8`; Allowed values: `pkcs8`,
+  `traditional`; Secret: no. Traditional PEM supports RSA and ECDSA; Ed25519
+  and Ed448 require PKCS#8. Encryption follows `key_passphrase`. This option
+  does not change the managed `.key` file or the `fritzbox` export.
 
 - **`output_dir`**: Directory for key, certificate, chain copy, and bundles.
   Type: path; Required: no; Default: `<base_dir>/certs/<name>`; Allowed values:
@@ -422,6 +428,38 @@ New inventory records include a SHA-256 public key fingerprint. Older records
 use the matching current or archived certificate; if that material is missing,
 restore it before reusing a key or signing an external CSR.
 
+## Private PEM Bundle
+
+Add `bundle` to a single certificate or a `certificate_batch.certificates` entry:
+
+```yaml
+certificate:
+  name: web01
+  type: tls_server
+  common_name: web01.example.org
+  formats: [pem, bundle]
+  bundle_key_format: traditional
+  key_passphrase: "{{ vaulted_web01_key_passphrase }}"
+```
+
+`<output_dir>/<name>-bundle.pem` contains the certificate first, then the issuer
+intermediates in chain order, and finally the private key. The self-signed root
+is excluded. The default `bundle_key_format: pkcs8` supports every managed key
+algorithm; `traditional` uses RSA PKCS#1 or algorithm-specific EC PEM. Ed25519
+and Ed448 with `traditional` fail validation before material is written.
+
+The bundle key is encrypted with `key_passphrase` when set, otherwise it is
+unencrypted. The file uses `key_mode` (default `0600`). Changing the bundle key
+format regenerates only the export, without reissuing the certificate or
+rewriting the managed key. `bundle_path` and `bundle_changed` are available in
+the single result and in each batch result. External CSRs cannot export a
+bundle because the collection does not have their private key.
+
+`fritzbox` uses the same bundle writer with its existing `<name>-fritzbox.pem`
+filename, certificate/intermediate order and original managed key bytes,
+including any encryption. `bundle_key_format` never changes the FRITZ!Box
+export, even when both formats are requested.
+
 ## Generated Files
 
 For `name: web01`, `issuer: component`, and `base_dir: /etc/pki/example`:
@@ -437,6 +475,7 @@ For `name: web01`, `issuer: component`, and `base_dir: /etc/pki/example`:
 - `/etc/pki/example/certs/web01/web01.p12` when `p12` is requested
 - `/etc/pki/example/certs/web01/web01-fullchain.pem` when `fullchain` is
   requested
+- `/etc/pki/example/certs/web01/web01-bundle.pem` when `bundle` is requested
 - `/etc/pki/example/certs/web01/web01-fritzbox.pem` when `fritzbox` is requested
 - Inventory fragments below `/etc/pki/example/inventory/state`
 - `/etc/pki/example/inventory/ca-inventory.json` when `ca_name` is set
@@ -490,6 +529,9 @@ CSR-signed certificates also store a normalized copy of the CSR at
 - **`fullchain_changed`**: Whether the fullchain bundle changed.
   Type: bool
 
+- **`bundle_changed`**: Whether the private PEM bundle changed.
+  Type: bool; Returned: success
+
 - **`fritzbox_bundle_changed`**: Whether the FritzBox import bundle changed.
   Type: bool
 
@@ -519,6 +561,9 @@ CSR-signed certificates also store a normalized copy of the CSR at
 
 - **`fullchain_path`**: Fullchain bundle path, or empty string.
   Type: str
+
+- **`bundle_path`**: Private PEM bundle path, or empty string when not requested.
+  Type: str; Returned: success
 
 - **`fritzbox_bundle_path`**: FritzBox import bundle path, or empty string.
   Type: str

@@ -30,6 +30,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._input import (
 from ansible_collections.jomrr.ca.plugins.module_utils._renewal import renewal_policy
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
     digest_algorithm,
+    key_spec,
 )
 
 
@@ -119,15 +120,33 @@ def certificate_request(
             values.text("key_passphrase") or None,
         ),
         csr=CsrSource(values.text("csr_source_path"), values.text("csr_content")),
-        exports=ExportOptions(
-            normalize_formats(params.get("formats")),
-            values.text("output_dir"),
-            values.text("friendly_name"),
-            values.text("passphrase") or values.text("pfx_passphrase"),
-        ),
+        exports=_exports(values),
         issuer=IssuerOptions(
             values.text("parent" if authority else "issuer"),
             values.text("signer_key_passphrase") or None,
         ),
         renewal=renewal_policy(params.get("renewal")),
+    )
+
+
+def _exports(values: InputValues) -> ExportOptions:
+    """Validate private-key export choices before any material is written."""
+    formats = normalize_formats(values.values.get("formats"))
+    key_format = values.text("bundle_key_format", "pkcs8")
+    if key_format not in ("pkcs8", "traditional"):
+        raise ValueError("bundle_key_format must be pkcs8 or traditional")
+    if "bundle" in formats and key_format == "traditional":
+        spec = key_spec(
+            values.text("key_type", "RSA"), values.integer("key_size", 4096)
+        )
+        if spec["type"] not in ("RSA", "ECDSA"):
+            raise ValueError(
+                "traditional bundle key format requires an RSA or ECDSA key"
+            )
+    return ExportOptions(
+        formats,
+        values.text("output_dir"),
+        values.text("friendly_name"),
+        values.text("passphrase") or values.text("pfx_passphrase"),
+        key_format,
     )

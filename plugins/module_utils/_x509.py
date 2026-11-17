@@ -194,7 +194,7 @@ def _group_requests(
     requests = [prepare_signing_request(params, signer) for _index, params in group]
     if not first.check_mode and any(
         set(params.request["exports"].formats).intersection(
-            {"pfx", "p12", "fullchain", "fritzbox"}
+            {"pfx", "p12", "fullchain", "bundle", "fritzbox"}
         )
         for _index, params in group
     ):
@@ -228,7 +228,9 @@ def _ensure_x509_from_csr_locked(
 ) -> CertificateResult:
     """Ensure one signed certificate from an externally supplied CSR."""
     unsupported = sorted(
-        set(params.request["exports"].formats).intersection({"pfx", "p12", "fritzbox"})
+        set(params.request["exports"].formats).intersection(
+            {"pfx", "p12", "bundle", "fritzbox"}
+        )
     )
     if unsupported:
         raise ValueError(

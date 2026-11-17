@@ -132,6 +132,7 @@ def _pending_exports(
         "chain_changed": manage_chain and bool(params.paths["chain_path"]),
         "pkcs12_changed": bool(params.paths["pkcs12_paths"]),
         "fullchain_changed": bool(params.paths["fullchain_path"]),
+        "bundle_changed": bool(params.paths["bundle_path"]),
         "fritzbox_bundle_changed": bool(params.paths["fritzbox_bundle_path"]),
         "pkcs12_paths": params.paths["pkcs12_paths"],
     }
@@ -142,6 +143,7 @@ def _validate_output_paths(params: CertificateOperation) -> None:
     private = {
         params.paths["key_path"],
         params.paths["fritzbox_bundle_path"],
+        params.paths["bundle_path"],
         *params.paths["pkcs12_paths"].values(),
     }
     paths = [
@@ -155,6 +157,7 @@ def _validate_output_paths(params: CertificateOperation) -> None:
             "txt_path",
             "chain_path",
             "fullchain_path",
+            "bundle_path",
             "fritzbox_bundle_path",
         )
     ]

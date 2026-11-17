@@ -1,0 +1,6 @@
+---
+minor_changes:
+  - certificate, certificate_batch - add PEM bundle exports with selectable PKCS#8
+    or traditional RSA/EC private key encoding, retaining key encryption and excluding the root CA.
+  - certificate, certificate_batch - share the PEM bundle writer with FRITZ!Box exports
+    while preserving their existing filename, order and key bytes.

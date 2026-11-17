@@ -63,8 +63,9 @@ def _certificate_record_paths(
             keys.add(f"certificate_{suffix}")
     if "txt" in formats:
         keys.add("certificate_text")
-    if "fullchain" in formats:
-        keys.add("fullchain")
+    for bundle_format in ("fullchain", "bundle"):
+        if bundle_format in formats:
+            keys.add(bundle_format)
     if "fritzbox" in formats:
         keys.add("fritzbox_bundle")
     if "pfx" in formats:

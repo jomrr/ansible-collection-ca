@@ -105,12 +105,41 @@ def verify_profiles(base: Path) -> None:
         )
         assert key is not None and exported_cert is not None
         assert extras == [issuer]
+    verify_pem_bundles(base, issuer)
+
+
+def verify_pem_bundles(base: Path, issuer: x509.Certificate) -> None:
+    """Compare generic exports and the unchanged FRITZ!Box byte layout."""
     bundle = (base / "certs/fritzbox/fritzbox-fritzbox.pem").read_bytes()
     serialization.load_pem_private_key(bundle, None)
     cert = x509.load_pem_x509_certificate(
         (base / "certs/fritzbox/fritzbox.pem").read_bytes()
     )
     assert x509.load_pem_x509_certificates(bundle) == [cert, issuer]
+    assert bundle == (
+        (base / "certs/fritzbox/fritzbox.pem").read_bytes()
+        + issuer.public_bytes(serialization.Encoding.PEM)
+        + (base / "certs/fritzbox/fritzbox.key").read_bytes()
+    )
+    for name, password, header in (
+        ("web", None, b"EC PRIVATE KEY"),
+        ("fritzbox", None, b"RSA PRIVATE KEY"),
+    ):
+        directory = base / "certs" / name
+        path = directory / f"{name}-bundle.pem"
+        content = path.read_bytes()
+        assert path.stat().st_mode & 0o777 == 0o600
+        assert b"-----BEGIN " + header + b"-----" in content
+        key = serialization.load_pem_private_key(content, password)
+        certificate = x509.load_pem_x509_certificate(
+            (directory / f"{name}.pem").read_bytes()
+        )
+        assert x509.load_pem_x509_certificates(content) == [certificate, issuer]
+        assert key.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        ) == certificate.public_key().public_bytes(
+            serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+        )
 
 
 def main() -> None:

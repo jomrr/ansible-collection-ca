@@ -20,7 +20,13 @@ notes:
   CER also supports externally signed CSRs and uses the public file permissions.
 - The C(<name>-chain.pem) copy contains only issuer intermediates, starting with the direct
   issuer. C(fullchain) contains the issued certificate followed by those intermediates.
-  Neither includes the self-signed root. PKCS#12 and FritzBox bundles use the same chain.
+  Neither includes the self-signed root. PKCS#12, C(bundle) and FritzBox bundles use the same chain.
+- C(bundle) writes the certificate, intermediates and private key to C(<name>-bundle.pem).
+  C(bundle_key_format) selects C(pkcs8) (default) or C(traditional) (RSA/ECDSA only);
+  C(key_passphrase) controls key encryption and C(key_mode) controls file permissions.
+  External CSRs cannot produce this export because their private key is unavailable.
+- C(fritzbox) retains its existing C(<name>-fritzbox.pem) filename and original managed
+  key bytes. C(bundle_key_format) does not affect that export.
 - For a directly root-signed CA CSR, the chain copy is empty and C(fullchain) contains only
   the issued CA certificate. Distribute the root certificate separately as a trust anchor.
 - Existing chain copies and bundles containing a root are repaired on the next normal run

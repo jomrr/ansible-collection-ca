@@ -47,6 +47,7 @@ class ExportChanges(TypedDict):
     chain_changed: bool
     pkcs12_changed: bool
     fullchain_changed: bool
+    bundle_changed: bool
     fritzbox_bundle_changed: bool
     pkcs12_paths: dict[str, str]
 
@@ -62,6 +63,7 @@ class CertificateResult(MaterialChanges, ExportChanges):
     cer_path: str
     txt_path: str
     fullchain_path: str
+    bundle_path: str
     fritzbox_bundle_path: str
     identity_changed: NotRequired[bool]
     material_pending: NotRequired[bool]
@@ -91,6 +93,7 @@ def certificate_result(
         "chain_changed": exports["chain_changed"],
         "pkcs12_changed": exports["pkcs12_changed"],
         "fullchain_changed": exports["fullchain_changed"],
+        "bundle_changed": exports["bundle_changed"],
         "fritzbox_bundle_changed": exports["fritzbox_bundle_changed"],
         "pkcs12_paths": exports["pkcs12_paths"],
         "changed": any(changes.values())
@@ -102,6 +105,7 @@ def certificate_result(
         "cer_path": params.paths["cer_path"],
         "txt_path": params.paths["txt_path"],
         "fullchain_path": params.paths["fullchain_path"],
+        "bundle_path": params.paths["bundle_path"],
         "fritzbox_bundle_path": params.paths["fritzbox_bundle_path"],
     }
 

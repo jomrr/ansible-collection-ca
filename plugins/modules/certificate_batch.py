@@ -60,7 +60,8 @@ issuer_groups:
   type: dict
   returned: success
 results:
-  description: Per-certificate result dictionaries in the same order as C(certificates).
+  description: Per-certificate result dictionaries in the same order as C(certificates),
+    including C(bundle_path) and C(bundle_changed) as documented by M(jomrr.ca.certificate).
   type: list
   returned: success
   elements: dict

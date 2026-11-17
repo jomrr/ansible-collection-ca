@@ -80,6 +80,7 @@
       name: web
       type: tls_server
       common_name: web.example.test
+      bundle_key_format: traditional
       key_type: P-256
       formats:
         - pem
@@ -87,6 +88,7 @@
         - cer
         - txt
         - fullchain
+        - bundle
   register: ca_result
 - name: Verify change prediction for certificate
   ansible.builtin.assert:
@@ -97,10 +99,12 @@
     that:
       - ca_result.name == 'web'
       - ca_result.profile == 'tls_server'
-      - ca_result.formats == ['pem', 'der', 'cer', 'txt', 'fullchain']
+      - ca_result.formats == ['pem', 'der', 'cer', 'txt', 'fullchain', 'bundle']
       - ca_result.cert_path == ca_test_root.path ~ '/pki/certs/web/web.pem'
       - ca_result.cer_path == ca_test_root.path ~ '/pki/certs/web/web.cer'
       - ca_result.cer_changed == ca_expect_changed
+      - ca_result.bundle_path == ca_test_root.path ~ '/pki/certs/web/web-bundle.pem'
+      - ca_result.bundle_changed == ca_expect_changed
       - "'test-root-passphrase' not in (ca_result | to_json)"
       - "'test-issuer-passphrase' not in (ca_result | to_json)"
 
@@ -173,6 +177,8 @@
         krb5_realm: EXAMPLE.TEST
       - name: fritzbox
         type: fritzbox
+        formats: [pem, der, txt, fritzbox, bundle]
+        bundle_key_format: traditional
         common_name: fritzbox.example.test
         key_type: RSA
         key_size: 2048

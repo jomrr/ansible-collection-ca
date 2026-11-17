@@ -73,6 +73,7 @@ def certificate_paths(
         "certificate_text": f"{directory}/{name}.txt",
         "chain": f"{directory}/{name}-chain.pem",
         "fullchain": f"{directory}/{name}-fullchain.pem",
+        "bundle": f"{directory}/{name}-bundle.pem",
         "fritzbox_bundle": f"{directory}/{name}-fritzbox.pem",
         "pkcs12_pfx": f"{directory}/{name}.pfx",
         "pkcs12_p12": f"{directory}/{name}.p12",

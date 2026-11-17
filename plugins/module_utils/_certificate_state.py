@@ -97,12 +97,13 @@ class CsrSource:
 
 @dataclass
 class ExportOptions:
-    """Requested representations and PKCS#12 settings."""
+    """Requested representations and private-key export settings."""
 
     formats: list[str]
     output_dir: str
     friendly_name: str
     passphrase: str = field(repr=False)
+    bundle_key_format: str = "pkcs8"
 
 
 @dataclass
@@ -194,6 +195,7 @@ class CertificatePaths(TypedDict):
     chain_src_path: str
     chain_path: str
     fullchain_path: str
+    bundle_path: str
     fritzbox_bundle_path: str
     pkcs12_paths: dict[str, str]
 

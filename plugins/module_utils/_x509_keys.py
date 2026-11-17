@@ -206,8 +206,14 @@ def load_signing_key(
     return key
 
 
-def private_key_pem(key: PrivateKey, passphrase: str | None) -> bytes:
-    """Serialize a private key as encrypted or unencrypted PKCS#8 PEM."""
+def private_key_pem(
+    key: PrivateKey, passphrase: str | None, *, key_format: str = "pkcs8"
+) -> bytes:
+    """Serialize a private key as encrypted or unencrypted PEM."""
+    formats = {
+        "pkcs8": serialization.PrivateFormat.PKCS8,
+        "traditional": serialization.PrivateFormat.TraditionalOpenSSL,
+    }
     encryption = (
         serialization.BestAvailableEncryption(passphrase.encode())
         if passphrase
@@ -215,7 +221,7 @@ def private_key_pem(key: PrivateKey, passphrase: str | None) -> bytes:
     )
     return key.private_bytes(
         serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
+        formats[key_format],
         encryption,
     )
 
