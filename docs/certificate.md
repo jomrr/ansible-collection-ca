@@ -492,23 +492,32 @@ certificate:
   key_passphrase: "{{ vaulted_web01_key_passphrase }}"
 ```
 
-`<output_dir>/<name>-bundle.pem` contains the certificate first, then the issuer
-intermediates in chain order, and finally the private key. The self-signed root
-is excluded. The default `bundle_key_format: pkcs8` supports every managed key
-algorithm; `traditional` uses RSA PKCS#1 or algorithm-specific EC PEM. Ed25519
-and Ed448 with `traditional` fail validation before material is written.
+`<output_dir>/<name>-bundle.pem` uses these layouts:
+
+- `bundle_key_format: pkcs8` (default): leaf certificate, private key, then issuer
+  intermediates in chain order. Supports every managed key algorithm.
+- `bundle_key_format: traditional`: leaf certificate, issuer intermediates, then
+  private key, preserving the existing layout. Uses RSA PKCS#1 or
+  algorithm-specific EC PEM. Ed25519 and Ed448 with `traditional` fail validation
+  before material is written.
+
+Both layouts exclude the self-signed root. The order is this collection's export
+contract; the key encoding itself does not prescribe the order of PEM blocks.
 
 The bundle key is encrypted with `key_passphrase` when set, otherwise it is
 unencrypted. The file uses `key_mode` (default `0600`). Changing the bundle key
 format regenerates only the export, without reissuing the certificate or
-rewriting the managed key. `bundle_path` and `bundle_changed` are available in
-the single result and in each batch result. External CSRs cannot export a
+rewriting the managed key. Existing PKCS#8 bundles with the key at the end are
+rewritten in the new order on the next run, preserving matching encrypted key
+bytes. Traditional bundles retain their existing order and content.
+`bundle_path` and `bundle_changed` are available in the single result and in each
+batch result. External CSRs cannot export a
 bundle because the collection does not have their private key.
 
 `fritzbox` uses the same bundle writer with its existing `<name>-fritzbox.pem`
-filename, certificate/intermediate order and original managed key bytes,
-including any encryption. `bundle_key_format` never changes the FRITZ!Box
-export, even when both formats are requested.
+filename and unchanged order: leaf certificate, issuer intermediates, then the
+original managed key bytes, including any encryption. `bundle_key_format` never
+changes the FRITZ!Box export, even when both formats are requested.
 
 ## Generated Files
 

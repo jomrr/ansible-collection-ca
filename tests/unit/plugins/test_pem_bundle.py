@@ -74,7 +74,12 @@ class PemBundleTests(TestCase):
         path = directory / f"{name}-bundle.pem"
         bundle = path.read_bytes()
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-        self.assertIn(b"-----BEGIN " + header + b"-----", bundle)
+        prefix = (
+            cert + issuer if header in (b"RSA PRIVATE KEY", b"EC PRIVATE KEY") else cert
+        )
+        self.assertTrue(
+            bundle.startswith(prefix + b"-----BEGIN " + header + b"-----\n")
+        )
         self.assertEqual(
             x509.load_pem_x509_certificates(bundle),
             [x509.load_pem_x509_certificate(part) for part in (cert, issuer)],
@@ -99,6 +104,24 @@ class PemBundleTests(TestCase):
             (directory / f"{name}-fritzbox.pem").read_bytes(),
             b"".join(part.rstrip() + b"\n" for part in (cert, issuer, key)),
         )
+
+    def assert_legacy_pkcs8_repair(self, item: dict[str, Any]) -> None:
+        """Reorder an existing PKCS#8 bundle without changing any key bytes."""
+        directory = self.base / "certs" / item["name"]
+        path = directory / f"{item['name']}-bundle.pem"
+        cert = (directory / f"{item['name']}.pem").read_bytes()
+        chain = (directory / f"{item['name']}-chain.pem").read_bytes()
+        expected = path.read_bytes()
+        key = expected.removeprefix(cert).removesuffix(chain)
+        path.write_bytes(cert + chain + key)
+        self.assertTrue(self.predict(item)["bundle_changed"])
+        result = self.invoke(item)
+        self.assertNotIn("failed", result, result)
+        self.assertTrue(result["bundle_changed"])
+        self.assertFalse(result["cert_changed"])
+        self.assertFalse(result["key_changed"])
+        self.assertFalse(result["fritzbox_bundle_changed"])
+        self.assertEqual(path.read_bytes(), expected)
 
     def test_encodings_and_format_only_updates(self) -> None:
         """Encryption and encoding changes preserve managed material and FRITZ!Box."""
@@ -126,6 +149,7 @@ class PemBundleTests(TestCase):
                     original = {
                         p: p.read_bytes() for p in directory.iterdir() if p.is_file()
                     }
+                    self.assert_legacy_pkcs8_repair(item)
                     pkcs8_header = (
                         b"ENCRYPTED PRIVATE KEY" if password else b"PRIVATE KEY"
                     )
@@ -178,6 +202,7 @@ class PemBundleTests(TestCase):
                 self.assertTrue(updated["bundle_changed"])
                 self.assertFalse(updated["key_changed"])
                 self.assertFalse(updated["cert_changed"])
+                self.assertFalse(updated["fritzbox_bundle_changed"])
                 self.assert_bundle("web", "bundle-test-secret", b"EC PRIVATE KEY")
                 self.assertFalse(self.invoke(item)["changed"])
         path.chmod(0o644)

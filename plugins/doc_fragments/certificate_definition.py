@@ -139,8 +139,10 @@ options:
       formats:
         description:
         - Requested export formats; omitted values use the selected profile defaults.
-        - C(bundle) writes the certificate, issuer intermediates and private key to C(<name>-bundle.pem).
+        - C(bundle) writes the leaf certificate, private key, then issuer intermediates to C(<name>-bundle.pem) with C(bundle_key_format=pkcs8).
           Excludes the self-signed root; unavailable for external CSRs. Uses C(key_mode), default C(0600).
+        - C(bundle_key_format=traditional) retains the order of leaf certificate, issuer intermediates, then private key.
+        - C(fritzbox) retains its existing order of leaf certificate, issuer intermediates, then original managed key.
         - C(cer) writes DER-encoded certificate bytes with a C(.cer) extension.
           C(der) and C(cer) can be requested together.
         type: list

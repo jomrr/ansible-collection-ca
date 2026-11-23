@@ -20,6 +20,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._pem_bundle import (
     ensure_key_bundle,
+    join_pem,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._pkcs12_export import (
     ensure_pkcs12_exports,
@@ -107,18 +108,13 @@ def chain_certificates(
     return intermediate_chain([signer_cert])
 
 
-def _pem_join(*parts: bytes) -> bytes:
-    """Join PEM sections with exactly one trailing newline per section."""
-    return b"".join(part.rstrip() + b"\n" for part in parts if part)
-
-
 def ensure_fullchain_bundle(
     params: CertificateOperation, cert: x509.Certificate, bundle_content: bytes
 ) -> bool:
     """Ensure the requested PEM fullchain bundle exists."""
     if "fullchain" not in params.request["exports"].formats:
         return False
-    content = _pem_join(cert.public_bytes(serialization.Encoding.PEM), bundle_content)
+    content = join_pem(cert.public_bytes(serialization.Encoding.PEM), bundle_content)
     return write_file(
         params.paths["fullchain_path"],
         content,
@@ -162,12 +158,12 @@ def ensure_exports(
         )
     changes["fullchain_changed"] = ensure_fullchain_bundle(params, cert, bundle_content)
     if key is not None:
-        certificate_chain = _pem_join(
-            cert.public_bytes(serialization.Encoding.PEM), bundle_content
+        certificate = cert.public_bytes(serialization.Encoding.PEM)
+        changes["bundle_changed"] = ensure_key_bundle(
+            params, key, certificate, bundle_content
         )
-        changes["bundle_changed"] = ensure_key_bundle(params, key, certificate_chain)
         changes["fritzbox_bundle_changed"] = ensure_key_bundle(
-            params, key, certificate_chain, fritzbox=True
+            params, key, certificate, bundle_content, fritzbox=True
         )
     changes["pkcs12_paths"] = paths
     return changes

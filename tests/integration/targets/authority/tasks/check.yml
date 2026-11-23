@@ -117,6 +117,7 @@
         ad_object_guid: 8f2a02d1-862a-47cf-9a9b-6bda9c3bd2c5
       - name: tls_client
         type: tls_client
+        formats: [pem, der, txt, bundle]
         common_name: tls_client.example.test
         key_type: P-256
         key_size: 2048

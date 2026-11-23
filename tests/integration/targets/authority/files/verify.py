@@ -122,6 +122,7 @@ def verify_pem_bundles(base: Path, issuer: x509.Certificate) -> None:
         + (base / "certs/fritzbox/fritzbox.key").read_bytes()
     )
     for name, password, header in (
+        ("tls_client", None, b"PRIVATE KEY"),
         ("web", None, b"EC PRIVATE KEY"),
         ("fritzbox", None, b"RSA PRIVATE KEY"),
     ):
@@ -129,7 +130,11 @@ def verify_pem_bundles(base: Path, issuer: x509.Certificate) -> None:
         path = directory / f"{name}-bundle.pem"
         content = path.read_bytes()
         assert path.stat().st_mode & 0o777 == 0o600
-        assert b"-----BEGIN " + header + b"-----" in content
+        leaf_pem = (directory / f"{name}.pem").read_bytes()
+        prefix = leaf_pem
+        if header != b"PRIVATE KEY":
+            prefix += issuer.public_bytes(serialization.Encoding.PEM)
+        assert content.startswith(prefix + b"-----BEGIN " + header + b"-----\n")
         key = serialization.load_pem_private_key(content, password)
         certificate = x509.load_pem_x509_certificate(
             (directory / f"{name}.pem").read_bytes()

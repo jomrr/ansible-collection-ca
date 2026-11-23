@@ -12,6 +12,7 @@ from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     write_file,
 )
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_keys import (
+    PEM_CERT_RE,
     private_key_pem,
     public_key_bytes,
 )
@@ -28,6 +29,11 @@ try:
     from cryptography.hazmat.primitives import serialization
 except ImportError:
     pass
+
+
+def join_pem(*parts: bytes) -> bytes:
+    """Join PEM sections with exactly one trailing newline per section."""
+    return b"".join(part.rstrip() + b"\n" for part in parts if part)
 
 
 def _matches_format(content: bytes, key_format: str) -> bool:
@@ -50,7 +56,8 @@ def _existing_key(
         content = read_file(params.paths["bundle_path"])
     except FileNotFoundError:
         return None
-    content = content.rsplit(b"-----END CERTIFICATE-----", 1)[-1].lstrip()
+    # Accept both legacy key-last bundles and keys directly behind the leaf.
+    content = PEM_CERT_RE.sub(b"", content).strip()
     if not _matches_format(content, params.request["exports"].bundle_key_format):
         return None
     passphrase = params.request["key"].passphrase
@@ -70,11 +77,12 @@ def _existing_key(
 def ensure_key_bundle(
     params: CertificateOperation,
     key: PrivateKey | PublicKey,
-    certificate_chain: bytes,
+    certificate: bytes,
+    chain: bytes,
     *,
     fritzbox: bool = False,
 ) -> bool:
-    """Write certificate, intermediate CAs and key with private file permissions."""
+    """Write PKCS#8 key after leaf; traditional and FRITZ!Box keep key last."""
     path = params.paths["fritzbox_bundle_path" if fritzbox else "bundle_path"]
     if not path:
         return False
@@ -93,9 +101,14 @@ def ensure_key_bundle(
             )
         else:
             key_content = existing
+    parts = (
+        (certificate, chain, key_content)
+        if fritzbox or key_format == "traditional"
+        else (certificate, key_content, chain)
+    )
     return write_file(
         path,
-        certificate_chain + key_content.rstrip() + b"\n",
+        join_pem(*parts),
         params.request["storage"].attributes(private=True),
         check_mode=params.check_mode,
         force=params.request["force"],
