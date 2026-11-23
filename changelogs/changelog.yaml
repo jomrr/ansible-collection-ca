@@ -211,3 +211,15 @@ releases:
           name: host_certificates
           namespace: null
     release_date: '2026-11-17'
+  1.3.1:
+    changes:
+      bugfixes:
+        - bundle - retain encrypted key bytes when repairing the order to preserve
+          idempotence. Traditional bundles and the fritzbox export retain their existing
+          order and key encoding.
+        - bundle - with bundle_key_format=pkcs8, place the private key immediately
+          after the leaf certificate, before issuer intermediates; repair existing
+          bundles without reissuing certificates.
+    fragments:
+      - bundle-key-order.yml
+    release_date: '2026-11-23'

@@ -4,6 +4,15 @@ jomrr.ca 1.3 Release Notes
 
 .. contents:: Topics
 
+v1.3.1
+======
+
+Bugfixes
+--------
+
+- bundle - retain encrypted key bytes when repairing the order to preserve idempotence. Traditional bundles and the fritzbox export retain their existing order and key encoding.
+- bundle - with bundle_key_format=pkcs8, place the private key immediately after the leaf certificate, before issuer intermediates; repair existing bundles without reissuing certificates.
+
 v1.3.0
 ======
 
