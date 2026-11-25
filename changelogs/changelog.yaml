@@ -235,3 +235,12 @@ releases:
     fragments:
       - host-certificate-overrides.yml
     release_date: '2026-11-25'
+  1.4.1:
+    changes:
+      bugfixes:
+        - Documentation fragments - use literal string assignments for the static
+          parser in antsibull-docs 2.29 and later. Preserve the resolved module documentation,
+          including batch schemas, issuer metadata and return values.
+    fragments:
+      - static-documentation-fragments.yml
+    release_date: '2026-11-25'

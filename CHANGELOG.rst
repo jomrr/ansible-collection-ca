@@ -4,6 +4,14 @@ jomrr.ca 1.4 Release Notes
 
 .. contents:: Topics
 
+v1.4.1
+======
+
+Bugfixes
+--------
+
+- Documentation fragments - use literal string assignments for the static parser in antsibull-docs 2.29 and later. Preserve the resolved module documentation, including batch schemas, issuer metadata and return values.
+
 v1.4.0
 ======
 
