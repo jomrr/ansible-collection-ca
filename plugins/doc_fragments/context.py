@@ -5,14 +5,13 @@
 """Shared CA execution and file context documentation."""
 
 from dataclasses import dataclass
-from typing import ClassVar
 
 
 @dataclass
 class ModuleDocFragment:
-    """Ansible documentation fragments."""
+    """Ansible documentation fragments with statically readable values."""
 
-    DOCUMENTATION: ClassVar[str] = r"""
+    DOCUMENTATION = r"""
 author: [Jonas Mauer (@jomrr)]
 attributes:
   check_mode:
@@ -39,28 +38,33 @@ options:
     version_added: 0.1.0
 """
 
-    BATCH: ClassVar[str] = DOCUMENTATION.replace(
-        "support: none\n    description: Skipped in check mode without "
-        "changing the managed host.",
-        "support: full\n    description: Predict changes without writing files or "
-        "generating cryptographic material.",
-    ).replace(
-        "notes:\n",
-        """notes:
-- Check mode reads existing state under shared locks where lock files exist.
-  Missing locks are not created; predictions for new state are snapshots.
-- A missing issuer is treated as pending creation. Validation requiring its future
-  material or inventory is deferred until it exists. No serial numbers are reserved.
-""",
-    )
+    BATCH = r"""
+author: [Jonas Mauer (@jomrr)]
+attributes:
+  check_mode: {support: full, description: Predict changes without writing files or generating
+      cryptographic material.}
+  diff_mode: {support: none, description: No diff output is returned.}
+requirements: [Python 3.12 on the managed Linux host]
+notes: [Check mode reads existing state under shared locks where lock files exist. Missing
+    locks are not created; predictions for new state are snapshots., A missing issuer is treated
+    as pending creation. Validation requiring its future material or inventory is deferred
+    until it exists. No serial numbers are reserved., The base directory and persistent inventory
+    must be preserved between runs., Private utilities are internal implementation details
+    and are not a public API.]
+options:
+  base_dir: {description: 'Base directory containing the CA keys, certificates and persistent
+      inventory.', type: path, required: true, version_added: 0.1.0}
+  force: {description: Regenerate managed artifacts even when current content matches., type: bool,
+    default: false, version_added: 0.1.0}
+"""
 
-    CRYPTOGRAPHY: ClassVar[str] = r"""
+    CRYPTOGRAPHY = r"""
 requirements:
 - cryptography >= 43 on the managed host
 options: {}
 """
 
-    OWNERSHIP: ClassVar[str] = r"""
+    OWNERSHIP = r"""
 options:
   owner:
     description: Owner of generated files; user name or numeric UID.
@@ -72,7 +76,7 @@ options:
     version_added: 0.1.0
 """
 
-    PUBLISHING: ClassVar[str] = r"""
+    PUBLISHING = r"""
 notes:
 - When C(ca_name) enables composed inventory, an omitted or empty C(base_url)
   preserves its stored URL. A non-empty value updates it; an empty value does not
@@ -94,7 +98,7 @@ options:
     default: ''
 """
 
-    DIGEST: ClassVar[str] = r"""
+    DIGEST = r"""
 options:
   digest:
     description: Signature digest for RSA and ECDSA keys.
@@ -104,7 +108,7 @@ options:
     choices: [sha224, sha256, sha384, sha512]
 """
 
-    FORMATS: ClassVar[str] = r"""
+    FORMATS = r"""
 options:
   formats:
     description: Output formats for the CA certificate.
@@ -114,7 +118,7 @@ options:
     elements: str
 """
 
-    FILE_MODE: ClassVar[str] = r"""
+    FILE_MODE = r"""
 options:
   mode:
     description: Chain file mode.
@@ -123,7 +127,7 @@ options:
     default: '0644'
 """
 
-    DISPATCH_NOTES: ClassVar[str] = r"""
+    DISPATCH_NOTES = r"""
 notes:
 - Supply the authorities and certificate_types mappings explicitly; no standalone role
   defaults are loaded.
@@ -132,7 +136,7 @@ notes:
 options: {}
 """
 
-    FRITZBOX_NOTES: ClassVar[str] = r"""
+    FRITZBOX_NOTES = r"""
 notes:
 - TLS verification defaults to false for self-signed FRITZ!Box device certificates. Enable
   validate_certs when the device certificate is trusted.

@@ -15,7 +15,7 @@ description:
 - Dispatch one managed CA collection certificate to the built-in X.509 profiles.
 extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
   jomrr.ca.context.cryptography, jomrr.ca.context.dispatch_notes, jomrr.ca.certificate, jomrr.ca.certificate_definition,
-  jomrr.ca.certificate_definition.authorities]
+  jomrr.ca.authority_definition.issuers]
 options:
   subject:
     description: Certificate-local subject values merged over module C(subject).
@@ -135,59 +135,39 @@ EXAMPLES = r"""
 """
 
 RETURN = r"""
-name:
-  description: Certificate name.
-  type: str
-  returned: success
-profile:
-  description: Resolved certificate profile.
-  type: str
-  returned: success
-directory_changed:
-  description: Whether the output directory changed.
-  type: bool
-  returned: success
-chain_changed:
-  description: Whether the issuer chain copy changed.
-  type: bool
-  returned: success
-pkcs12_changed:
-  description: Whether any PKCS#12 export changed.
-  type: bool
-  returned: success
-fullchain_changed:
-  description: Whether the fullchain bundle changed.
-  type: bool
-  returned: success
-bundle_changed:
-  description: Whether the certificate, intermediate CA and private key bundle changed.
-  type: bool
-  returned: success
-  version_added: 1.3.0
-fritzbox_bundle_changed:
-  description: Whether the FritzBox import bundle changed.
-  type: bool
-  returned: success
-pkcs12_paths:
-  description: Written PKCS#12 paths keyed by format.
-  type: dict
-  returned: success
-fullchain_path:
-  description: Fullchain bundle path, or empty string.
-  type: str
-  returned: success
-bundle_path:
-  description: Private PEM bundle path, or empty string when not requested.
-  type: str
-  returned: success
-  version_added: 1.3.0
-fritzbox_bundle_path:
-  description: FritzBox import bundle path, or empty string.
-  type: str
-  returned: success
-formats:
-  description: Normalized formats.
-extends_documentation_fragment: [jomrr.ca.certificate]
+name: {description: Certificate name., type: str, returned: success}
+profile: {description: Resolved certificate profile., type: str, returned: success}
+directory_changed: {description: Whether the output directory changed., type: bool, returned: success}
+chain_changed: {description: Whether the issuer chain copy changed., type: bool, returned: success}
+pkcs12_changed: {description: Whether any PKCS#12 export changed., type: bool, returned: success}
+fullchain_changed: {description: Whether the fullchain bundle changed., type: bool, returned: success}
+bundle_changed: {description: 'Whether the certificate, intermediate CA and private key bundle
+    changed.', type: bool, returned: success, version_added: 1.3.0}
+fritzbox_bundle_changed: {description: Whether the FritzBox import bundle changed., type: bool,
+  returned: success}
+pkcs12_paths: {description: Written PKCS#12 paths keyed by format., type: dict, returned: success}
+fullchain_path: {description: 'Fullchain bundle path, or empty string.', type: str, returned: success}
+bundle_path: {description: 'Private PEM bundle path, or empty string when not requested.',
+  type: str, returned: success, version_added: 1.3.0}
+fritzbox_bundle_path: {description: 'FritzBox import bundle path, or empty string.', type: str,
+  returned: success}
+formats: {description: Normalized formats., type: list, returned: success, elements: str}
+key_changed: {description: Whether the private key changed., type: bool, returned: success}
+csr_changed: {description: Whether the CSR changed., type: bool, returned: success}
+cert_changed: {description: Whether the PEM certificate changed., type: bool, returned: success}
+der_changed: {description: Whether the DER export changed., type: bool, returned: success}
+cer_changed: {description: Whether the DER-encoded C(.cer) certificate export changed., type: bool,
+  returned: success, version_added: 1.3.0}
+txt_changed: {description: Whether the text export changed., type: bool, returned: success}
+archive_changed: {description: Whether replaced generation material was archived., type: bool,
+  returned: success}
+inventory_changed: {description: Whether CA inventory state changed., type: bool, returned: success}
+renewal: {description: Renewal decision for this run., type: dict, returned: success}
+csr_path: {description: CSR path., type: str, returned: success}
+cert_path: {description: PEM certificate path., type: str, returned: success}
+cer_path: {description: 'DER-encoded C(.cer) certificate export path, or empty string when
+    not requested.', type: str, returned: success, version_added: 1.3.0}
+txt_path: {description: 'Text export path, or empty string.', type: str, returned: success}
 """
 
 # Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.

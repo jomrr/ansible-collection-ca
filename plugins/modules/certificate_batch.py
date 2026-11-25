@@ -14,7 +14,7 @@ description:
 - Dispatch managed CA collection certificates in one batch.
 extends_documentation_fragment: [jomrr.ca.context.batch, jomrr.ca.context.ownership, jomrr.ca.context.publishing,
   jomrr.ca.context.cryptography, jomrr.ca.context.dispatch_notes, jomrr.ca.certificate, jomrr.ca.certificate_definition.batch,
-  jomrr.ca.certificate_definition.authorities]
+  jomrr.ca.authority_definition.issuers]
 options:
   subject:
     description: Role-level subject defaults.

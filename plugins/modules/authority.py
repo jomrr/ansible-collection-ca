@@ -71,20 +71,30 @@ EXAMPLES = r"""
 """
 
 RETURN = r"""
-generation_changed:
-  description: Whether retained public issuer material or legacy URL state changed.
-  type: bool
-  returned: success
-  version_added: 1.1.0
-directory_changed:
-  description: Always C(false) for authorities.
-  type: bool
-  returned: success
-chain_changed:
-  description: Always C(false) for authorities.
-  type: bool
-  returned: success
-extends_documentation_fragment: [jomrr.ca.certificate]
+generation_changed: {description: Whether retained public issuer material or legacy URL state
+    changed., type: bool, returned: success, version_added: 1.1.0}
+directory_changed: {description: Always C(false) for authorities., type: bool, returned: success}
+chain_changed: {description: Always C(false) for authorities., type: bool, returned: success}
+key_changed: {description: Whether the CA private key changed., type: bool, returned: success}
+csr_changed: {description: Whether the CA CSR changed., type: bool, returned: success}
+cert_changed: {description: Whether the PEM CA certificate changed., type: bool, returned: success}
+der_changed: {description: Whether the DER export of the CA certificate changed., type: bool,
+  returned: success}
+cer_changed: {description: Whether the DER-encoded C(.cer) CA certificate export changed.,
+  type: bool, returned: success, version_added: 1.3.0}
+txt_changed: {description: Whether the text export of the CA certificate changed., type: bool,
+  returned: success}
+archive_changed: {description: Whether replaced CA generation material was archived., type: bool,
+  returned: success}
+inventory_changed: {description: Whether CA inventory state changed., type: bool, returned: success}
+renewal: {description: Renewal decision for this authority., type: dict, returned: success}
+csr_path: {description: CA CSR path., type: str, returned: success}
+cert_path: {description: PEM CA certificate path., type: str, returned: success}
+cer_path: {description: 'DER-encoded C(.cer) CA certificate path, or empty string when not
+    requested.', type: str, returned: success, version_added: 1.3.0}
+txt_path: {description: 'CA certificate text export path, or empty string.', type: str, returned: success}
+formats: {description: Normalized CA certificate formats., type: list, returned: success,
+  elements: str}
 """
 
 # Ansible requires DOCUMENTATION, EXAMPLES and RETURN before normal imports.

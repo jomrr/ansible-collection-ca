@@ -5,14 +5,13 @@
 """Shared certificate dispatch arguments and X.509 return values."""
 
 from dataclasses import dataclass
-from typing import ClassVar
 
 
 @dataclass
 class ModuleDocFragment:
-    """Ansible documentation fragments."""
+    """Ansible documentation fragments with statically readable values."""
 
-    DOCUMENTATION: ClassVar[str] = r"""
+    DOCUMENTATION = r"""
 requirements:
 - asn1crypto >= 1.5.1, < 2 on the managed host for pfx/p12 exports
 notes:
@@ -100,66 +99,4 @@ options:
     version_added: 0.1.0
     type: str
     default: ''
-"""
-
-    RETURN: ClassVar[str] = r"""
-key_changed:
-  description: Whether the private key changed.
-  type: bool
-  returned: success
-csr_changed:
-  description: Whether the CSR changed.
-  type: bool
-  returned: success
-cert_changed:
-  description: Whether the PEM certificate changed.
-  type: bool
-  returned: success
-der_changed:
-  description: Whether the DER export changed.
-  type: bool
-  returned: success
-cer_changed:
-  description: Whether the DER-encoded C(.cer) certificate export changed.
-  type: bool
-  returned: success
-  version_added: 1.3.0
-txt_changed:
-  description: Whether the text export changed.
-  type: bool
-  returned: success
-archive_changed:
-  description: Whether replaced generation material was archived.
-  type: bool
-  returned: success
-inventory_changed:
-  description: Whether CA inventory state changed.
-  type: bool
-  returned: success
-renewal:
-  description: Renewal decision for this run.
-  type: dict
-  returned: success
-csr_path:
-  description: CSR path.
-  type: str
-  returned: success
-cert_path:
-  description: PEM certificate path.
-  type: str
-  returned: success
-cer_path:
-  description: DER-encoded C(.cer) certificate export path, or empty string when not requested.
-  type: str
-  returned: success
-  version_added: 1.3.0
-txt_path:
-  description: Text export path, or empty string.
-  type: str
-  returned: success
-formats:
-  description: Normalized certificate formats.
-  type: list
-  returned: success
-  elements: str
 """

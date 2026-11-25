@@ -26,7 +26,7 @@ notes:
   may already have been updated and are reconciled on the next run.
 - This is independent of M(jomrr.ca.authority_batch), allowing CRL-only task tags.
 extends_documentation_fragment: [jomrr.ca.context.batch, jomrr.ca.context.ownership,
-  jomrr.ca.context.publishing, jomrr.ca.context.cryptography, jomrr.ca.crl_batch]
+  jomrr.ca.context.publishing, jomrr.ca.context.cryptography, jomrr.ca.authority_definition.crl]
 options:
   revocations:
     description:

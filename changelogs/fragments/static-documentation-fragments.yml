@@ -1,0 +1,5 @@
+---
+bugfixes:
+  - Documentation fragments - use literal string assignments for the static parser
+    in antsibull-docs 2.29 and later. Preserve the resolved module documentation,
+    including batch schemas, issuer metadata and return values.
