@@ -1,8 +1,21 @@
 ==========================
-jomrr.ca 1.4 Release Notes
+jomrr.ca 1.5 Release Notes
 ==========================
 
 .. contents:: Topics
+
+v1.5.0
+======
+
+Minor Changes
+-------------
+
+- certificate, certificate_batch - accept an optional issuer per certificate, overriding the type default for all profiles while retaining authority resolution and issuance checks.
+
+Bugfixes
+--------
+
+- fritzbox_deploy, publish, publish_archive - protect only credential fields in certificate, deployment and authority definitions so public names, formats, paths and recap text remain readable.
 
 v1.4.1
 ======

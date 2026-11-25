@@ -244,3 +244,17 @@ releases:
     fragments:
       - static-documentation-fragments.yml
     release_date: '2026-11-25'
+  1.5.0:
+    changes:
+      bugfixes:
+        - fritzbox_deploy, publish, publish_archive - protect only credential fields
+          in certificate, deployment and authority definitions so public names, formats,
+          paths and recap text remain readable.
+      minor_changes:
+        - certificate, certificate_batch - accept an optional issuer per certificate,
+          overriding the type default for all profiles while retaining authority resolution
+          and issuance checks.
+    fragments:
+      - certificate-issuer-override.yml
+      - precise-deployment-publication-redaction.yml
+    release_date: '2026-11-25'

@@ -1,3 +1,0 @@
-bugfixes:
-  - fritzbox_deploy, publish, publish_archive - protect only credential fields in certificate,
-    deployment and authority definitions so public names, formats, paths and recap text remain readable.
