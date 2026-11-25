@@ -1,8 +1,17 @@
 ==========================
-jomrr.ca 1.3 Release Notes
+jomrr.ca 1.4 Release Notes
 ==========================
 
 .. contents:: Topics
+
+v1.4.0
+======
+
+Minor Changes
+-------------
+
+- host_certificates - select per-host certificate overrides with overrides_var (default ca_certificate), append and deduplicate SANs, and sort by the resulting unique certificate names without modifying input data.
+- host_certificates - select the FQDN host variable with fqdn_var (default fqdn) instead of the fallback domain; domain may be omitted when all selected hosts supply that variable.
 
 v1.3.1
 ======
