@@ -45,6 +45,62 @@
       - ca_filter_custom[0].key_type == 'P-256'
       - ca_filter_custom[0].formats == ['pem', 'bundle']
 
+- name: Add host-specific DNS name and certificate options
+  ansible.builtin.add_host:
+    name: web02
+    fqdn: web02.other.test
+    ca_certificate:
+      type: tls_client
+      key_type: RSA
+      key_size: 3072
+      formats: [pem, bundle]
+      san: [DNS:alias.other.test, DNS:web02.other.test, DNS:alias.other.test]
+      subject:
+        organization: Host-specific client
+
+- name: Build definitions with real host-variable overrides
+  ansible.builtin.set_fact:
+    ca_filter_host_overrides: >-
+      {{ groups['ca_filter_hosts'] | jomrr.ca.host_certificates(hostvars, 'example.test') }}
+
+- name: Verify fallback and host-specific definition
+  vars:
+    ca_filter_expected_custom:
+      name: web02
+      type: tls_client
+      common_name: web02.other.test
+      key_type: RSA
+      key_size: 3072
+      formats: [pem, bundle]
+      san: [DNS:web02.other.test, DNS:web02, 'IP:2001:db8::20', DNS:alias.other.test]
+      subject:
+        organization: Host-specific client
+  ansible.builtin.assert:
+    that:
+      - ca_filter_host_overrides[0] == ca_filter_certificates[0]
+      - ca_filter_host_overrides[1] == ca_filter_expected_custom
+      - "(['web02'] | jomrr.ca.host_certificates(hostvars)) == [ca_filter_expected_custom]"
+
+- name: Read only relevant host variables
+  vars:
+    ca_lazy_hostvars:
+      web01:
+        ansible_host: 192.0.2.10
+        inventory_fqdn: '{{ "web01.other.test" }}'
+        pki_certificate:
+          key_type: '{{ "P-256" }}'
+        fqdn: '{{ ca_intentionally_undefined_default_fqdn }}'
+        ca_certificate: '{{ ca_intentionally_undefined_default_overrides }}'
+        unrelated_secret: '{{ ca_intentionally_undefined_secret }}'
+  ansible.builtin.assert:
+    that:
+      - >-
+        (['web01'] | jomrr.ca.host_certificates(ca_lazy_hostvars,
+        fqdn_var='inventory_fqdn', overrides_var='pki_certificate'))[0].common_name == 'web01.other.test'
+      - >-
+        (['web01'] | jomrr.ca.host_certificates(ca_lazy_hostvars,
+        fqdn_var='inventory_fqdn', overrides_var='pki_certificate'))[0].key_type == 'P-256'
+
 - name: Reject invalid inventory addresses through Ansible
   block:
     - name: Attempt a non-IP SAN
@@ -61,21 +117,33 @@
         that:
           - "'ansible_host must be an IPv4 or IPv6 address' in ansible_failed_result.msg"
 
-- name: Preserve lazy undefined-variable errors
+- name: Preserve lazy undefined-variable errors in selected fields
   vars:
     ca_undefined_hostvars:
-      web01:
+      address:
         ansible_host: '{{ ca_intentionally_undefined_address }}'
+      fqdn:
+        ansible_host: 192.0.2.10
+        inventory_fqdn: '{{ ca_intentionally_undefined_fqdn }}'
+      override:
+        ansible_host: 192.0.2.10
+        pki_certificate:
+          key_type: '{{ ca_intentionally_undefined_override }}'
   block:
-    - name: Attempt to resolve an undefined address
+    - name: Attempt to resolve undefined selected fields
       ansible.builtin.set_fact:
         ca_invalid_certificates: >-
-          {{ ['web01'] | jomrr.ca.host_certificates(ca_undefined_hostvars, 'example.test') }}
-    - name: Fail if an undefined address was accepted
+          {{ [item] | jomrr.ca.host_certificates(ca_undefined_hostvars, 'example.test',
+               fqdn_var='inventory_fqdn', overrides_var='pki_certificate') }}
+      loop: [address, fqdn, override]
+    - name: Fail if an undefined field was accepted
       ansible.builtin.fail:
-        msg: Undefined address was accepted
+        msg: Undefined field was accepted
   rescue:
     - name: Verify the original undefined-variable diagnostic
       ansible.builtin.assert:
         that:
-          - "'ca_intentionally_undefined_address' in ansible_failed_result.msg"
+          - "('ca_intentionally_undefined_' ~ item.item) in item.msg"
+      loop: '{{ ansible_failed_result.results }}'
+      loop_control:
+        label: '{{ item.item }}'

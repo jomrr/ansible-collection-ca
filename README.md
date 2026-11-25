@@ -57,7 +57,7 @@ ansible-galaxy collection install jomrr.ca
 | ---- | ---------- | ---------- | ----------- |
 | [`jomrr.ca.artifacts`](plugins/filter/artifacts.py) | n/a | n/a | List configured public and opted-in private certificate files |
 | [`jomrr.ca.authority_map`](plugins/filter/authority_map.py) | n/a | n/a | Index and validate certificate authorities by name |
-| [`jomrr.ca.host_certificates`](plugins/filter/host_certificates.py) | n/a | n/a | Build TLS server certificate definitions from inventory hosts |
+| [`jomrr.ca.host_certificates`](plugins/filter/host_certificates.py) | n/a | n/a | Build certificate definitions from inventory hosts |
 
 ## Execution and Requirements
 
@@ -138,7 +138,7 @@ certificates. FRITZ!Box uses a self-signed certificate by default, so
 
 ## Certificates from Inventory Hosts
 
-Build TLS server certificate definitions from short inventory host names:
+Build certificate definitions from short inventory host names:
 
 ```yaml
 ca_certificates: >-
@@ -149,8 +149,16 @@ Each selected host needs an IPv4 or IPv6 `ansible_host`. The result is
 sorted by name and includes the full and short DNS names plus the IP SAN.
 Defaults are `key_type: P-384` and
 `formats: [pem, der, txt, fullchain]`; both can be overridden.
+A host's `fqdn` variable replaces `<host>.<domain>`; omit the domain
+argument when every selected host has `fqdn`. Host-specific
+`ca_certificate` dictionaries override defaults such as `type`,
+`key_type` or `formats`, and forward additional certificate options.
+Choose different host-variable names with the keyword parameters
+`fqdn_var='inventory_fqdn'` and `overrides_var='pki_certificate'`.
+Their `san` lists extend the automatic SANs without duplicates.
+Other lists and dictionaries replace the corresponding value completely.
 Pass the result to `certificate_batch.certificates`, with
-`certificate_types.tls_server.issuer` selecting the CA as usual.
+`certificate_types.<type>.issuer` selecting the CA for each resulting type.
 See [host_certificates](docs/host_certificates.md) for the full output.
 
 ## Artifact Manifests
