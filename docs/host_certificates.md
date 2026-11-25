@@ -130,5 +130,6 @@ variables need not be defined. `ansible_host` remains required for every host.
 
 Use the result as `certificates` for `jomrr.ca.certificate_batch`, or loop over it
 as `certificate` for `jomrr.ca.certificate`. Configure the issuing CA through
-`certificate_types.<type>.issuer` and `authorities` as usual, including an entry
-for each overridden type.
+`certificate_types.<type>.issuer` and `authorities`, or set `issuer` in the
+host-specific certificate overrides. Keep a type-map entry for each selected
+type; its issuer is optional when the certificate specifies one.

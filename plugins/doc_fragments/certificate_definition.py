@@ -148,9 +148,15 @@ options:
         description: Inhibit any policy.
         type: raw
       type:
-        description: Built-in certificate profile; defaults and issuer come from this type.
+        description: Built-in certificate profile providing defaults, including the default issuer.
         type: str
         required: true
+      issuer:
+        description: Authority name overriding C(certificate_types[type].issuer) for this
+          certificate. Applies to every profile. The name must exist in O(authorities).
+          Omit or set to null to use the type default; an empty name is invalid.
+        version_added: 1.5.0
+        type: str
       csr_path:
         description: External PEM CSR path on the managed CA host; mutually exclusive with
           C(csr_content).
@@ -325,8 +331,14 @@ options:
       certificate_policies: {description: Certificate policies., type: list, elements: dict}
       policy_constraints: {description: Policy constraints., type: dict}
       inhibit_any_policy: {description: Inhibit any policy., type: raw}
-      type: {description: Built-in certificate profile; defaults and issuer come from this
-          type., type: str, required: true}
+      type: {description: 'Built-in certificate profile providing defaults, including the
+          default issuer.', type: str, required: true}
+      issuer:
+        description: Authority name overriding C(certificate_types[type].issuer) for this
+          certificate. Applies to every profile. The name must exist in O(authorities).
+          Omit or set to null to use the type default; an empty name is invalid.
+        version_added: 1.5.0
+        type: str
       csr_path: {description: External PEM CSR path on the managed CA host; mutually exclusive
           with C(csr_content)., type: path}
       csr_content: {description: External PEM CSR content; mutually exclusive with C(csr_path).,

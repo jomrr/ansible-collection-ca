@@ -47,6 +47,7 @@ def certificate_options() -> dict[str, dict[str, Any]]:
         {
             "type": {"type": "str", "required": True},
             "name": {"type": "str", "required": True},
+            "issuer": {"type": "str"},
             "csr_path": {"type": "path"},
             "csr_content": {"type": "str"},
             "output_dir": {"type": "path"},

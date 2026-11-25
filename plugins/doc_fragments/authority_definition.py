@@ -270,7 +270,7 @@ options:
     elements: dict
     required: true
     suboptions:
-      name: {description: 'Authority name matched by C(certificate_types[type].issuer).',
+      name: {description: 'Authority name matched by the certificate issuer override or C(certificate_types[type].issuer).',
         type: str, required: true}
       formats: {description: Authority formats metadata. Accepted for reusing definitions;
           unused by the dispatcher., type: list, elements: str}

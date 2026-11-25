@@ -14,7 +14,7 @@ All chain copies and bundles exclude the self-signed root; see
 Certificate models can also reference `csr_path` or `csr_content` to sign an
 external CSR through the same issuer grouping and inventory flow.
 Use `type: issuing_ca` for an external issuing CA and map
-`certificate_types.issuing_ca.issuer` to the managed root. The defaults, input
+the certificate's `issuer` or `certificate_types.issuing_ca.issuer` to the managed root. The defaults, input
 approval rules and outputs match the [single-certificate example](certificate.md#sign-an-external-issuing-ca-with-the-root).
 For every profile, certificates with `CA:TRUE` receive no automatic leaf EKU
 or DNS SAN. Each entry can set explicit extension values; `extended_key_usage: []`
@@ -34,6 +34,12 @@ name. The `mskdc` profile still adds its required PKINIT SAN.
 - Writes all certificate inventory fragments and composes the CA inventory once
   after the batch completes.
 
+Each item can set `issuer` to override `certificate_types[type].issuer`. The
+rule applies to every profile, so certificates of the same type may use different
+authorities in one batch. Omitted or null values use the type default; empty or
+unknown names fail. The selected authority supplies all signing, chain, lifetime
+and issuance-check inputs.
+
 ## Module Parameters
 
 - **`base_dir`**: Base CA directory used to locate issuer material and derive
@@ -50,8 +56,9 @@ name. The `mskdc` profile still adds its required PKINIT SAN.
   [jomrr.ca.certificate](certificate.md#certificate-model).
   Type: list[dict]; Required: yes; Default: none; Secret: nested secret fields only
 
-- **`certificate_types`**: Role type map. The selected type must define `issuer`
-  and may define `required_fields`.
+- **`certificate_types`**: Role type map. The selected type must exist and may define
+  `required_fields`. Its `issuer` is required only when the certificate has no
+  explicit `issuer`.
   Type: dict; Required: yes; Default: none; Secret: no
 
 - **`authorities`**: Authority list used to resolve issuer passphrase and
@@ -144,3 +151,26 @@ generating keys, signing material, or writing files and inventory. Missing issue
 are treated as pending creation; validation requiring their future material is
 deferred. Existing lock files are held shared; missing locks are not created.
 Diff mode is unsupported.
+
+## Per-certificate Issuer
+
+Both `component` and `network` must be defined in `ca_authorities`.
+`web01` uses the type default; `router01` uses its explicit issuer.
+
+```yaml
+- name: Issue the same profile with different authorities
+  jomrr.ca.certificate_batch:
+    base_dir: /etc/pki/example
+    authorities: "{{ ca_authorities }}"
+    certificate_types:
+      tls_server:
+        issuer: component
+    certificates:
+      - name: web01
+        type: tls_server
+        common_name: web01.example.test
+      - name: router01
+        type: tls_server
+        common_name: router01.example.test
+        issuer: network
+```

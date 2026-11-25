@@ -44,6 +44,22 @@ EXAMPLES = r"""
     renewal: "{{ ca_renewal }}"
     owner: root
     group: root
+
+- name: Issue the same profile with different authorities
+  jomrr.ca.certificate_batch:
+    base_dir: /etc/pki/example
+    authorities: "{{ ca_authorities }}"
+    certificate_types:
+      tls_server:
+        issuer: component
+    certificates:
+      - name: web01
+        type: tls_server
+        common_name: web01.example.test
+      - name: router01
+        type: tls_server
+        common_name: router01.example.test
+        issuer: network
 """
 
 RETURN = r"""

@@ -54,6 +54,11 @@ the root-issuer check, so a managed root can sign the request. The complete
 managed chain still enforces CA constraints before any certificate material is
 written. Explicit extension overrides retain their existing behavior.
 
+For every profile, the certificate's `issuer` takes precedence over
+`certificate_types[type].issuer`. The selected authority provides the signing key,
+chain, lifetime and issuance checks. The type-map entry remains required; its
+issuer can be omitted when the certificate specifies one.
+
 The helper validates certificate type, issuer existence, required profile
 fields, PFX passphrase requirements, merged subject defaults, renewal policy
 overrides, and MSKDC Kerberos realm propagation before calling the X.509 helper.

@@ -130,12 +130,17 @@ def _certificate_profile(
         raise ValueError(f"Certificate {name} uses unknown type {cert_type}")
 
     profile = _as_dict(certificate_types[cert_type], f"Certificate type {cert_type}")
-    issuer = string_value(
-        require_value(profile, "issuer", f"Certificate type {cert_type}")
-    )
+    if "issuer" in certificate:
+        issuer = string_value(
+            require_value(certificate, "issuer", f"Certificate {name}")
+        )
+    else:
+        issuer = string_value(
+            require_value(profile, "issuer", f"Certificate type {cert_type}")
+        )
     if issuer not in authorities:
         raise ValueError(
-            f"Certificate type {cert_type} references unknown issuer {issuer}"
+            f"Certificate {name} references unknown issuer {issuer}"
         )
 
     issuer_authority = authorities[issuer]

@@ -1,0 +1,109 @@
+---
+- name: Allocate certificate issuer fixture
+  ansible.builtin.tempfile:
+    state: directory
+  register: ca_issuer_fixture
+
+- name: Exercise per-certificate issuer selection
+  vars:
+    ca_issuer_authorities:
+      - name: root
+        parent: root
+        common_name: Issuer Test Root
+        days: 3650
+        key_type: P-256
+        key_passphrase: root-test-passphrase
+      - name: primary
+        parent: root
+        common_name: Shared Issuer Subject
+        days: 365
+        default_days: 30
+        key_type: P-256
+        key_passphrase: primary-test-passphrase
+      - name: secondary
+        parent: root
+        common_name: Shared Issuer Subject
+        days: 365
+        default_days: 60
+        key_type: P-256
+        key_passphrase: secondary-test-passphrase
+    ca_issuer_params: &issuer_params
+      base_dir: '{{ ca_issuer_fixture.path }}'
+      ca_name: issuer_selection
+      authorities: '{{ ca_issuer_authorities }}'
+      certificate_types:
+        tls_server:
+          issuer: primary
+      certificates:
+        - name: default-server
+          type: tls_server
+          common_name: default.example.test
+          key_type: P-256
+          formats: [pem, fullchain]
+        - name: override-server
+          type: tls_server
+          issuer: secondary
+          common_name: override.example.test
+          key_type: P-256
+          formats: [pem, fullchain]
+  block:
+    - name: Create issuers with equal subjects and distinct keys and passphrases
+      jomrr.ca.authority_batch:
+        base_dir: '{{ ca_issuer_fixture.path }}'
+        ca_name: issuer_selection
+        authorities: '{{ ca_issuer_authorities }}'
+
+    - name: Predict issuance with two issuers for the same profile
+      jomrr.ca.certificate_batch: *issuer_params
+      check_mode: true
+      register: ca_issuer_prediction
+
+    - name: Issue both certificates and repeat
+      jomrr.ca.certificate_batch: *issuer_params
+      loop: [create, repeat]
+      register: ca_issuer_runs
+
+    - name: Verify issuer grouping and idempotence
+      ansible.builtin.assert:
+        that:
+          - ca_issuer_prediction is changed
+          - ca_issuer_runs.results[0].changed
+          - not ca_issuer_runs.results[1].changed
+          - ca_issuer_runs.results[0].count == 2
+          - "ca_issuer_runs.results[0].issuer_groups == {'primary': 1, 'secondary': 1}"
+          - "ca_issuer_runs.results[1].issuer_groups == {'primary': 1, 'secondary': 1}"
+
+    - name: Verify signatures, chains, lifetime and inventory independently
+      ansible.builtin.script:
+        cmd: "{{ ca_issuer_verify_script | default('verify.py') }} {{ ca_issuer_fixture.path }}"
+        executable: '{{ ansible_python_interpreter }}'
+      changed_when: false
+
+    - name: Reconcile the override through the single module without a type issuer
+      jomrr.ca.certificate:
+        base_dir: '{{ ca_issuer_fixture.path }}'
+        ca_name: issuer_selection
+        authorities: '{{ ca_issuer_authorities }}'
+        certificate_types:
+          tls_server: {}
+        certificate: '{{ ca_issuer_params.certificates[1] }}'
+      register: ca_issuer_single
+
+    - name: Verify the single module uses the same selection
+      ansible.builtin.assert:
+        that: ca_issuer_single is not changed
+
+    - name: Check the converged batch
+      jomrr.ca.certificate_batch: *issuer_params
+      check_mode: true
+      register: ca_issuer_check
+
+    - name: Verify the batch remains converged
+      ansible.builtin.assert:
+        that: ca_issuer_check is not changed
+
+  always:
+    - name: Remove certificate issuer fixture
+      ansible.builtin.file:
+        path: '{{ ca_issuer_fixture.path }}'
+        state: absent

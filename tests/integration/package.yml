@@ -10,6 +10,7 @@
     ca_rollover_script: "{{ playbook_dir }}/targets/authority/files/rollover.py"
     ca_pathlen_script: "{{ playbook_dir }}/targets/authority/files/pathlen.py"
     ca_pkcs12_script: "{{ playbook_dir }}/targets/authority/files/pkcs12_profile.py"
+    ca_issuer_verify_script: "{{ playbook_dir }}/targets/certificate_batch/files/verify.py"
   tasks:
     - name: Exercise deployment validation
       ansible.builtin.import_tasks: targets/fritzbox_deploy/tasks/main.yml
@@ -17,6 +18,8 @@
       ansible.builtin.import_tasks: targets/authority/tasks/main.yml
     - name: Exercise authority batch
       ansible.builtin.import_tasks: targets/authority_batch/tasks/main.yml
+    - name: Exercise per-certificate issuers
+      ansible.builtin.import_tasks: targets/certificate_batch/tasks/main.yml
     - name: Exercise CRL batch
       ansible.builtin.import_tasks: targets/crl_batch/tasks/main.yml
     - name: Exercise direct publication

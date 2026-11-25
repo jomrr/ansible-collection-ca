@@ -88,7 +88,8 @@ It supplies `basic_constraints: ["CA:TRUE", "pathlen:0"]` and
 `key_usage: ["keyCertSign", "cRLSign"]` without adding EKU or SAN values.
 Explicit extension overrides remain supported. These values come from the task
 and profile, not from the CSR's requested extensions.
-Set `certificate_types.issuing_ca.issuer` to the root to sign directly with it;
+Set `certificate.issuer` or `certificate_types.issuing_ca.issuer` to the root
+to sign directly with it;
 the issuer chain is then empty and fullchain contains only the issued CA
 certificate. A root with `pathlen:1`
 allows this additional issuing CA; an existing issuing CA with `pathlen:0` does
@@ -184,8 +185,9 @@ original issuer. See [CA rollover and publication](authority.md#ca-key-rollover-
   Type: dict; Required: yes; Default: none; Allowed values: see certificate
   model below; Secret: nested secret fields only
 
-- **`certificate_types`**: Role type map. The selected type must define `issuer`
-  and may define `required_fields`.
+- **`certificate_types`**: Role type map. The selected type must exist and may define
+  `required_fields`. Its `issuer` is required only when the certificate has no
+  explicit `issuer`.
   Type: dict; Required: yes; Default: none; Allowed values: map keyed by profile
   type; Secret: no
 
@@ -229,6 +231,13 @@ These keys are accepted inside `certificate`.
 - **`type`**: Certificate profile.
   Type: str; Required: yes; Default: none; Allowed values: built-in profile
   name; Secret: no
+
+- **`issuer`** (added in 1.5.0): Authority name for this certificate, overriding
+  `certificate_types[type].issuer` for every supported profile. Omitted or null
+  uses the type default; an empty or unknown name is rejected. The selected
+  authority supplies the signing key, chain, publication URLs and `default_days`,
+  and is used for all existing issuance checks.
+  Type: str; Required: no; Default: type issuer; Secret: no
 
 - **`common_name`**: Common Name. Required for CA-generated certificates.
   Required for CSR-signed certificates unless `subject_ordered` supplies the

@@ -71,7 +71,7 @@ notes:
   certificate-signing Key Usage and path length limits before writing certificate material.
 - Use C(type=issuing_ca) (added in version 1.1.0) to sign an external issuing CA CSR
   supplied through C(csr_path) on the managed CA host or inline PEM C(csr_content).
-  Set C(certificate_types.issuing_ca.issuer) to the managed root name and supply
+  Set the certificate's C(issuer), or C(certificate_types.issuing_ca.issuer), to the managed root name and supply
   its C(key_passphrase) in C(authorities). The external private key stays external.
 - The C(issuing_ca) profile defaults to C(basic_constraints=[CA:TRUE, pathlen:0])
   and C(key_usage=[keyCertSign, cRLSign]), with no EKU or SAN defaults.
@@ -84,13 +84,15 @@ notes:
 - The signed external CA is inventoried as a certificate, not installed as a managed
   authority. Import C(cert_path) or C(fullchain_path) into the external CA separately;
   that system manages its own leaf certificates and CRLs.
-- The selected issuer comes from C(certificate_types[type].issuer). A CA with C(pathlen:0)
+- For every profile, the certificate's C(issuer) overrides C(certificate_types[type].issuer).
+  The chosen authority supplies the signing key, chain and default lifetime and undergoes
+  all issuance checks. A CA with C(pathlen:0)
   cannot sign another non-self-issued CA usable for leaf issuance. A larger or absent
   child path length does not override limits inherited from ancestors.
 options:
   certificate_types:
-    description: Role type map. The selected type must define C(issuer) and may define
-      C(required_fields).
+    description: Type map. The selected type must exist and may define C(required_fields).
+      Its C(issuer) is required only when the certificate has no explicit C(issuer).
     version_added: 0.1.0
     type: dict
     required: true

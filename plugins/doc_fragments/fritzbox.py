@@ -11,6 +11,21 @@ class ModuleDocFragment:
 
     DOCUMENTATION = r"""
 options:
+  deploy:
+    description: Explicit deployment settings. Supplied values override certificate.fritzbox_deploy
+      and top-level settings.
+    type: dict
+    suboptions:
+      enabled: {description: Deployment enable metadata; select hosts or tasks at the caller.,
+        type: bool}
+      url: {description: FRITZ!Box URL. HTTPS is required for idempotence comparison., type: str}
+      username: {description: Login user., type: str}
+      password: {description: 'Login password, protected by Ansible C(no_log).', type: str}
+      timeout: {description: Network timeout in seconds., type: int}
+      validate_certs: {description: Validate the current FRITZ!Box HTTPS certificate while
+          connecting., type: bool}
+      bundle_path: {description: Explicit FritzBox bundle path., type: path}
+      force: {description: Upload even when the device certificate matches., type: bool}
   certificate:
     description: Optional source for output_dir and nested fritzbox_deploy. Complete or partial
       certificate definitions are accepted; issuance metadata is unused. Credential fields
@@ -18,6 +33,10 @@ options:
     type: dict
     suboptions:
       name: {description: 'Certificate metadata, unused by deployment.', type: str}
+      issuer:
+        description: Certificate issuer metadata, unused by deployment.
+        version_added: 1.5.0
+        type: str
       formats: {description: 'Certificate metadata, unused by deployment.', type: list, elements: str}
       bundle_key_format:
         description: Certificate metadata, unused by deployment.
@@ -108,19 +127,4 @@ options:
               connecting., type: bool}
           bundle_path: {description: Explicit FritzBox bundle path., type: path}
           force: {description: Upload even when the device certificate matches., type: bool}
-  deploy:
-    description: Explicit deployment settings. Supplied values override certificate.fritzbox_deploy
-      and top-level settings.
-    type: dict
-    suboptions:
-      enabled: {description: Deployment enable metadata; select hosts or tasks at the caller.,
-        type: bool}
-      url: {description: FRITZ!Box URL. HTTPS is required for idempotence comparison., type: str}
-      username: {description: Login user., type: str}
-      password: {description: 'Login password, protected by Ansible C(no_log).', type: str}
-      timeout: {description: Network timeout in seconds., type: int}
-      validate_certs: {description: Validate the current FRITZ!Box HTTPS certificate while
-          connecting., type: bool}
-      bundle_path: {description: Explicit FritzBox bundle path., type: path}
-      force: {description: Upload even when the device certificate matches., type: bool}
 """

@@ -17,6 +17,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._certificate_engine impor
     ensure_certificate_artifacts,
     ensure_certificate_batch,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._profiles import (
+    CERTIFICATE_PROFILE_DEFAULTS,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_chain import ordered_chain
 from ansible_collections.jomrr.ca.plugins.module_utils._x509_constraints import (
     validate_issuer_constraints,
@@ -133,6 +136,9 @@ class IssuanceConstraintTests(unittest.TestCase):
     def test_external_ca_rejected_before_writes(self) -> None:
         """An external CA CSR is subject to the same issuer path constraints."""
         for params in (self.ca.request(), self.issuing_ca_request("issuer")):
+            profile = params["certificate"]["type"]
+            params["certificate_types"][profile]["issuer"] = "root"
+            params["certificate"]["issuer"] = "issuer"
             with (
                 self.subTest(profile=params["certificate"]["type"]),
                 self.assertRaisesRegex(ValueError, "pathlen:0.*exceeded"),
@@ -263,6 +269,37 @@ class IssuanceConstraintTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "pathlen:0.*exceeded"):
             ensure_certificate_batch(params)
         self.assertFalse((self.base / "certs/web").exists())
+
+    def test_explicit_issuer_for_every_profile(self) -> None:
+        """Every profile honors the override with an absent or different default."""
+        root = x509.load_pem_x509_certificate(
+            (self.base / "ca/root-ca.pem").read_bytes()
+        )
+        for profile in CERTIFICATE_PROFILE_DEFAULTS:
+            with self.subTest(profile=profile):
+                params = self.ca.request()
+                params["certificate_types"] = {profile: {"issuer": "issuer"}}
+                params["certificate"].update(
+                    name=f"override-{profile}", type=profile, issuer="root",
+                    krb5_realm="EXAMPLE.TEST",
+                )
+                result = ensure_certificate_artifacts(params)
+                issued = x509.load_pem_x509_certificate(
+                    Path(result["cert_path"]).read_bytes()
+                )
+                issued.verify_directly_issued_by(root)
+                params["certificate_types"][profile].pop("issuer")
+                self.assertFalse(ensure_certificate_artifacts(params)["changed"])
+                for issuer, error in (
+                    ("missing", "unknown issuer missing"),
+                    ("", "requires issuer"),
+                    (None, "requires issuer"),
+                ):
+                    params["certificate"]["issuer"] = issuer
+                    before = snapshot(self.base)
+                    with self.assertRaisesRegex(ValueError, error):
+                        ensure_certificate_artifacts(params)
+                    self.assertEqual(before, snapshot(self.base))
 
     def test_self_issued_rollover_chain_reaches_root(self) -> None:
         """Same subject names do not hide the signing root's inherited limit."""
