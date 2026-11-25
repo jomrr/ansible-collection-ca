@@ -232,6 +232,12 @@ options:
           validate_certs:
             description: Deployment TLS setting, unused by the certificate dispatcher.
             type: bool
+          bundle_path:
+            description: Deployment bundle path, unused by the certificate dispatcher.
+            type: path
+          force:
+            description: Deployment force flag, unused by the certificate dispatcher.
+            type: bool
 """
 
     BATCH = r"""
@@ -382,4 +388,8 @@ options:
             type: int}
           validate_certs: {description: 'Deployment TLS setting, unused by the certificate
               dispatcher.', type: bool}
+          bundle_path: {description: 'Deployment bundle path, unused by the certificate dispatcher.',
+            type: path}
+          force: {description: 'Deployment force flag, unused by the certificate dispatcher.',
+            type: bool}
 """

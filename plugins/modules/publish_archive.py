@@ -24,7 +24,7 @@ description:
   current CA certificate at a legacy URL belonging to an older key.
 requirements:
 - cryptography >= 43 on the managed host when deriving artifacts from O(authorities)
-extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.file_mode]
+extends_documentation_fragment: [jomrr.ca.publication, jomrr.ca.context, jomrr.ca.context.ownership, jomrr.ca.context.file_mode]
 options:
   dest:
     description: Archive path on the managed host.
@@ -34,12 +34,6 @@ options:
   artifacts:
     description: Explicit public artifacts to include. Each item needs C(src), C(file),
       and C(area); when set, this overrides authority-derived artifacts.
-    version_added: 0.1.0
-    type: list
-    default: []
-    elements: dict
-  authorities:
-    description: Managed authorities used to derive default AIA/CDP artifacts.
     version_added: 0.1.0
     type: list
     default: []

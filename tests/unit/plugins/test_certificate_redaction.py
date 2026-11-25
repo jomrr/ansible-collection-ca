@@ -6,12 +6,19 @@ from __future__ import annotations
 
 import copy
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
 from ansible.module_utils.common.parameters import PASS_VARS
-from ansible_collections.jomrr.ca.plugins.modules import certificate, certificate_batch
+from ansible_collections.jomrr.ca.plugins.modules import (
+    certificate,
+    certificate_batch,
+    publish,
+    publish_archive,
+)
 from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
     module_diagnostics,
     module_transport,
@@ -156,3 +163,71 @@ class CertificateRedactionTests(unittest.TestCase):
             with self.subTest(batch=batch):
                 result = self.invoke(batch=batch, mode="check")
                 self.assertEqual(bool(result.get("skipped")), not batch)
+
+
+class PublicationRedactionTests(unittest.TestCase):
+    """Publish real files through Ansible with reusable authority definitions."""
+
+    def test_publication_results_and_failures(self) -> None:
+        """Public paths survive; nested credentials stay protected on every exit."""
+        secrets = ["issuer-test-secret", "parent-test-secret", "archived-test-secret"]
+        for plugin in (publish, publish_archive):
+            with (
+                self.subTest(module=plugin.__name__),
+                tempfile.TemporaryDirectory() as tmp,
+            ):
+                source = Path(tmp) / "certificate.cer"
+                source.write_bytes(b"public certificate fixture")
+                inputs: dict[str, Any] = {
+                    "base_dir": tmp,
+                    "dest": str(Path(tmp) / "certificates"),
+                    "artifacts": [
+                        {"src": str(source), "area": "aia", "file": "certificate.cer"}
+                    ],
+                    "authorities": [
+                        {"name": "public-only"},
+                        {
+                            "name": "issuer",
+                            "formats": ["cer"],
+                            "key_passphrase": secrets[0],
+                            "parent_key_passphrase": secrets[1],
+                            "archived_key_passphrases": {"generation": secrets[2]},
+                        },
+                    ],
+                }
+                if "inject_invocation" in PASS_VARS:
+                    inputs["_ansible_inject_invocation"] = True
+                for mode in ("create", "repeat", "check", "failure", "invalid"):
+                    with self.subTest(mode=mode):
+                        if mode == "failure":
+                            source.unlink()
+                        if mode == "invalid":
+                            inputs["force"] = "invalid-" + secrets[0]
+                        inputs["_ansible_check_mode"] = mode == "check"
+                        with (
+                            module_transport(inputs) as (output, log),
+                            self.assertRaises(SystemExit) as exited,
+                        ):
+                            plugin.main()
+                        self.assertEqual(
+                            exited.exception.code,
+                            1 if mode in ("failure", "invalid") else 0,
+                        )
+                        for secret in secrets:
+                            self.assertNotIn(secret, module_diagnostics(output, log))
+                        result = json.loads(output.getvalue())
+                        if mode in ("create", "repeat"):
+                            self.assertEqual(result["path"], inputs["dest"])
+                            self.assertEqual(result["changed"], mode == "create")
+                            field = (
+                                "published_paths"
+                                if plugin is publish
+                                else "archive_paths"
+                            )
+                            self.assertEqual(result[field], ["aia/certificate.cer"])
+                        if mode == "failure":
+                            self.assertIn("certificate.cer", result["msg"])
+                        args = result["invocation"]["module_args"]
+                        authority = args["authorities"][1]
+                        self.assertEqual(authority["name"], "issuer")
+                        self.assertEqual(authority["formats"], ["cer"])

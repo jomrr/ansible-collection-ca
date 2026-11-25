@@ -18,8 +18,14 @@
         name: fritzbox
         bundle_path: "{{ ca_fritzbox_test.path }}/invalid.pem"
         url: https://127.0.0.1:1
-        username: synthetic-user
-        password: synthetic-test-password
+        certificate:
+          formats: [cer]
+          key_passphrase: synthetic-key-passphrase
+          fritzbox_deploy:
+            username: synthetic-user
+            password: synthetic-nested-password
+        deploy:
+          password: synthetic-test-password
       register: ca_fritzbox_result
       failed_when: false
 
@@ -28,6 +34,8 @@
         that:
           - "'does not contain a certificate' in ca_fritzbox_result.msg"
           - "'synthetic-test-password' not in ca_fritzbox_result.msg"
+          - "'synthetic-nested-password' not in ca_fritzbox_result.msg"
+          - "'synthetic-key-passphrase' not in ca_fritzbox_result.msg"
           - ca_fritzbox_result is not changed
 
   always:

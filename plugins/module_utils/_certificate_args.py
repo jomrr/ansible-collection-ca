@@ -11,6 +11,20 @@ from ansible_collections.jomrr.ca.plugins.module_utils._x509_params import (
 )
 
 
+def fritzbox_deploy_options() -> dict[str, dict[str, Any]]:
+    """Declare deployment overrides without masking public settings or defaults."""
+    return {
+        "enabled": {"type": "bool"},
+        "url": {"type": "str"},
+        "username": {"type": "str"},
+        "password": {"type": "str", "no_log": True},
+        "bundle_path": {"type": "path"},
+        "timeout": {"type": "int"},
+        "validate_certs": {"type": "bool"},
+        "force": {"type": "bool"},
+    }
+
+
 def certificate_options() -> dict[str, dict[str, Any]]:
     """Declare supported certificate fields without injecting profile defaults."""
     spec = ca_authority_argument_spec()
@@ -48,14 +62,7 @@ def certificate_options() -> dict[str, dict[str, Any]]:
             "ad_object_guid": {"type": "str"},
             "fritzbox_deploy": {
                 "type": "dict",
-                "options": {
-                    "enabled": {"type": "bool"},
-                    "url": {"type": "str"},
-                    "username": {"type": "str"},
-                    "password": {"type": "str", "no_log": True},
-                    "timeout": {"type": "int"},
-                    "validate_certs": {"type": "bool"},
-                },
+                "options": fritzbox_deploy_options(),
             },
         }
     )

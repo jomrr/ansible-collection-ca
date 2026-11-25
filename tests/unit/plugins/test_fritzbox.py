@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 import shutil
 import ssl
 import tempfile
@@ -20,23 +21,14 @@ from ansible_collections.jomrr.ca.plugins.module_utils._fritzbox_client import (
     FritzBoxClient,
 )
 from ansible_collections.jomrr.ca.plugins.modules import fritzbox_deploy
+from ansible_collections.jomrr.ca.tests.unit.plugins.module_fixture import (
+    module_diagnostics,
+    module_transport,
+)
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-
-
-class ModuleResult(BaseException):
-    """Model Ansible's terminating result without entering module error handlers."""
-
-    def __init__(self, **result: Any) -> None:
-        super().__init__()
-        self.result = result
-
-
-def finish_module(**result: Any) -> None:
-    """Preserve Ansible result arguments when terminating the test module."""
-    raise ModuleResult(**result)
 
 
 def certificate(key: rsa.RSAPrivateKey, serial: int) -> x509.Certificate:
@@ -61,7 +53,7 @@ class FritzBoxTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, self.directory)
-        self.path = Path(self.directory) / "bundle.pem"
+        self.path = Path(self.directory) / "certificate-bundle.pem"
         key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         self.desired = certificate(key, 1)
         self.previous = certificate(key, 2)
@@ -82,28 +74,32 @@ class FritzBoxTests(unittest.TestCase):
             "username": "test-user",
             "password": "recognizable-test-password",
         }
-        self.module = Mock()
-        self.module.exit_json.side_effect = finish_module
-        self.module.fail_json.side_effect = finish_module
+        self.credentials = ["recognizable-test-password", "unused-key-passphrase"]
+        self.inputs["certificate"] = {
+            "formats": ["cer"],
+            "key_passphrase": self.credentials[1],
+            "fritzbox_deploy": {
+                "username": self.inputs.pop("username"),
+                "password": self.inputs.pop("password"),
+            },
+        }
+        self.inputs["deploy"] = {"timeout": 7}
 
     def invoke(self) -> dict[str, Any]:
-        """Run the public entry point using its own argument defaults."""
-
-        def make_module(**kwargs: Any) -> Mock:
-            self.module.params = {
-                key: spec.get("default")
-                for key, spec in kwargs["argument_spec"].items()
-            }
-            self.module.params.update(self.inputs)
-            return self.module
-
+        """Run real Ansible validation and results; simulate only the device."""
         with (
-            patch.object(fritzbox_deploy, "AnsibleModule", side_effect=make_module),
+            module_transport(self.inputs) as (output, log),
             patch.object(fritzbox_deploy, "FritzBoxClient", return_value=self.device),
-            self.assertRaises(ModuleResult) as result,
+            self.assertRaises(SystemExit) as exited,
         ):
             fritzbox_deploy.main()
-        return result.exception.result
+        for credential in self.credentials:
+            self.assertNotIn(credential, module_diagnostics(output, log))
+        result: dict[str, Any] = json.loads(output.getvalue())
+        self.assertEqual(exited.exception.code, 1 if result.get("failed") else 0)
+        if not result.get("failed"):
+            self.assertEqual(result["path"], str(self.path))
+        return result
 
     def test_upload_and_repeat(self) -> None:
         """Different device state uploads once; the resulting state is unchanged."""
@@ -143,8 +139,28 @@ class FritzBoxTests(unittest.TestCase):
 
     def test_original_tls_default(self) -> None:
         """Absent validate_certs keeps support for default self-signed devices."""
-        self.invoke()
-        self.assertIs(self.module.params["validate_certs"], False)
+        with (
+            patch.object(fritzbox_deploy, "FritzBoxClient") as client,
+            module_transport(self.inputs),
+            self.assertRaises(SystemExit),
+        ):
+            fritzbox_deploy.main()
+        self.assertIs(client.call_args.kwargs["validate_certs"], False)
+        self.assertEqual(client.call_args.kwargs["password"], self.credentials[0])
+        self.assertEqual(client.call_args.kwargs["timeout"], 7)
+
+    def test_deployment_sources_and_validation(self) -> None:
+        """Explicit overrides win; invalid nested arguments still protect passwords."""
+        for source in (self.inputs, self.inputs["deploy"]):
+            location = "deploy" if source is self.inputs["deploy"] else "top"
+            with self.subTest(source=location):
+                self.inputs["certificate"]["fritzbox_deploy"].pop("password", None)
+                source["password"] = self.credentials[0]
+                self.assertTrue(self.invoke()["changed"])
+                source.pop("password")
+        self.inputs["deploy"]["password"] = self.credentials[0]
+        self.inputs["deploy"]["timeout"] = "invalid-" + self.credentials[0]
+        self.assertTrue(self.invoke()["failed"])
 
     def test_self_signed_https_transport(self) -> None:
         """The real Ansible transport accepts a default self-signed device."""

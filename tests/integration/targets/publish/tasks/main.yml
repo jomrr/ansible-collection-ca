@@ -8,7 +8,15 @@
   vars:
     ca_publish_params: &publish_params
       base_dir: '{{ ca_publish_fixture.path }}/ca'
-      dest: '{{ ca_publish_fixture.path }}/webroot'
+      dest: '{{ ca_publish_fixture.path }}/certificates'
+      authorities:
+        - name: public-only
+        - name: issuer
+          formats: [cer]
+          key_passphrase: synthetic-key-passphrase
+          parent_key_passphrase: synthetic-parent-passphrase
+          archived_key_passphrases:
+            generation: synthetic-archived-passphrase
       mode: '0640'
       directory_mode: '0750'
       artifacts:
@@ -52,6 +60,7 @@
         that:
           - ca_publish_runs.results[0].changed
           - not ca_publish_runs.results[1].changed
+          - ca_publish_runs.results[0].path == ca_publish_params.dest
           - ca_publish_runs.results[0].published_paths == ['aia/root-ca.pem', 'crl/root-ca.crl']
 
     - name: Check publication after convergence

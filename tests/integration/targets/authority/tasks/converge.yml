@@ -237,6 +237,10 @@
   jomrr.ca.publish_archive:
     base_dir: '{{ ca_test_root.path }}/pki'
     dest: '{{ ca_test_root.path }}/public.tar'
+    authorities:
+      - name: issuer
+        formats: [cer]
+        key_passphrase: test-issuer-passphrase
     artifacts: &public_artifacts
       - src: '{{ ca_test_root.path }}/pki/ca/issuer-ca.der'
         area: aia

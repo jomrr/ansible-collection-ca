@@ -28,17 +28,12 @@ attributes:
   check_mode:
     support: full
     description: Predict directory, content and permission changes without writes.
-extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.ownership]
+extends_documentation_fragment: [jomrr.ca.publication, jomrr.ca.context, jomrr.ca.context.ownership]
 options:
   dest:
     description: Webroot directory on the CA host.
     type: path
     required: true
-  authorities:
-    description: Managed authorities used to derive public files for every retained generation.
-    type: list
-    elements: dict
-    default: []
   artifacts:
     description:
     - Explicit public files overriding O(authorities). Each item needs C(src), C(file),

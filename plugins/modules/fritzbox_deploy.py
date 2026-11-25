@@ -12,16 +12,8 @@ short_description: Deploy a FritzBox PEM certificate bundle to FRITZ!OS
 version_added: 0.1.0
 description:
 - Deploy a FritzBox PEM certificate bundle to FRITZ!OS.
-extends_documentation_fragment: [jomrr.ca.context, jomrr.ca.context.cryptography, jomrr.ca.context.fritzbox_notes]
+extends_documentation_fragment: [jomrr.ca.fritzbox, jomrr.ca.context, jomrr.ca.context.cryptography, jomrr.ca.context.fritzbox_notes]
 options:
-  certificate:
-    description: Optional source for C(output_dir) and nested C(fritzbox_deploy).
-    version_added: 0.1.0
-    type: dict
-  deploy:
-    description: Explicit deployment settings. Values override nested C(certificate.fritzbox_deploy).
-    version_added: 0.1.0
-    type: dict
   name:
     description: Certificate short name and file stem.
     version_added: 0.1.0
@@ -88,6 +80,10 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from ansible.module_utils.basic import AnsibleModule
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_args import (
+    certificate_options,
+    fritzbox_deploy_options,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._dependency import (
     OPERATION_ERRORS,
     require_cryptography,
@@ -139,7 +135,11 @@ def _params(params: dict[str, Any]) -> dict[str, Any]:
     """Merge certificate and deploy dictionaries into explicit module params."""
     certificate = dict(params.get("certificate") or {})
     deploy = dict(certificate.get("fritzbox_deploy") or {})
-    deploy.update(dict(params.get("deploy") or {}))
+    deploy.update(
+        (key, value)
+        for key, value in (params.get("deploy") or {}).items()
+        if value is not None
+    )
 
     result = dict(params)
     if result.get("output_dir") is None and certificate.get("output_dir") is not None:
@@ -225,11 +225,15 @@ def _same_certificate(first: x509.Certificate, second: x509.Certificate) -> bool
 
 def run_module() -> None:
     """Run the Ansible module for FritzBox certificate deployment."""
+    certificate = certificate_options()
+    # The top-level name identifies the bundle; partial source definitions work too.
+    for field in ("name", "type"):
+        certificate[field].pop("required")
     module = cast(Callable[..., AnsibleModule], AnsibleModule)(
         argument_spec={
             "base_dir": {"type": "path", "required": True},
-            "certificate": {"type": "dict", "no_log": True},
-            "deploy": {"type": "dict", "no_log": True},
+            "certificate": {"type": "dict", "options": certificate},
+            "deploy": {"type": "dict", "options": fritzbox_deploy_options()},
             "name": {"type": "str", "required": True},
             "output_dir": {"type": "path"},
             "bundle_path": {"type": "path"},

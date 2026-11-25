@@ -12,6 +12,9 @@ from ansible_collections.jomrr.ca.plugins.module_utils._authority_generations im
     generation_stem,
     legacy_id,
 )
+from ansible_collections.jomrr.ca.plugins.module_utils._certificate_args import (
+    authority_options,
+)
 from ansible_collections.jomrr.ca.plugins.module_utils._file import (
     ca_lock_path,
     read_file,
@@ -187,6 +190,9 @@ def publish_lock_paths(params: dict[str, Any]) -> list[str]:
 
 def publish_argument_spec(mode: str) -> dict[str, Any]:
     """Return common arguments, keeping each module's file mode default."""
+    authorities = authority_options()
+    # Publication reads public files and never needs an authority's private key.
+    authorities["key_passphrase"].pop("required")
     return {
         "base_dir": {"type": "path", "required": True},
         "dest": {"type": "path", "required": True},
@@ -195,7 +201,7 @@ def publish_argument_spec(mode: str) -> dict[str, Any]:
             "type": "list",
             "elements": "dict",
             "default": [],
-            "no_log": True,
+            "options": authorities,
         },
         "owner": {"type": "str"},
         "group": {"type": "str"},
